@@ -1,0 +1,6 @@
+{
+  "name": "Influencer Automation System",
+  "description": "An automated panel for managing influencer collaborations, integrations, and reports, designed with manager dashboards, reporting tools, and a dynamic blogger cabinet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

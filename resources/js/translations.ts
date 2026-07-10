@@ -28,6 +28,7 @@ export const translations = {
     bloggerDeals: 'Blogger Deals',
     allocatedSpend: 'Allocated Spend',
     platformsShare: 'Platforms Share',
+    totalSlotsLabel: 'Total Slots',
 
     // Integration Table / Relation Manager
     integrationsTitle: 'Integrations',
@@ -128,7 +129,7 @@ export const translations = {
 
     // Extra fields to ensure absolute TS safety across all views
     editIntegration: 'Edit Integration',
-    referralLinkField: 'Provided Referral URL / UTM Link',
+    referralLinkField: 'Referral Link',
     pricePerSlotField: 'Price per Slot',
     slotsCountField: 'Slots Count',
     totalSumField: 'Total Sum',
@@ -150,7 +151,11 @@ export const translations = {
     paymentTypeLabel: 'Payment Type',
     paymentPrepaid: 'Prepayment',
     paymentFull: 'Full Payment',
+    paymentOther: 'Other / Miscellaneous',
+    purposeField: 'Purpose',
+    sumField: 'Amount',
     configureSlotsTitle: 'Configure Individual Slots',
+    customizeSlotsLabel: 'Configure Individual Slots',
     slotNumberLabel: 'Slot',
     slotFormatLabel: 'Format',
     metricPaidToBlogger: 'Paid to Blogger',
@@ -210,6 +215,7 @@ export const translations = {
     bloggerDeals: 'Сделки с блогерами',
     allocatedSpend: 'Выделенный бюджет',
     platformsShare: 'Доли платформ',
+    totalSlotsLabel: 'Слоты',
 
     // Integration Table / Relation Manager
     integrationsTitle: 'Интеграции',
@@ -310,7 +316,7 @@ export const translations = {
 
     // Extra fields to ensure absolute TS safety across all views
     editIntegration: 'Редактировать интеграцию',
-    referralLinkField: 'Предоставленная реферальная ссылка / UTM',
+    referralLinkField: 'Реферальная ссылка',
     pricePerSlotField: 'Цена за слот',
     slotsCountField: 'Количество слотов',
     totalSumField: 'Итоговая сумма',
@@ -332,7 +338,11 @@ export const translations = {
     paymentTypeLabel: 'Тип оплаты',
     paymentPrepaid: 'Предоплата',
     paymentFull: 'Полная оплата',
+    paymentOther: 'Прочие',
+    purposeField: 'Назначение',
+    sumField: 'Сумма',
     configureSlotsTitle: 'Настройка отдельных слотов',
+    customizeSlotsLabel: 'Настройка отдельных слотов',
     slotNumberLabel: 'Слот',
     slotFormatLabel: 'Формат',
     metricPaidToBlogger: 'Оплачено блогеру',
@@ -392,6 +402,7 @@ export const translations = {
     bloggerDeals: 'Blogger bitimlari',
     allocatedSpend: 'Ajratilgan xarajat',
     platformsShare: 'Platformalar ulushi',
+    totalSlotsLabel: 'Slotlar',
 
     // Integration Table / Relation Manager
     integrationsTitle: 'Integratsiyalar',
@@ -492,7 +503,7 @@ export const translations = {
 
     // Extra fields to ensure absolute TS safety across all views
     editIntegration: 'Integratsiyani tahrirlash',
-    referralLinkField: 'Taqdim etilgan referal havola / UTM',
+    referralLinkField: 'Referal havola',
     pricePerSlotField: 'Slot narxi',
     slotsCountField: 'Slotlar soni',
     totalSumField: 'Jami summa',
@@ -514,7 +525,11 @@ export const translations = {
     paymentTypeLabel: 'To‘lov turi',
     paymentPrepaid: 'Oldindan to‘lov',
     paymentFull: 'To‘liq to‘lov',
+    paymentOther: 'Boshqalar',
+    purposeField: 'Maqsad',
+    sumField: 'Summa',
     configureSlotsTitle: 'Alohida slotlarni sozlash',
+    customizeSlotsLabel: 'Alohida slotlarni sozlash',
     slotNumberLabel: 'Slot',
     slotFormatLabel: 'Format',
     metricPaidToBlogger: 'Bloggerga to‘langan',

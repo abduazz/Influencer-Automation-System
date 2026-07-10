@@ -37,7 +37,7 @@ class IntegrationController extends Controller
             'projectId' => 'required|exists:projects,id',
             'bloggerName' => 'required|string|max:255',
             'startDate' => 'required|date',
-            'platform' => 'required|in:Telegram,Instagram,YouTube',
+            'platform' => 'required|in:Telegram,Instagram,YouTube,MAX',
             'referralLink' => 'nullable|string',
             'pricePerSlot' => 'required|numeric|min:0',
             'slotsCount' => 'required|integer|min:1',
@@ -88,7 +88,7 @@ class IntegrationController extends Controller
         $request->validate([
             'bloggerName' => 'sometimes|required|string|max:255',
             'startDate' => 'sometimes|required|date',
-            'platform' => 'sometimes|required|in:Telegram,Instagram,YouTube',
+            'platform' => 'sometimes|required|in:Telegram,Instagram,YouTube,MAX',
             'referralLink' => 'nullable|string',
             'pricePerSlot' => 'sometimes|required|numeric|min:0',
             'slotsCount' => 'sometimes|required|integer|min:1',

@@ -37,7 +37,7 @@ export default function BloggerCabinetView({
   const t = translations[lang];
 
   // Controller State (allows interactive configuration in the preview)
-  const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube'>('Instagram');
+  const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Instagram');
   const [activeSlotsCount, setActiveSlotsCount] = useState<number>(4);
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>('int-2');
 

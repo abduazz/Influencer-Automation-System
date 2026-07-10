@@ -68,16 +68,45 @@ export default function DashboardView({
   const [bloggerName, setBloggerName] = useState('');
   const [startDate, setStartDate] = useState('2026-07-10');
   const [endDate, setEndDate] = useState('2026-07-17');
-  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube'>('Telegram');
+  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
   const [referralLink, setReferralLink] = useState('');
   const [pricePerSlot, setPricePerSlot] = useState<number>(150);
   const [slotsCount, setSlotsCount] = useState<number>(1);
   const [calculatedTotal, setCalculatedTotal] = useState<number>(150);
 
+  const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
+  const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[]>([]);
+
+  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX') => {
+    if (plat === 'Instagram') return 'Stories';
+    if (plat === 'Telegram') return 'Post';
+    if (plat === 'YouTube') return 'Release';
+    return 'Post';
+  };
+
+  const groupSlots = (flatConfigs: SlotConfig[]): { quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[] => {
+    const groups: { quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[] = [];
+    flatConfigs.forEach(slot => {
+      const existing = groups.find(g => g.platform === slot.platform && g.format === slot.format);
+      if (existing) {
+        existing.quantity += 1;
+      } else {
+        groups.push({ quantity: 1, platform: slot.platform, format: slot.format });
+      }
+    });
+    return groups;
+  };
+
   // Recalculate dynamic total amount on input change
   useEffect(() => {
     setCalculatedTotal(pricePerSlot * slotsCount);
   }, [pricePerSlot, slotsCount]);
+
+  // Reset slots configuration customization if slotsCount changes
+  useEffect(() => {
+    setCustomizeSlots(false);
+    setSlotGroups([]);
+  }, [slotsCount]);
 
   // Set form defaults when opening modal for editing or creating
   const openAddIntegration = () => {
@@ -89,6 +118,8 @@ export default function DashboardView({
     setPricePerSlot(150);
     setSlotsCount(1);
     setCalculatedTotal(150);
+    setCustomizeSlots(false);
+    setSlotGroups([]);
     setShowAddIntegrationModal(true);
   };
 
@@ -102,6 +133,13 @@ export default function DashboardView({
     setPricePerSlot(integration.pricePerSlot);
     setSlotsCount(integration.slotsCount);
     setCalculatedTotal(integration.totalAmount);
+    if (integration.slotsConfig && integration.slotsConfig.length > 0) {
+      setCustomizeSlots(true);
+      setSlotGroups(groupSlots(integration.slotsConfig));
+    } else {
+      setCustomizeSlots(false);
+      setSlotGroups([]);
+    }
   };
 
   // Submit operations
@@ -121,6 +159,32 @@ export default function DashboardView({
     e.preventDefault();
     if (!bloggerName.trim() || !startDate || !endDate) return;
 
+    let finalSlotsConfig: SlotConfig[] = [];
+    if (customizeSlots) {
+      const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
+      if (currentSum !== slotsCount) {
+        alert(lang === 'ru' 
+          ? `Пожалуйста, настройте все слоты. Настроено ${currentSum} из ${slotsCount}.` 
+          : lang === 'uz' 
+          ? `Iltimos, barcha slotlarni sozlang. Sozlangan: ${currentSum} ta (${slotsCount} tadan).` 
+          : `Please configure all slots. Configured ${currentSum} out of ${slotsCount}.`
+        );
+        return;
+      }
+      slotGroups.forEach(g => {
+        for (let i = 0; i < g.quantity; i++) {
+          finalSlotsConfig.push({ platform: g.platform, format: g.format });
+        }
+      });
+    } else {
+      for (let i = 0; i < slotsCount; i++) {
+        finalSlotsConfig.push({
+          platform: platform,
+          format: getDefaultFormat(platform)
+        });
+      }
+    }
+
     if (editingIntegration) {
       onEditIntegration(editingIntegration.id, {
         bloggerName,
@@ -130,7 +194,8 @@ export default function DashboardView({
         referralLink,
         pricePerSlot,
         slotsCount,
-        totalAmount: pricePerSlot * slotsCount
+        totalAmount: pricePerSlot * slotsCount,
+        slotsConfig: finalSlotsConfig
       });
       setEditingIntegration(null);
     } else {
@@ -143,7 +208,8 @@ export default function DashboardView({
         referralLink,
         pricePerSlot,
         slotsCount,
-        status: 'active'
+        status: 'active',
+        slotsConfig: finalSlotsConfig
       });
     }
     setShowAddIntegrationModal(false);
@@ -157,10 +223,13 @@ export default function DashboardView({
 
   // Selected Project Statistics Calculators
   const totalSpend = activeProjectIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
-  const platformCounts = activeProjectIntegrations.reduce((acc, curr) => {
-    acc[curr.platform] = (acc[curr.platform] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const totalSlotsCount = activeProjectIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
+  const totalPublishedSlots = activeProjectIntegrations.reduce((sum, item) => {
+    const sub = submissions.find(s => s.integrationId === item.id);
+    const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
+    return sum + slotsSubmitted;
+  }, 0);
+  const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
@@ -214,12 +283,8 @@ export default function DashboardView({
       </div>
 
       {/* Analytics Mini Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 border border-neutral-200 bg-white p-4 rounded-xl shadow-xs">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 border border-neutral-200 bg-white p-4 rounded-xl shadow-xs">
         <div className="text-left">
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.totalCampaigns}</p>
-          <p className="text-xl font-black text-black">{selectedProject ? 1 : 0}</p>
-        </div>
-        <div className="text-left border-l border-neutral-100 pl-4">
           <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.bloggerDeals}</p>
           <p className="text-xl font-black text-black">{activeProjectIntegrations.length}</p>
         </div>
@@ -228,10 +293,16 @@ export default function DashboardView({
           <p className="text-xl font-black text-black">{totalSpend.toLocaleString()}</p>
         </div>
         <div className="text-left border-l border-neutral-100 pl-4">
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.platformsShare}</p>
-          <p className="text-xs font-bold text-neutral-800 mt-1.5">
-            TG: {platformCounts['Telegram'] || 0} | Inst: {platformCounts['Instagram'] || 0} | YT: {platformCounts['YouTube'] || 0}
-          </p>
+          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.totalSlotsLabel}</p>
+          <p className="text-xl font-black text-black">{totalSlotsCount}</p>
+        </div>
+        <div className="text-left border-l border-neutral-100 pl-4">
+          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricSlotsPublished}</p>
+          <p className="text-xl font-black text-emerald-600">{totalPublishedSlots}</p>
+        </div>
+        <div className="text-left border-l border-neutral-100 pl-4">
+          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricSlotsRemaining}</p>
+          <p className="text-xl font-black text-amber-600">{totalRemainingSlots}</p>
         </div>
       </div>
 
@@ -600,6 +671,7 @@ export default function DashboardView({
                     <option value="Telegram">Telegram</option>
                     <option value="Instagram">Instagram</option>
                     <option value="YouTube">YouTube</option>
+                    <option value="MAX">MAX</option>
                   </select>
                 </div>
               </div>
@@ -686,6 +758,164 @@ export default function DashboardView({
                   />
                 </div>
               </div>
+
+              {/* Checkbox to Toggle Individual Slots Configuration */}
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="checkbox"
+                  id="customize-slots-checkbox"
+                  checked={customizeSlots}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setCustomizeSlots(checked);
+                    if (checked && slotGroups.length === 0) {
+                      setSlotGroups([{ quantity: slotsCount, platform: platform, format: getDefaultFormat(platform) }]);
+                    }
+                  }}
+                  className="w-3.5 h-3.5 accent-black rounded border-neutral-300 focus:ring-black cursor-pointer"
+                />
+                <label htmlFor="customize-slots-checkbox" className="text-[10px] font-bold text-neutral-600 select-none cursor-pointer">
+                  {t.customizeSlotsLabel}
+                </label>
+              </div>
+
+              {/* Grouped Slots Configurer */}
+              {customizeSlots && (
+                <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-200 text-left space-y-2">
+                  <div className="flex justify-between items-center border-b border-neutral-200 pb-1.5">
+                    <label className="block text-[9px] font-black text-neutral-500 uppercase tracking-wide">
+                      {t.configureSlotsTitle}
+                    </label>
+                    <span className="text-[9px] font-bold text-neutral-400">
+                      {slotGroups.reduce((acc, g) => acc + g.quantity, 0)} / {slotsCount}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                    {slotGroups.map((group, index) => (
+                      <div key={index} className="flex items-center gap-1.5 p-1.5 bg-white border border-neutral-150 rounded-lg text-xs">
+                        {/* Quantity input */}
+                        <input
+                          type="number"
+                          required
+                          min={1}
+                          max={slotsCount}
+                          value={group.quantity}
+                          onChange={(e) => {
+                            const val = Math.max(1, Number(e.target.value));
+                            const otherSum = slotGroups.reduce((acc, g, idx) => idx === index ? acc : acc + g.quantity, 0);
+                            if (otherSum + val > slotsCount) {
+                              alert(lang === 'ru' 
+                                ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!` 
+                                : lang === 'uz' 
+                                ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!` 
+                                : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                              );
+                              return;
+                            }
+                            const nextGroups = [...slotGroups];
+                            nextGroups[index].quantity = val;
+                            setSlotGroups(nextGroups);
+                          }}
+                          className="w-12 bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none text-center"
+                          title="Quantity"
+                        />
+
+                        {/* Platform selector */}
+                        <select
+                          value={group.platform}
+                          onChange={(e) => {
+                            const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
+                            const nextGroups = [...slotGroups];
+                            nextGroups[index] = {
+                              ...nextGroups[index],
+                              platform: platVal,
+                              format: getDefaultFormat(platVal)
+                            };
+                            setSlotGroups(nextGroups);
+                          }}
+                          className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none"
+                        >
+                          <option value="Telegram">Telegram</option>
+                          <option value="Instagram">Instagram</option>
+                          <option value="YouTube">YouTube</option>
+                          <option value="MAX">MAX</option>
+                        </select>
+
+                        {/* Format Selector */}
+                        <select
+                          value={group.format}
+                          onChange={(e) => {
+                            const nextGroups = [...slotGroups];
+                            nextGroups[index].format = e.target.value;
+                            setSlotGroups(nextGroups);
+                          }}
+                          className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none flex-1"
+                        >
+                          {group.platform === 'Instagram' && (
+                            <>
+                              <option value="Reels">Instagram Reels</option>
+                              <option value="Stories">Instagram Stories</option>
+                              <option value="Post">Instagram Post</option>
+                            </>
+                          )}
+                          {group.platform === 'Telegram' && (
+                            <>
+                              <option value="Post">Telegram Post</option>
+                              <option value="Stories">Telegram Stories</option>
+                            </>
+                          )}
+                          {group.platform === 'YouTube' && (
+                            <>
+                              <option value="Release">YouTube Release</option>
+                              <option value="Shorts">YouTube Shorts</option>
+                              <option value="Integration">YouTube Integration</option>
+                            </>
+                          )}
+                          {group.platform === 'MAX' && (
+                            <>
+                              <option value="Post">MAX Post</option>
+                              <option value="Integration">MAX Integration</option>
+                            </>
+                          )}
+                        </select>
+
+                        {/* Delete group button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSlotGroups(slotGroups.filter((_, idx) => idx !== index));
+                          }}
+                          className="text-red-500 hover:bg-neutral-100 p-1 rounded text-xs font-bold"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add group button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
+                      if (currentSum + 1 > slotsCount) {
+                        alert(lang === 'ru' 
+                          ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!` 
+                          : lang === 'uz' 
+                          ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!` 
+                          : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                        );
+                        return;
+                      }
+                      setSlotGroups([...slotGroups, { quantity: 1, platform: platform, format: getDefaultFormat(platform) }]);
+                    }}
+                    className="w-full py-1.5 text-[10px] font-extrabold text-neutral-600 hover:text-black border border-dashed border-neutral-300 rounded hover:border-neutral-400 bg-white transition"
+                  >
+                    + {lang === 'ru' ? 'Добавить группу слотов' : lang === 'uz' ? 'Slotlar guruhini qo‘shish' : 'Add Slot Group'}
+                  </button>
+                </div>
+              )}
 
               <div className="pt-2 flex gap-3">
                 <button

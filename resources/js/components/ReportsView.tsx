@@ -28,12 +28,12 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
   const t = translations[lang];
 
   // Form State
-  const [paymentType, setPaymentType] = useState<'prepaid' | 'full'>('prepaid');
+  const [paymentType, setPaymentType] = useState<'prepaid' | 'full' | 'other'>('prepaid');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [projectId, setProjectId] = useState<string>(projects[0]?.id || '');
   const [destination, setDestination] = useState<string>('');
   const [channelBlogger, setChannelBlogger] = useState<string>('');
-  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube'>('Telegram');
+  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
 
   // If userRole is pr_manager, force platform to Telegram
   useEffect(() => {
@@ -44,10 +44,27 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
   const [slotsCount, setSlotsCount] = useState<number>(5);
   const [paidSlotsCount, setPaidSlotsCount] = useState<number>(3);
   const [pricePerSlot, setPricePerSlot] = useState<number>(200);
+  const [otherAmount, setOtherAmount] = useState<number>(100);
   const [comments, setComments] = useState<string>('');
   const [totalAmount, setTotalAmount] = useState<number>(1000);
   const [paidAmount, setPaidAmount] = useState<number>(600);
   const [slotsConfig, setSlotsConfig] = useState<SlotConfig[]>([]);
+
+  const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
+  const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[]>([]);
+
+  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX') => {
+    if (plat === 'Instagram') return 'Stories';
+    if (plat === 'Telegram') return 'Post';
+    if (plat === 'YouTube') return 'Release';
+    return 'Post';
+  };
+
+  // Reset slots configuration customization if slotsCount changes
+  useEffect(() => {
+    setCustomizeSlots(false);
+    setSlotGroups([]);
+  }, [slotsCount]);
 
   // Success state for toast
   const [successToast, setSuccessToast] = useState<string | null>(null);
@@ -90,23 +107,63 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!destination.trim() || !channelBlogger.trim() || !projectId) return;
+    if (!destination.trim()) return;
+    if (paymentType !== 'other' && (!projectId || !channelBlogger.trim())) return;
 
-    onAddReport({
+    if (paymentType !== 'other' && customizeSlots) {
+      const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
+      if (currentSum !== slotsCount) {
+        alert(lang === 'ru' 
+          ? `Пожалуйста, настройте все слоты. Настроено ${currentSum} из ${slotsCount}.` 
+          : lang === 'uz' 
+          ? `Iltimos, barcha slotlarni sozlang. Sozlangan: ${currentSum} ta (${slotsCount} tadan).` 
+          : `Please configure all slots. Configured ${currentSum} out of ${slotsCount}.`
+        );
+        return;
+      }
+    }
+
+    const payload: any = {
       date,
-      projectId,
       destination,
-      channelBlogger,
-      platform,
-      slotsCount,
-      paidSlotsCount,
-      pricePerSlot,
       comments,
-      slotsConfig,
-    });
+      paymentType,
+    };
+
+    if (paymentType === 'other') {
+      payload.projectId = null;
+      payload.amount = otherAmount;
+      payload.channelBlogger = null;
+      payload.platform = null;
+      payload.slotsCount = null;
+      payload.paidSlotsCount = null;
+      payload.pricePerSlot = null;
+      payload.slotsConfig = [];
+    } else {
+      payload.projectId = projectId;
+      payload.channelBlogger = channelBlogger;
+      payload.platform = platform;
+      payload.slotsCount = slotsCount;
+      payload.paidSlotsCount = paidSlotsCount;
+      payload.pricePerSlot = pricePerSlot;
+      
+      let finalSlotsConfig = slotsConfig;
+      if (customizeSlots) {
+        finalSlotsConfig = [];
+        slotGroups.forEach(g => {
+          for (let i = 0; i < g.quantity; i++) {
+            finalSlotsConfig.push({ platform: g.platform, format: g.format });
+          }
+        });
+      }
+      payload.slotsConfig = finalSlotsConfig;
+    }
+
+    onAddReport(payload);
 
     // Flash Toast
-    setSuccessToast(`${t.reportCreatedMsg} ${channelBlogger}!`);
+    const toastSubject = paymentType === 'other' ? destination : channelBlogger;
+    setSuccessToast(`${t.reportCreatedMsg} ${toastSubject}!`);
     setTimeout(() => {
       setSuccessToast(null);
     }, 4500);
@@ -117,6 +174,7 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
     setSlotsCount(5);
     setPaidSlotsCount(3);
     setPricePerSlot(200);
+    setOtherAmount(100);
     setComments('');
     setPaymentType('prepaid');
   };
@@ -184,7 +242,7 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
                       <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
                         {t.paymentTypeLabel} *
                       </label>
-                      <div className="grid grid-cols-2 gap-1.5 mb-1">
+                      <div className="grid grid-cols-3 gap-1.5 mb-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -213,6 +271,19 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
                         >
                           {t.paymentFull}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentType('other');
+                          }}
+                          className={`py-1.5 rounded-lg border text-[10px] font-bold transition duration-100 ${
+                            paymentType === 'other'
+                              ? 'bg-black border-black text-white'
+                              : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                          }`}
+                        >
+                          {t.paymentOther}
+                        </button>
                       </div>
                     </div>
 
@@ -231,232 +302,338 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
                     </div>
 
                     {/* Project Select */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {t.targetProjectField} *
-                      </label>
-                      <select
-                        value={projectId}
-                        onChange={(e) => setProjectId(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                      >
-                        {projects.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {paymentType !== 'other' && (
+                      <div>
+                        <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                          {t.targetProjectField} *
+                        </label>
+                        <select
+                          value={projectId}
+                          onChange={(e) => setProjectId(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                        >
+                          {projects.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {/* Destination */}
                     <div>
                       <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {t.referralLinkField} *
+                        {paymentType === 'other' ? t.purposeField : t.referralLinkField} *
                       </label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. Stories Conversion Boost"
+                        placeholder={paymentType === 'other' ? "e.g. Production Expense" : "e.g. Stories Conversion Boost"}
                         value={destination}
                         onChange={(e) => setDestination(e.target.value)}
                         className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
                       />
                     </div>
 
-                    {/* Blogger */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {t.bloggerColumn} *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. @tech_geek_tg"
-                        value={channelBlogger}
-                        onChange={(e) => setChannelBlogger(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                      />
-                    </div>
-
-                    {/* Platform Selector */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {t.platformColumn} *
-                      </label>
-                      <div className="grid grid-cols-3 gap-1">
-                        {(['Telegram', 'Instagram', 'YouTube'] as const).map((plat) => {
-                          const isDisabled = userRole === 'pr_manager' && plat !== 'Telegram';
-                          return (
-                            <button
-                              key={plat}
-                              type="button"
-                              disabled={isDisabled}
-                              onClick={() => setPlatform(plat)}
-                              className={`py-1 rounded border text-[9px] font-bold transition duration-100 ${
-                                platform === plat
-                                  ? 'bg-black border-black text-white'
-                                  : isDisabled
-                                  ? 'bg-neutral-50 border-neutral-100 text-neutral-300 cursor-not-allowed'
-                                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                              }`}
-                            >
-                              {plat}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {userRole === 'pr_manager' && (
-                        <p className="text-[9px] text-blue-600 font-bold mt-1 text-left">
-                          {lang === 'ru' ? '• Доступ ограничен: только Telegram' : lang === 'uz' ? '• Kirish cheklangan: faqat Telegram' : '• Restricted Access: Telegram only'}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Reactive Grid: Price & Slots */}
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                            {t.slotsCountField} *
-                          </label>
-                          <input
-                            type="number"
-                            required
-                            min={1}
-                            value={slotsCount}
-                            onChange={(e) => setSlotsCount(Math.max(1, Number(e.target.value)))}
-                            className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                            {t.paidSuffix} *
-                          </label>
-                          <input
-                            type="number"
-                            required
-                            min={0}
-                            max={slotsCount}
-                            disabled={paymentType === 'full'}
-                            value={paidSlotsCount}
-                            onChange={(e) => setPaidSlotsCount(Math.min(slotsCount, Math.max(0, Number(e.target.value))))}
-                            className={`w-full px-2.5 py-1 border rounded-md text-[11px] font-bold focus:outline-none ${
-                              paymentType === 'full'
-                                ? 'bg-neutral-100 border-neutral-200 text-neutral-400 cursor-not-allowed'
-                                : 'bg-white border-neutral-200 text-black focus:border-black'
-                            }`}
-                          />
-                        </div>
-                      </div>
-
+                    {paymentType === 'other' ? (
+                      /* Fields for "Other" payment type */
                       <div>
                         <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                          {t.pricePerSlotField} *
+                          {t.sumField} *
                         </label>
                         <input
                           type="number"
                           required
-                          min={0}
-                          value={pricePerSlot}
-                          onChange={(e) => setPricePerSlot(Number(e.target.value))}
-                          className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                          min={1}
+                          value={otherAmount}
+                          onChange={(e) => setOtherAmount(Number(e.target.value))}
+                          className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
                         />
                       </div>
-                    </div>
+                    ) : (
+                      /* Fields for standard blogger campaign payment types */
+                      <>
+                        {/* Blogger */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                            {t.bloggerColumn} *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. @tech_geek_tg"
+                            value={channelBlogger}
+                            onChange={(e) => setChannelBlogger(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                          />
+                        </div>
 
-                    {/* Dynamic Slots Multi-Platform/Format Configurer */}
-                    <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-200 text-left space-y-2">
-                      <label className="block text-[9px] font-black text-neutral-500 uppercase tracking-wide border-b border-neutral-200 pb-1">
-                        {t.configureSlotsTitle}
-                      </label>
-                      <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
-                        {slotsConfig.map((slot, index) => (
-                          <div key={index} className="flex items-center gap-1.5 p-1 bg-white border border-neutral-150 rounded text-[10px]">
-                            <span className="font-extrabold text-neutral-500 min-w-[20px] text-center">
-                              #{index + 1}
-                            </span>
-                            
-                            {/* Platform selector */}
-                            <select
-                              value={slot.platform}
-                              onChange={(e) => {
-                                const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube';
-                                const nextConfig = [...slotsConfig];
-                                nextConfig[index] = {
-                                  platform: platVal,
-                                  format: platVal === 'Instagram' ? 'Stories' : platVal === 'Telegram' ? 'Post' : 'Release'
-                                };
-                                setSlotsConfig(nextConfig);
-                              }}
-                              className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none"
-                            >
-                              <option value="Telegram">Telegram</option>
-                              <option value="Instagram">Instagram</option>
-                              <option value="YouTube">YouTube</option>
-                            </select>
+                        {/* Platform Selector */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                            {t.platformColumn} *
+                          </label>
+                          <select
+                            value={platform}
+                            onChange={(e) => setPlatform(e.target.value as any)}
+                            className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                          >
+                            {(['Telegram', 'Instagram', 'YouTube', 'MAX'] as const).map((plat) => {
+                              const isDisabled = userRole === 'pr_manager' && plat !== 'Telegram';
+                              return (
+                                <option
+                                  key={plat}
+                                  value={plat}
+                                  disabled={isDisabled}
+                                >
+                                  {plat}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          {userRole === 'pr_manager' && (
+                            <p className="text-[9px] text-blue-600 font-bold mt-1 text-left">
+                              {lang === 'ru' ? '• Доступ ограничен: только Telegram' : lang === 'uz' ? '• Kirish cheklangan: faqat Telegram' : '• Restricted Access: Telegram only'}
+                            </p>
+                          )}
+                        </div>
 
-                            {/* Format Selector based on Platform */}
-                            <select
-                              value={slot.format}
-                              onChange={(e) => {
-                                const nextConfig = [...slotsConfig];
-                                nextConfig[index] = {
-                                  ...nextConfig[index],
-                                  format: e.target.value
-                                };
-                                setSlotsConfig(nextConfig);
-                              }}
-                              className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none flex-1"
-                            >
-                              {slot.platform === 'Instagram' && (
-                                <>
-                                  <option value="Reels">Instagram Reels</option>
-                                  <option value="Stories">Instagram Stories</option>
-                                  <option value="Post">Instagram Post</option>
-                                </>
-                              )}
-                              {slot.platform === 'Telegram' && (
-                                <>
-                                  <option value="Post">Telegram Post</option>
-                                  <option value="Stories">Telegram Stories</option>
-                                </>
-                              )}
-                              {slot.platform === 'YouTube' && (
-                                <>
-                                  <option value="Release">YouTube Release</option>
-                                  <option value="Shorts">YouTube Shorts</option>
-                                  <option value="Integration">YouTube Integration</option>
-                                </>
-                              )}
-                            </select>
+                        {/* Reactive Grid: Price & Slots */}
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                                {t.slotsCountField} *
+                              </label>
+                              <input
+                                type="number"
+                                required
+                                min={1}
+                                value={slotsCount}
+                                onChange={(e) => setSlotsCount(Math.max(1, Number(e.target.value)))}
+                                className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                                {t.paidSuffix} *
+                              </label>
+                              <input
+                                type="number"
+                                required
+                                min={0}
+                                max={slotsCount}
+                                disabled={paymentType === 'full'}
+                                value={paidSlotsCount}
+                                onChange={(e) => setPaidSlotsCount(Math.min(slotsCount, Math.max(0, Number(e.target.value))))}
+                                className={`w-full px-2.5 py-1 border rounded-md text-[11px] font-bold focus:outline-none ${
+                                  paymentType === 'full'
+                                    ? 'bg-neutral-100 border-neutral-200 text-neutral-400 cursor-not-allowed'
+                                    : 'bg-white border-neutral-200 text-black focus:border-black'
+                                }`}
+                              />
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
 
-                    {/* Calculated Sums Grid */}
-                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-100">
-                      <div>
-                        <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
-                          {t.prepaidField}
-                        </label>
-                        <input
-                          type="text"
-                          disabled
-                          value={paidAmount.toLocaleString()}
-                          className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
-                          {t.totalSumField}
-                        </label>
-                        <input
-                          type="text"
-                          disabled
-                          value={totalAmount.toLocaleString()}
-                          className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
-                        />
-                      </div>
-                    </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.pricePerSlotField} *
+                            </label>
+                            <input
+                              type="number"
+                              required
+                              min={0}
+                              value={pricePerSlot}
+                              onChange={(e) => setPricePerSlot(Number(e.target.value))}
+                              className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Checkbox to Toggle Individual Slots Configuration */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <input
+                            type="checkbox"
+                            id="customize-slots-checkbox"
+                            checked={customizeSlots}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setCustomizeSlots(checked);
+                              if (checked && slotGroups.length === 0) {
+                                setSlotGroups([{ quantity: slotsCount, platform: platform, format: getDefaultFormat(platform) }]);
+                              }
+                            }}
+                            className="w-3.5 h-3.5 accent-black rounded border-neutral-300 focus:ring-black cursor-pointer"
+                          />
+                          <label htmlFor="customize-slots-checkbox" className="text-[10px] font-bold text-neutral-600 select-none cursor-pointer">
+                            {t.customizeSlotsLabel}
+                          </label>
+                        </div>
+
+                        {/* Grouped Slots Configurer */}
+                        {customizeSlots && (
+                          <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-200 text-left space-y-2">
+                            <div className="flex justify-between items-center border-b border-neutral-200 pb-1">
+                              <label className="block text-[9px] font-black text-neutral-500 uppercase tracking-wide">
+                                {t.configureSlotsTitle}
+                              </label>
+                              <span className="text-[9px] font-bold text-neutral-400">
+                                {slotGroups.reduce((acc, g) => acc + g.quantity, 0)} / {slotsCount}
+                              </span>
+                            </div>
+                            
+                            <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                              {slotGroups.map((group, index) => (
+                                <div key={index} className="flex items-center gap-1.5 p-1 bg-white border border-neutral-150 rounded text-[10px]">
+                                  {/* Quantity input */}
+                                  <input
+                                    type="number"
+                                    required
+                                    min={1}
+                                    max={slotsCount}
+                                    value={group.quantity}
+                                    onChange={(e) => {
+                                      const val = Math.max(1, Number(e.target.value));
+                                      const otherSum = slotGroups.reduce((acc, g, idx) => idx === index ? acc : acc + g.quantity, 0);
+                                      if (otherSum + val > slotsCount) {
+                                        alert(lang === 'ru' 
+                                          ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!` 
+                                          : lang === 'uz' 
+                                          ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!` 
+                                          : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                                        );
+                                        return;
+                                      }
+                                      const nextGroups = [...slotGroups];
+                                      nextGroups[index].quantity = val;
+                                      setSlotGroups(nextGroups);
+                                    }}
+                                    className="w-12 bg-neutral-50 border border-neutral-200 rounded px-1 py-0.5 text-[9px] font-bold text-black focus:outline-none text-center"
+                                    title="Quantity"
+                                  />
+
+                                  {/* Platform selector */}
+                                  <select
+                                    value={group.platform}
+                                    onChange={(e) => {
+                                      const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
+                                      const nextGroups = [...slotGroups];
+                                      nextGroups[index] = {
+                                        ...nextGroups[index],
+                                        platform: platVal,
+                                        format: getDefaultFormat(platVal)
+                                      };
+                                      setSlotGroups(nextGroups);
+                                    }}
+                                    className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none"
+                                  >
+                                    <option value="Telegram">Telegram</option>
+                                    <option value="Instagram">Instagram</option>
+                                    <option value="YouTube">YouTube</option>
+                                    <option value="MAX">MAX</option>
+                                  </select>
+
+                                  {/* Format Selector */}
+                                  <select
+                                    value={group.format}
+                                    onChange={(e) => {
+                                      const nextGroups = [...slotGroups];
+                                      nextGroups[index].format = e.target.value;
+                                      setSlotGroups(nextGroups);
+                                    }}
+                                    className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none flex-1"
+                                  >
+                                    {group.platform === 'Instagram' && (
+                                      <>
+                                        <option value="Reels">Instagram Reels</option>
+                                        <option value="Stories">Instagram Stories</option>
+                                        <option value="Post">Instagram Post</option>
+                                      </>
+                                    )}
+                                    {group.platform === 'Telegram' && (
+                                      <>
+                                        <option value="Post">Telegram Post</option>
+                                        <option value="Stories">Telegram Stories</option>
+                                      </>
+                                    )}
+                                    {group.platform === 'YouTube' && (
+                                      <>
+                                        <option value="Release">YouTube Release</option>
+                                        <option value="Shorts">YouTube Shorts</option>
+                                        <option value="Integration">YouTube Integration</option>
+                                      </>
+                                    )}
+                                    {group.platform === 'MAX' && (
+                                      <>
+                                        <option value="Post">MAX Post</option>
+                                        <option value="Integration">MAX Integration</option>
+                                      </>
+                                    )}
+                                  </select>
+
+                                  {/* Delete group button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSlotGroups(slotGroups.filter((_, idx) => idx !== index));
+                                    }}
+                                    className="text-red-500 hover:bg-neutral-100 p-0.5 rounded text-[9px] font-bold"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Add group button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
+                                if (currentSum + 1 > slotsCount) {
+                                  alert(lang === 'ru' 
+                                    ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!` 
+                                    : lang === 'uz' 
+                                    ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!` 
+                                    : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                                  );
+                                  return;
+                                }
+                                setSlotGroups([...slotGroups, { quantity: 1, platform: platform, format: getDefaultFormat(platform) }]);
+                              }}
+                              className="w-full py-1 text-[9px] font-extrabold text-neutral-600 hover:text-black border border-dashed border-neutral-300 rounded hover:border-neutral-400 bg-white transition"
+                            >
+                              + {lang === 'ru' ? 'Добавить группу слотов' : lang === 'uz' ? 'Slotlar guruhini qo‘shish' : 'Add Slot Group'}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Calculated Sums Grid */}
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-100">
+                          <div>
+                            <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
+                              {t.prepaidField}
+                            </label>
+                            <input
+                              type="text"
+                              disabled
+                              value={paidAmount.toLocaleString()}
+                              className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
+                              {t.totalSumField}
+                            </label>
+                            <input
+                              type="text"
+                              disabled
+                              value={totalAmount.toLocaleString()}
+                              className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
 
                     {/* Comments */}
                     <div>
@@ -503,6 +680,7 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
           <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
             {reports.map((rep) => {
               const resolvedProject = projects.find(p => p.id === rep.projectId);
+              const isOther = rep.paymentType === 'other';
 
               return (
                 <div
@@ -511,24 +689,43 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
                 >
                   <div className="flex justify-between items-start gap-3 mb-2 pb-2 border-b border-neutral-100">
                     <div>
-                      <h4 className="font-bold text-xs text-black">{rep.channelBlogger}</h4>
+                      <h4 className="font-bold text-xs text-black">
+                        {isOther ? t.paymentOther : rep.channelBlogger}
+                      </h4>
                       <p className="text-[10px] text-neutral-400 font-medium mt-0.5">
-                        {t.campaignTitleField}: <span className="text-neutral-700 font-bold">{resolvedProject?.name || 'Unknown Project'}</span>
+                        {t.campaignTitleField}: <span className="text-neutral-700 font-bold">{resolvedProject?.name || '—'}</span>
                       </p>
+                      {isOther && (
+                        <p className="text-[10px] text-neutral-500 font-medium mt-1">
+                          {t.purposeField}: <span className="text-neutral-800 font-bold">{rep.destination}</span>
+                        </p>
+                      )}
                     </div>
                     <span className="text-[10px] bg-neutral-50 font-bold px-2 py-0.5 rounded border border-neutral-200 text-neutral-500 flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-neutral-400" /> {rep.date}
                     </span>
                   </div>
 
+                  {!isOther && (
+                    <p className="text-[10px] text-neutral-500 font-medium mb-2.5">
+                      {t.referralLinkField}: <span className="text-neutral-800 font-bold">{rep.destination}</span>
+                    </p>
+                  )}
+
                   <div className="grid grid-cols-3 gap-2 py-1 text-[11px]">
                     <div>
                       <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">{t.platformColumn}</span>
-                      <span className="font-bold text-neutral-800">{rep.platform}</span>
+                      <span className="font-bold text-neutral-800">
+                        {isOther ? '—' : rep.platform}
+                      </span>
                     </div>
                     <div>
-                      <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">{t.slotsColumn} x {t.priceColumn}</span>
-                      <span className="font-bold text-neutral-800">{rep.slotsCount} x {rep.pricePerSlot}</span>
+                      <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">
+                        {isOther ? t.sumField : `${t.slotsColumn} x ${t.priceColumn}`}
+                      </span>
+                      <span className="font-bold text-neutral-800">
+                        {isOther ? `${rep.totalAmount}` : `${rep.slotsCount} x ${rep.pricePerSlot}`}
+                      </span>
                     </div>
                     <div>
                       <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">{t.totalSumColumn}</span>

@@ -19,9 +19,21 @@ import CodeViewer from './components/CodeViewer';
 import { Language } from './translations';
 import {
   fetchAllowedUsers,
-  addAllowedUser,
-  removeAllowedUser,
-} from './services/allowedUsersApi';
+  createAllowedUser,
+  deleteAllowedUser,
+  fetchProjects,
+  createProject,
+  deleteProject,
+  fetchIntegrations,
+  createIntegration,
+  updateIntegration,
+  deleteIntegration,
+  fetchReports,
+  createReport,
+  fetchSubmissions,
+  createSubmission,
+  resetDatabase,
+} from './services/api';
 
 import {
   Project,
@@ -29,10 +41,6 @@ import {
   Report,
   BloggerSubmission,
   AllowedUser,
-  INITIAL_PROJECTS,
-  INITIAL_INTEGRATIONS,
-  INITIAL_REPORTS,
-  INITIAL_SUBMISSIONS,
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
@@ -53,6 +61,7 @@ export default function App() {
   // Whitelisted Users & Role State (shared server-side list)
   const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>(INITIAL_ALLOWED_USERS);
   const [allowedUsersLoading, setAllowedUsersLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(() => {
     return localStorage.getItem('ff_user_email');
@@ -69,12 +78,12 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'blogger' | 'code' | 'access'>('projects');
 
   const handleAddUser = async (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
-    const newUser = await addAllowedUser(email, role);
+    const newUser = await createAllowedUser(email, role);
     setAllowedUsers((prev) => [...prev, newUser]);
   };
 
   const handleRemoveUser = async (id: string) => {
-    await removeAllowedUser(id);
+    await deleteAllowedUser(id);
     setAllowedUsers((prev) => prev.filter((u) => u.id !== id));
   };
 
@@ -100,26 +109,44 @@ export default function App() {
     integrationId?: string;
   }>({});
 
-  // Core Persistent State Hook (Persisting data to client localStorage)
+  // Core Persistent State Hook (Persisting data to server database)
   const [projects, setProjects] = useState<Project[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [submissions, setSubmissions] = useState<BloggerSubmission[]>([]);
 
-  // Load shared whitelist from server
+  // Load all data from server
   useEffect(() => {
     let cancelled = false;
 
-    fetchAllowedUsers()
-      .then((users) => {
-        if (!cancelled) setAllowedUsers(users);
-      })
-      .catch(() => {
-        if (!cancelled) setAllowedUsers(INITIAL_ALLOWED_USERS);
-      })
-      .finally(() => {
-        if (!cancelled) setAllowedUsersLoading(false);
-      });
+    async function loadData() {
+      try {
+        const [users, projs, ints, reps, subs] = await Promise.all([
+          fetchAllowedUsers(),
+          fetchProjects(),
+          fetchIntegrations(),
+          fetchReports(),
+          fetchSubmissions()
+        ]);
+
+        if (!cancelled) {
+          setAllowedUsers(users);
+          setProjects(projs);
+          setIntegrations(ints);
+          setReports(reps);
+          setSubmissions(subs);
+        }
+      } catch (err) {
+        console.error("Failed to load backend data", err);
+      } finally {
+        if (!cancelled) {
+          setAllowedUsersLoading(false);
+          setLoading(false);
+        }
+      }
+    }
+
+    loadData();
 
     return () => {
       cancelled = true;
@@ -145,161 +172,45 @@ export default function App() {
     }
   }, [allowedUsers, allowedUsersLoading, currentUserEmail, currentUserRole]);
 
-  // Load from LocalStorage or initialize with mock data
-  useEffect(() => {
-    const cachedProjects = localStorage.getItem('ff_projects');
-    const cachedIntegrations = localStorage.getItem('ff_integrations');
-    const cachedReports = localStorage.getItem('ff_reports');
-    const cachedSubmissions = localStorage.getItem('ff_submissions');
-
-    if (cachedProjects) setProjects(JSON.parse(cachedProjects));
-    else {
-      setProjects(INITIAL_PROJECTS);
-      localStorage.setItem('ff_projects', JSON.stringify(INITIAL_PROJECTS));
-    }
-
-    if (cachedIntegrations) setIntegrations(JSON.parse(cachedIntegrations));
-    else {
-      setIntegrations(INITIAL_INTEGRATIONS);
-      localStorage.setItem('ff_integrations', JSON.stringify(INITIAL_INTEGRATIONS));
-    }
-
-    if (cachedReports) setReports(JSON.parse(cachedReports));
-    else {
-      setReports(INITIAL_REPORTS);
-      localStorage.setItem('ff_reports', JSON.stringify(INITIAL_REPORTS));
-    }
-
-    if (cachedSubmissions) setSubmissions(JSON.parse(cachedSubmissions));
-    else {
-      setSubmissions(INITIAL_SUBMISSIONS);
-      localStorage.setItem('ff_submissions', JSON.stringify(INITIAL_SUBMISSIONS));
-    }
-  }, []);
-
-  // Update localStorage when state changes
-  const saveProjects = (newProjects: Project[]) => {
-    setProjects(newProjects);
-    localStorage.setItem('ff_projects', JSON.stringify(newProjects));
-  };
-
-  const saveIntegrations = (newIntegrations: Integration[]) => {
-    setIntegrations(newIntegrations);
-    localStorage.setItem('ff_integrations', JSON.stringify(newIntegrations));
-  };
-
-  const saveReports = (newReports: Report[]) => {
-    setReports(newReports);
-    localStorage.setItem('ff_reports', JSON.stringify(newReports));
-  };
-
-  const saveSubmissions = (newSubmissions: BloggerSubmission[]) => {
-    setSubmissions(newSubmissions);
-    localStorage.setItem('ff_submissions', JSON.stringify(newSubmissions));
-  };
-
   // State manipulation handlers
-  const handleAddProject = (newProj: Omit<Project, 'id' | 'createdAt'>) => {
-    const project: Project = {
-      ...newProj,
-      id: `proj-${Date.now()}`,
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    saveProjects([...projects, project]);
+  const handleAddProject = async (newProj: Omit<Project, 'id' | 'createdAt'>) => {
+    const project = await createProject(newProj.name, newProj.description);
+    setProjects((prev) => [...prev, project]);
   };
 
-  const handleDeleteProject = (projectId: string) => {
-    const remainingProj = projects.filter(p => p.id !== projectId);
-    saveProjects(remainingProj);
-    // Cascade delete integrations
-    const remainingInt = integrations.filter(i => i.projectId !== projectId);
-    saveIntegrations(remainingInt);
+  const handleDeleteProject = async (projectId: string) => {
+    await deleteProject(projectId);
+    const projs = await fetchProjects();
+    const ints = await fetchIntegrations();
+    setProjects(projs);
+    setIntegrations(ints);
   };
 
-  const handleAddIntegration = (newInt: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount'>) => {
-    const totalAmt = newInt.pricePerSlot * newInt.slotsCount;
-    const paidSlots = newInt.paidSlotsCount !== undefined ? newInt.paidSlotsCount : newInt.slotsCount;
-    const paidAmt = newInt.pricePerSlot * paidSlots;
-    const cleanBloggerName = newInt.bloggerName.replace(/[@#]/g, '').trim();
-    const token = `tok_${Date.now()}_${cleanBloggerName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-    const integration: Integration = {
-      ...newInt,
-      id: `int-${Date.now()}`,
-      paidSlotsCount: paidSlots,
-      paidAmount: paidAmt,
-      totalAmount: totalAmt,
-      bloggerCabinetToken: token
-    };
-    saveIntegrations([...integrations, integration]);
+  const handleAddIntegration = async (newInt: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'>) => {
+    const integration = await createIntegration(newInt);
+    setIntegrations((prev) => [...prev, integration]);
   };
 
-  const handleEditIntegration = (id: string, updatedFields: Partial<Integration>) => {
-    const updatedInts = integrations.map(item => {
-      if (item.id === id) {
-        const merged = { ...item, ...updatedFields };
-        merged.totalAmount = merged.pricePerSlot * merged.slotsCount;
-        merged.paidAmount = merged.pricePerSlot * (merged.paidSlotsCount !== undefined ? merged.paidSlotsCount : merged.slotsCount);
-        return merged;
-      }
-      return item;
-    });
-    saveIntegrations(updatedInts);
+  const handleEditIntegration = async (id: string, updatedFields: Partial<Integration>) => {
+    const integration = await updateIntegration(id, updatedFields);
+    setIntegrations((prev) => prev.map(item => item.id === id ? integration : item));
   };
 
-  const handleDeleteIntegration = (id: string) => {
-    saveIntegrations(integrations.filter(i => i.id !== id));
+  const handleDeleteIntegration = async (id: string) => {
+    await deleteIntegration(id);
+    setIntegrations((prev) => prev.filter(i => i.id !== id));
   };
 
-  const handleAddReport = (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => {
-    const totalAmt = newRep.slotsCount * newRep.pricePerSlot;
-    const paidAmt = newRep.paidSlotsCount * newRep.pricePerSlot;
-    
-    const report: Report = {
-      ...newRep,
-      id: `rep-${Date.now()}`,
-      paidAmount: paidAmt,
-      totalAmount: totalAmt
-    };
-
-    // Auto-create Integration record as requested by user
-    const cleanBloggerName = newRep.channelBlogger.replace(/[@#]/g, '').trim();
-    const token = `tok_${Date.now()}_${cleanBloggerName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-    const referralLink = `https://fluenceflow.net/p/${newRep.projectId}?utm_source=${cleanBloggerName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-    
-    const startDate = newRep.date;
-    const parsedDate = new Date(startDate);
-    parsedDate.setDate(parsedDate.getDate() + 14);
-    const endDate = parsedDate.toISOString().split('T')[0];
-
-    const integration: Integration = {
-      id: `int-${Date.now()}`,
-      projectId: newRep.projectId,
-      bloggerName: cleanBloggerName,
-      startDate,
-      platform: newRep.platform,
-      referralLink,
-      pricePerSlot: newRep.pricePerSlot,
-      slotsCount: newRep.slotsCount,
-      paidSlotsCount: newRep.paidSlotsCount,
-      paidAmount: paidAmt,
-      totalAmount: totalAmt,
-      endDate,
-      status: 'active',
-      bloggerCabinetToken: token,
-      slotsConfig: newRep.slotsConfig
-    };
-
-    saveReports([report, ...reports]);
-    saveIntegrations([integration, ...integrations]);
+  const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => {
+    const report = await createReport(newRep);
+    setReports((prev) => [report, ...prev]);
+    const ints = await fetchIntegrations();
+    setIntegrations(ints);
   };
 
-  const handleAddSubmission = (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'>) => {
-    const submission: BloggerSubmission = {
-      ...newSub,
-      id: `sub-${Date.now()}`,
-      submittedAt: new Date().toISOString()
-    };
-    saveSubmissions([submission, ...submissions]);
+  const handleAddSubmission = async (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'>) => {
+    const submission = await createSubmission(newSub.integrationId, newSub.data);
+    setSubmissions((prev) => [submission, ...prev]);
   };
 
   // URL Simulator router check
@@ -333,19 +244,31 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleUrlSim);
   }, []);
 
-  // Soft Reset to factory initial states
-  const handleResetToFactory = () => {
-    if (confirm("Reset simulator database back to initial campaign demos?")) {
-      localStorage.clear();
-      setProjects(INITIAL_PROJECTS);
-      setIntegrations(INITIAL_INTEGRATIONS);
-      setReports(INITIAL_REPORTS);
-      setSubmissions(INITIAL_SUBMISSIONS);
-      localStorage.setItem('ff_projects', JSON.stringify(INITIAL_PROJECTS));
-      localStorage.setItem('ff_integrations', JSON.stringify(INITIAL_INTEGRATIONS));
-      localStorage.setItem('ff_reports', JSON.stringify(INITIAL_REPORTS));
-      localStorage.setItem('ff_submissions', JSON.stringify(INITIAL_SUBMISSIONS));
-      window.location.reload();
+  // Database Reset handler
+  const handleResetToFactory = async () => {
+    if (confirm("Reset simulator database back to initial campaign defaults?")) {
+      setLoading(true);
+      try {
+        await resetDatabase();
+        const [users, projs, ints, reps, subs] = await Promise.all([
+          fetchAllowedUsers(),
+          fetchProjects(),
+          fetchIntegrations(),
+          fetchReports(),
+          fetchSubmissions()
+        ]);
+        setAllowedUsers(users);
+        setProjects(projs);
+        setIntegrations(ints);
+        setReports(reps);
+        setSubmissions(subs);
+        alert("Database successfully reset!");
+      } catch (err) {
+        console.error("Reset failed", err);
+        alert("Reset failed. Check server logs.");
+      } finally {
+        setLoading(false);
+      }
     }
   };
 

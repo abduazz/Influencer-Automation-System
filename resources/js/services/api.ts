@@ -1,0 +1,103 @@
+import { Project, Integration, Report, BloggerSubmission, AllowedUser } from '../data/mockData';
+
+// Fetch helper that handles errors
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...(options?.headers || {}),
+    },
+  });
+
+  if (!res.ok) {
+    let errMsg = res.statusText;
+    try {
+      const data = await res.json();
+      errMsg = data.message || data.error || res.statusText;
+    } catch {}
+    throw new Error(errMsg);
+  }
+
+  if (res.status === 204) {
+    return null as unknown as T;
+  }
+
+  return res.json();
+}
+
+// Projects API
+export function fetchProjects(): Promise<Project[]> {
+  return request<Project[]>('/api/projects');
+}
+export function createProject(name: string, description: string): Promise<Project> {
+  return request<Project>('/api/projects', {
+    method: 'POST',
+    body: JSON.stringify({ name, description }),
+  });
+}
+export function deleteProject(id: string): Promise<void> {
+  return request<void>(`/api/projects/${id}`, { method: 'DELETE' });
+}
+
+// Integrations API
+export function fetchIntegrations(): Promise<Integration[]> {
+  return request<Integration[]>('/api/integrations');
+}
+export function createIntegration(data: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'>): Promise<Integration> {
+  return request<Integration>('/api/integrations', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+export function updateIntegration(id: string, data: Partial<Integration>): Promise<Integration> {
+  return request<Integration>(`/api/integrations/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+export function deleteIntegration(id: string): Promise<void> {
+  return request<void>(`/api/integrations/${id}`, { method: 'DELETE' });
+}
+
+// Reports API
+export function fetchReports(): Promise<Report[]> {
+  return request<Report[]>('/api/reports');
+}
+export function createReport(data: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>): Promise<Report> {
+  return request<Report>('/api/reports', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// Submissions API
+export function fetchSubmissions(): Promise<BloggerSubmission[]> {
+  return request<BloggerSubmission[]>('/api/blogger-submissions');
+}
+export function createSubmission(integrationId: string, data: Record<string, string>): Promise<BloggerSubmission> {
+  return request<BloggerSubmission>('/api/blogger-submissions', {
+    method: 'POST',
+    body: JSON.stringify({ integrationId, data }),
+  });
+}
+
+// Whitelisted Users API
+export function fetchAllowedUsers(): Promise<AllowedUser[]> {
+  return request<AllowedUser[]>('/api/allowed-users');
+}
+export function createAllowedUser(email: string, role: AllowedUser['role']): Promise<AllowedUser> {
+  return request<AllowedUser>('/api/allowed-users', {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+  });
+}
+export function deleteAllowedUser(id: string): Promise<void> {
+  return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
+}
+
+// Database Reset API
+export function resetDatabase(): Promise<{ message: string }> {
+  return request<{ message: string }>('/api/reset', { method: 'POST' });
+}

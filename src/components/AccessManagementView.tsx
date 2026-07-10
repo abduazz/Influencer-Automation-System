@@ -10,8 +10,8 @@ import { Users, UserPlus, Shield, Mail, Trash2, Key, Info } from 'lucide-react';
 
 interface AccessManagementViewProps {
   allowedUsers: AllowedUser[];
-  onAddUser: (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => void;
-  onRemoveUser: (id: string) => void;
+  onAddUser: (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => Promise<void>;
+  onRemoveUser: (id: string) => Promise<void>;
   currentUserEmail: string;
   lang: Language;
 }
@@ -31,7 +31,7 @@ export default function AccessManagementView({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -53,17 +53,31 @@ export default function AccessManagementView({
       return;
     }
 
-    onAddUser(cleanEmail, role);
-    setEmail('');
-    setSuccessMsg(t.addSuccessToast.replace('{email}', cleanEmail));
-    
-    // Clear success message after 4s
-    setTimeout(() => {
-      setSuccessMsg(null);
-    }, 4000);
+    try {
+      await onAddUser(cleanEmail, role);
+      setEmail('');
+      setSuccessMsg(t.addSuccessToast.replace('{email}', cleanEmail));
+
+      setTimeout(() => {
+        setSuccessMsg(null);
+      }, 4000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      if (message.toLowerCase().includes('already exists')) {
+        setErrorMsg(t.emailAlreadyExists);
+      } else {
+        setErrorMsg(
+          lang === 'ru'
+            ? 'Не удалось сохранить доступ. Проверьте подключение к серверу.'
+            : lang === 'uz'
+            ? 'Ruxsatni saqlab bo‘lmadi. Server bilan ulanishni tekshiring.'
+            : 'Failed to save access. Please check server connection.'
+        );
+      }
+    }
   };
 
-  const handleDelete = (user: AllowedUser) => {
+  const handleDelete = async (user: AllowedUser) => {
     setErrorMsg(null);
     setSuccessMsg(null);
 
@@ -79,12 +93,22 @@ export default function AccessManagementView({
       : `Are you sure you want to revoke access for ${user.email}?`;
 
     if (confirm(confirmMsg)) {
-      onRemoveUser(user.id);
-      setSuccessMsg(t.removeSuccessToast);
-      
-      setTimeout(() => {
-        setSuccessMsg(null);
-      }, 4000);
+      try {
+        await onRemoveUser(user.id);
+        setSuccessMsg(t.removeSuccessToast);
+
+        setTimeout(() => {
+          setSuccessMsg(null);
+        }, 4000);
+      } catch {
+        setErrorMsg(
+          lang === 'ru'
+            ? 'Не удалось удалить доступ. Проверьте подключение к серверу.'
+            : lang === 'uz'
+            ? 'Ruxsatni o‘chirib bo‘lmadi. Server bilan ulanishni tekshiring.'
+            : 'Failed to revoke access. Please check server connection.'
+        );
+      }
     }
   };
 

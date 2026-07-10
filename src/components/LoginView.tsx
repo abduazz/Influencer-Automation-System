@@ -10,6 +10,7 @@ import { ShieldAlert, Globe, Radio, Mail, KeyRound } from 'lucide-react';
 
 interface LoginViewProps {
   allowedUsers: AllowedUser[];
+  allowedUsersLoading?: boolean;
   onLoginSuccess: (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => void;
   lang: Language;
   setLang: (lang: Language) => void;
@@ -17,6 +18,7 @@ interface LoginViewProps {
 
 export default function LoginView({
   allowedUsers,
+  allowedUsersLoading = false,
   onLoginSuccess,
   lang,
   setLang,
@@ -32,6 +34,8 @@ export default function LoginView({
 
     const cleanEmail = emailInput.trim().toLowerCase();
     if (!cleanEmail) return;
+
+    if (allowedUsersLoading) return;
 
     // Search email in the whitelist
     const foundUser = allowedUsers.find((u) => u.email.toLowerCase() === cleanEmail);
@@ -121,10 +125,13 @@ export default function LoginView({
 
             <button
               type="submit"
-              className="w-full bg-black hover:bg-neutral-800 text-white font-extrabold text-xs py-3 rounded-xl transition duration-150 shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+              disabled={allowedUsersLoading}
+              className="w-full bg-black hover:bg-neutral-800 disabled:bg-neutral-400 disabled:cursor-not-allowed text-white font-extrabold text-xs py-3 rounded-xl transition duration-150 shadow-xs flex items-center justify-center gap-2 cursor-pointer"
             >
               <KeyRound className="w-4 h-4" />
-              {t.loginBtn}
+              {allowedUsersLoading
+                ? (lang === 'ru' ? 'Загрузка...' : lang === 'uz' ? 'Yuklanmoqda...' : 'Loading...')
+                : t.loginBtn}
             </button>
           </form>
         </div>

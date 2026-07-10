@@ -17,6 +17,11 @@ import AccessManagementView from './components/AccessManagementView';
 import LoginView from './components/LoginView';
 import CodeViewer from './components/CodeViewer';
 import { Language } from './translations';
+import {
+  fetchAllowedUsers,
+  addAllowedUser,
+  removeAllowedUser,
+} from './services/allowedUsersApi';
 
 import {
   Project,
@@ -45,12 +50,9 @@ export default function App() {
     localStorage.setItem('ff_lang', newLang);
   };
 
-  // Whitelisted Users & Role State
-  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>(() => {
-    const cached = localStorage.getItem('ff_allowed_users');
-    if (cached) return JSON.parse(cached);
-    return INITIAL_ALLOWED_USERS;
-  });
+  // Whitelisted Users & Role State (shared server-side list)
+  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>(INITIAL_ALLOWED_USERS);
+  const [allowedUsersLoading, setAllowedUsersLoading] = useState(true);
 
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(() => {
     return localStorage.getItem('ff_user_email');
@@ -60,40 +62,20 @@ export default function App() {
     const cachedRole = localStorage.getItem('ff_user_role');
     if (cachedRole) return cachedRole as any;
 
-    const email = localStorage.getItem('ff_user_email');
-    if (email) {
-      const cachedUsers = localStorage.getItem('ff_allowed_users');
-      const usersList: AllowedUser[] = cachedUsers ? JSON.parse(cachedUsers) : INITIAL_ALLOWED_USERS;
-      const found = usersList.find((u) => u.email.toLowerCase() === email.toLowerCase());
-      if (found) {
-        localStorage.setItem('ff_user_role', found.role);
-        return found.role;
-      }
-    }
     return null;
   });
 
   // Navigation Tabs State
   const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'blogger' | 'code' | 'access'>('projects');
 
-  // Whitelist operations helper
-  const saveAllowedUsers = (newUsers: AllowedUser[]) => {
-    setAllowedUsers(newUsers);
-    localStorage.setItem('ff_allowed_users', JSON.stringify(newUsers));
+  const handleAddUser = async (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
+    const newUser = await addAllowedUser(email, role);
+    setAllowedUsers((prev) => [...prev, newUser]);
   };
 
-  const handleAddUser = (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
-    const newUser: AllowedUser = {
-      id: `user-${Date.now()}`,
-      email,
-      role,
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    saveAllowedUsers([...allowedUsers, newUser]);
-  };
-
-  const handleRemoveUser = (id: string) => {
-    saveAllowedUsers(allowedUsers.filter(u => u.id !== id));
+  const handleRemoveUser = async (id: string) => {
+    await removeAllowedUser(id);
+    setAllowedUsers((prev) => prev.filter((u) => u.id !== id));
   };
 
   const handleLoginSuccess = (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
@@ -123,6 +105,45 @@ export default function App() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [submissions, setSubmissions] = useState<BloggerSubmission[]>([]);
+
+  // Load shared whitelist from server
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchAllowedUsers()
+      .then((users) => {
+        if (!cancelled) setAllowedUsers(users);
+      })
+      .catch(() => {
+        if (!cancelled) setAllowedUsers(INITIAL_ALLOWED_USERS);
+      })
+      .finally(() => {
+        if (!cancelled) setAllowedUsersLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Validate active session against the shared whitelist
+  useEffect(() => {
+    if (allowedUsersLoading || !currentUserEmail) return;
+
+    const found = allowedUsers.find(
+      (u) => u.email.toLowerCase() === currentUserEmail.toLowerCase()
+    );
+
+    if (!found) {
+      handleLogout();
+      return;
+    }
+
+    if (found.role !== currentUserRole) {
+      setCurrentUserRole(found.role);
+      localStorage.setItem('ff_user_role', found.role);
+    }
+  }, [allowedUsers, allowedUsersLoading, currentUserEmail, currentUserRole]);
 
   // Load from LocalStorage or initialize with mock data
   useEffect(() => {
@@ -320,12 +341,10 @@ export default function App() {
       setIntegrations(INITIAL_INTEGRATIONS);
       setReports(INITIAL_REPORTS);
       setSubmissions(INITIAL_SUBMISSIONS);
-      setAllowedUsers(INITIAL_ALLOWED_USERS);
       localStorage.setItem('ff_projects', JSON.stringify(INITIAL_PROJECTS));
       localStorage.setItem('ff_integrations', JSON.stringify(INITIAL_INTEGRATIONS));
       localStorage.setItem('ff_reports', JSON.stringify(INITIAL_REPORTS));
       localStorage.setItem('ff_submissions', JSON.stringify(INITIAL_SUBMISSIONS));
-      localStorage.setItem('ff_allowed_users', JSON.stringify(INITIAL_ALLOWED_USERS));
       window.location.reload();
     }
   };
@@ -335,6 +354,7 @@ export default function App() {
     return (
       <LoginView
         allowedUsers={allowedUsers}
+        allowedUsersLoading={allowedUsersLoading}
         onLoginSuccess={handleLoginSuccess}
         lang={lang}
         setLang={handleSetLang}

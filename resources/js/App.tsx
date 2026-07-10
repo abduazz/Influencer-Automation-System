@@ -76,6 +76,7 @@ export default function App() {
 
   // Navigation Tabs State
   const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'blogger' | 'code' | 'access'>('projects');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
 
   const handleAddUser = async (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
     const newUser = await createAllowedUser(email, role);
@@ -286,9 +287,11 @@ export default function App() {
   }
 
   return (
-    <div className="flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans">
+    <div className={`flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* Dynamic Navigation Rail Sidebar */}
       <Sidebar 
+        isCollapsed={isSidebarCollapsed}
+        setIsCollapsed={setIsSidebarCollapsed}
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
         projectsCount={projects.length}

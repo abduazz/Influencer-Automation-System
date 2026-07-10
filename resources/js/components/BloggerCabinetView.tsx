@@ -75,6 +75,7 @@ export default function BloggerCabinetView({
   const [filePreviews, setFilePreviews] = useState<Record<string, string>>({});
 
   const [formSubmitted, setFormSubmitted] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Re-initialize form data state when platform or slots count changes
   useEffect(() => {
@@ -86,6 +87,7 @@ export default function BloggerCabinetView({
     setFormData(initialData);
     setFilePreviews(initialPreviews);
     setFormSubmitted(false);
+    setShowConfirm(false);
   }, [activePlatform, activeSlotsCount]);
 
   // Handle file picker simulation
@@ -127,7 +129,11 @@ export default function BloggerCabinetView({
       return;
     }
 
-    // Filter submitted data to only contain paid slots
+    setShowConfirm(true);
+  };
+
+  const handleFinalSubmit = () => {
+    const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
     const submittedPayload: Record<string, string> = {};
     for (let i = 1; i <= maxPaid; i++) {
       const key = `slot_${i}`;
@@ -141,6 +147,7 @@ export default function BloggerCabinetView({
     });
 
     setFormSubmitted(true);
+    setShowConfirm(false);
   };
 
   return (
@@ -309,6 +316,66 @@ export default function BloggerCabinetView({
                   >
                     {t.resubmitBtn}
                   </button>
+                </div>
+              ) : showConfirm ? (
+                /* Confirmation Review Screen */
+                <div className="space-y-4 max-w-xl mx-auto w-full text-left">
+                  <div className="text-center">
+                    <h2 className="text-base font-black text-black tracking-tight">
+                      {lang === 'ru' ? 'Подтверждение отправки' : lang === 'uz' ? 'Yuborishni tasdiqlash' : 'Confirm Submission'}
+                    </h2>
+                    <p className="text-xs text-neutral-500 mt-1">
+                      {lang === 'ru' ? 'Пожалуйста, проверьте правильность введенных ссылок. После отправки редактирование невозможно.' : 
+                       lang === 'uz' ? 'Iltimos, kiritilgan havolalar to‘g‘riligini tekshiring. Yuborilganidan so‘ng tahrirlab bo‘lmaydi.' : 
+                       'Please review your links. You will not be able to modify them after submission.'}
+                    </p>
+                  </div>
+
+                  <div className="p-4 bg-white border border-neutral-200 rounded-xl space-y-3 shadow-2xs">
+                    {Array.from({ length: activeSlotsCount }).map((_, index) => {
+                      const slotNum = index + 1;
+                      const slotKey = `slot_${slotNum}`;
+                      const slotConfig = selectedIntegration?.slotsConfig?.[index];
+                      const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
+                      const slotFormat = slotConfig ? slotConfig.format : (activePlatform === 'Instagram' ? 'Stories' : activePlatform === 'Telegram' ? 'Post' : 'Release');
+                      const isPaid = selectedIntegration 
+                        ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
+                        : true;
+
+                      if (!isPaid) return null;
+
+                      return (
+                        <div key={slotKey} className="flex justify-between items-center py-1.5 border-b border-neutral-100 last:border-0 last:pb-0 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-neutral-700">Слот #{slotNum}:</span>
+                            <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 uppercase">
+                              {slotPlatform} - {slotFormat}
+                            </span>
+                          </div>
+                          <span className="font-mono text-black truncate max-w-[240px] select-all font-bold">
+                            {formData[slotKey] || '—'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirm(false)}
+                      className="flex-1 py-2.5 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
+                    >
+                      {lang === 'ru' ? 'Назад / Изменить' : lang === 'uz' ? 'Orqaga / O‘zgartirish' : 'Back / Edit'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleFinalSubmit}
+                      className="flex-1 py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition cursor-pointer"
+                    >
+                      {lang === 'ru' ? 'Подтверждаю отправку' : lang === 'uz' ? 'Yuborishni tasdiqlayman' : 'Confirm & Submit'}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 /* Interactive Submission Form */

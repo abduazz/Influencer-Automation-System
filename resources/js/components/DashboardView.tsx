@@ -499,18 +499,19 @@ export default function DashboardView({
                         {/* Actions */}
                         <td className="py-3.5 px-6 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Copyable link simulation */}
-                            <button
-                              onClick={() => {
-                                const generatedUrl = `${window.location.origin}/?cabinet=true&platform=${item.platform}&slots_count=${item.slotsCount}&id=${item.id}`;
-                                navigator.clipboard.writeText(generatedUrl);
-                                alert(`${t.copiedAlert}\n\n${generatedUrl}`);
+                            {/* Pre-filled copyable Blogger URL input */}
+                            <input
+                              type="text"
+                              readOnly
+                              value={`${window.location.origin}/?cabinet=true&platform=${item.platform}&slots_count=${item.slotsCount}&id=${item.id}`}
+                              onClick={(e) => {
+                                const target = e.target as HTMLInputElement;
+                                target.select();
+                                navigator.clipboard.writeText(target.value);
                               }}
-                              className="text-[10px] font-bold text-black hover:text-white bg-white hover:bg-black border border-neutral-300 hover:border-black px-2 py-1 rounded transition duration-150 animate-none shadow-2xs"
-                              title={t.copyTooltip}
-                            >
-                              Blogger URL
-                            </button>
+                              className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-600 rounded px-2 py-1 text-[9px] font-mono focus:outline-none focus:border-black cursor-pointer text-left w-48 truncate transition duration-150"
+                              title="Click to copy link"
+                            />
 
                             <button
                               onClick={() => openEditIntegration(item)}

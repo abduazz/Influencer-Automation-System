@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   FolderKanban, 
   FilePlus, 
@@ -13,7 +13,9 @@ import {
   Globe,
   Shield,
   LogOut,
-  User
+  User,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
@@ -27,6 +29,8 @@ interface SidebarProps {
   userEmail: string;
   userRole: 'super_admin' | 'pr_manager' | 'product_manager';
   onLogout: () => void;
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
 }
 
 export default function Sidebar({ 
@@ -38,67 +42,91 @@ export default function Sidebar({
   setLang,
   userEmail,
   userRole,
-  onLogout
+  onLogout,
+  isCollapsed,
+  setIsCollapsed
 }: SidebarProps) {
   const t = translations[lang];
 
   return (
-    <aside className="w-80 bg-white border-r border-neutral-200 flex flex-col justify-between h-screen sticky top-0 text-neutral-800">
+    <aside className={`bg-white border-r border-neutral-200 flex flex-col justify-between h-screen sticky top-0 text-neutral-800 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-80'}`}>
       {/* Upper Brand */}
-      <div className="p-6">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-8 h-8 rounded-md bg-black flex items-center justify-center font-bold text-white">
-            <Radio className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h1 className="font-black text-black text-lg tracking-tight animate-pulse">
-              FluenceFlow
-            </h1>
-            <p className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">
-              Campaign Manager
-            </p>
-          </div>
+      <div className={`p-6 ${isCollapsed ? 'flex flex-col items-center' : ''}`}>
+        <div className={`flex ${isCollapsed ? 'flex-col gap-4' : 'items-center justify-between'} mb-8 w-full`}>
+          {!isCollapsed ? (
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-md bg-black flex items-center justify-center font-bold text-white shrink-0">
+                <Radio className="w-4 h-4 text-white" />
+              </div>
+              <div className="overflow-hidden">
+                <h1 className="font-black text-black text-lg tracking-tight animate-pulse truncate">
+                  FluenceFlow
+                </h1>
+                <p className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider truncate">
+                  Campaign Manager
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="w-8 h-8 rounded-md bg-black flex items-center justify-center font-bold text-white shrink-0">
+              <Radio className="w-4 h-4 text-white" />
+            </div>
+          )}
+          
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="p-1.5 hover:bg-neutral-100 rounded-lg text-neutral-400 hover:text-black transition duration-150 cursor-pointer"
+            title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </button>
         </div>
 
         {/* Main Navigation Menu */}
-        <nav className="space-y-1.5">
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest pl-3 mb-2">
-            {t.workspace}
-          </p>
+        <nav className="space-y-1.5 w-full">
+          {!isCollapsed && (
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest pl-3 mb-2">
+              {t.workspace}
+            </p>
+          )}
 
           <button
             id="nav-projects-btn"
             onClick={() => setActiveTab('projects')}
-            className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
               activeTab === 'projects'
                 ? 'bg-black text-white'
                 : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
             }`}
+            title={t.projectsAndIntegrations}
           >
             <div className="flex items-center gap-3.5">
               <FolderKanban className="w-4 h-4" />
-              <span>{t.projectsAndIntegrations}</span>
+              {!isCollapsed && <span>{t.projectsAndIntegrations}</span>}
             </div>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              activeTab === 'projects' ? 'bg-neutral-800 text-white' : 'bg-neutral-100 text-neutral-600'
-            }`}>
-              {projectsCount}
-            </span>
+            {!isCollapsed && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                activeTab === 'projects' ? 'bg-neutral-800 text-white' : 'bg-neutral-100 text-neutral-600'
+              }`}>
+                {projectsCount}
+              </span>
+            )}
           </button>
 
           {userRole !== 'product_manager' && (
             <button
               id="nav-reports-btn"
               onClick={() => setActiveTab('reports')}
-              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
                 activeTab === 'reports'
                   ? 'bg-black text-white'
                   : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
               }`}
+              title={t.createReport}
             >
               <div className="flex items-center gap-3.5">
                 <FilePlus className="w-4 h-4" />
-                <span>{t.createReport}</span>
+                {!isCollapsed && <span>{t.createReport}</span>}
               </div>
             </button>
           )}
@@ -107,37 +135,43 @@ export default function Sidebar({
             <button
               id="nav-access-btn"
               onClick={() => setActiveTab('access')}
-              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
                 activeTab === 'access'
                   ? 'bg-black text-white'
                   : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
               }`}
+              title={t.accessTab}
             >
               <div className="flex items-center gap-3.5">
                 <Shield className="w-4 h-4" />
-                <span>{t.accessTab}</span>
+                {!isCollapsed && <span>{t.accessTab}</span>}
               </div>
             </button>
           )}
 
           {userRole === 'super_admin' && (
             <>
-              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest pl-3 pt-6 mb-2">
-                {t.bloggerPortal}
-              </p>
+              {!isCollapsed ? (
+                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest pl-3 pt-6 mb-2">
+                  {t.bloggerPortal}
+                </p>
+              ) : (
+                <div className="border-t border-neutral-100 my-4 w-full" />
+              )}
 
               <button
                 id="nav-blogger-btn"
                 onClick={() => setActiveTab('blogger')}
-                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
                   activeTab === 'blogger'
                     ? 'bg-black text-white'
                     : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
                 }`}
+                title={t.bloggerWorkCabinet}
               >
                 <div className="flex items-center gap-3.5">
                   <UserSquare2 className="w-4 h-4" />
-                  <span>{t.bloggerWorkCabinet}</span>
+                  {!isCollapsed && <span>{t.bloggerWorkCabinet}</span>}
                 </div>
               </button>
             </>
@@ -147,12 +181,14 @@ export default function Sidebar({
 
       <div>
         {/* Language Switcher */}
-        <div className="px-6 py-4 border-t border-neutral-100 bg-neutral-50/30">
-          <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-2.5">
-            <Globe className="w-3.5 h-3.5" />
-            <span>{t.language}</span>
-          </div>
-          <div className="grid grid-cols-3 gap-1 bg-neutral-100 p-1 rounded-lg">
+        <div className={`py-4 border-t border-neutral-100 bg-neutral-50/30 ${isCollapsed ? 'px-2' : 'px-6'}`}>
+          {!isCollapsed && (
+            <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-2.5">
+              <Globe className="w-3.5 h-3.5" />
+              <span>{t.language}</span>
+            </div>
+          )}
+          <div className={`grid ${isCollapsed ? 'grid-cols-1 gap-1' : 'grid-cols-3 gap-1'} bg-neutral-100 p-1 rounded-lg`}>
             {(['ru', 'uz', 'en'] as const).map((l) => (
               <button
                 key={l}
@@ -170,33 +206,51 @@ export default function Sidebar({
         </div>
 
         {/* Profile Card and Logout */}
-        <div className="p-4 border-t border-neutral-100 bg-neutral-50/50 text-left">
-          <div className="flex items-center justify-between gap-2 bg-white border border-neutral-200/60 p-3 rounded-xl shadow-2xs">
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold shrink-0">
+        <div className={`p-4 border-t border-neutral-100 bg-neutral-50/50 text-left ${isCollapsed ? 'flex flex-col items-center gap-3' : ''}`}>
+          {isCollapsed ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold shrink-0" title={userEmail}>
                 <User className="w-4 h-4" />
               </div>
-              <div className="overflow-hidden">
-                <h4 className="text-[11px] font-black text-neutral-900 truncate leading-tight" title={userEmail}>
-                  {userEmail}
-                </h4>
-                <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider leading-none mt-1">
-                  {userRole === 'super_admin' ? t.roleSuperAdmin : userRole === 'pr_manager' ? 'PR Manager' : 'Product'}
-                </p>
-              </div>
+              <button
+                onClick={onLogout}
+                className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition duration-150 shrink-0 cursor-pointer"
+                title={t.logoutBtn}
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              onClick={onLogout}
-              className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition duration-150 shrink-0 cursor-pointer"
-              title={t.logoutBtn}
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex items-center gap-2 text-[9px] font-bold text-neutral-400 uppercase tracking-wider mt-3 pl-1">
-            <Layers className="w-3.5 h-3.5 text-neutral-400" />
-            <span>{t.systemActive}</span>
-          </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2 bg-white border border-neutral-200/60 p-3 rounded-xl shadow-2xs">
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold shrink-0">
+                  <User className="w-4 h-4" />
+                </div>
+                <div className="overflow-hidden">
+                  <h4 className="text-[11px] font-black text-neutral-900 truncate leading-tight" title={userEmail}>
+                    {userEmail}
+                  </h4>
+                  <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider leading-none mt-1">
+                    {userRole === 'super_admin' ? t.roleSuperAdmin : userRole === 'pr_manager' ? 'PR Manager' : 'Product'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onLogout}
+                className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition duration-150 shrink-0 cursor-pointer"
+                title={t.logoutBtn}
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          
+          {!isCollapsed && (
+            <div className="flex items-center gap-2 text-[9px] font-bold text-neutral-400 uppercase tracking-wider mt-3 pl-1">
+              <Layers className="w-3.5 h-3.5 text-neutral-400" />
+              <span>{t.systemActive}</span>
+            </div>
+          )}
         </div>
       </div>
     </aside>

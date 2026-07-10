@@ -50,6 +50,7 @@ export interface Report {
   slotsConfig?: SlotConfig[];
   paymentType?: 'prepaid' | 'full' | 'other';
   amount?: number;
+  receipt?: string | null;
 }
 
 export interface BloggerSubmission {

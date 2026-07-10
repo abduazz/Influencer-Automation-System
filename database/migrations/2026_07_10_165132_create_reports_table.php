@@ -23,6 +23,7 @@ return new class extends Migration
             $table->decimal('total_amount', 12, 2)->default(0)->nullable();
             $table->text('comments')->nullable();
             $table->json('slots_config')->nullable();
+            $table->text('receipt')->nullable();
             $table->timestamps();
         });
     }

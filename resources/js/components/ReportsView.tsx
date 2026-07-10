@@ -52,6 +52,8 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
 
   const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
   const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[]>([]);
+  const [receipt, setReceipt] = useState<string | null>(null);
+  const [fileInputKey, setFileInputKey] = useState<number>(0);
 
   const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX') => {
     if (plat === 'Instagram') return 'Stories';
@@ -128,6 +130,7 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
       destination,
       comments,
       paymentType,
+      receipt,
     };
 
     if (paymentType === 'other') {
@@ -176,6 +179,8 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
     setPricePerSlot(200);
     setOtherAmount(100);
     setComments('');
+    setReceipt(null);
+    setFileInputKey(prev => prev + 1);
     setPaymentType('prepaid');
   };
 
@@ -649,6 +654,31 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
                       />
                     </div>
 
+                    {/* Attachment: Screenshot/Receipt */}
+                    <div>
+                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                        {lang === 'ru' ? 'Прикрепить чек / скриншот' : lang === 'uz' ? 'Chek / skrinshot biriktirish' : 'Attach receipt / screenshot'}
+                      </label>
+                      <input
+                        type="file"
+                        key={fileInputKey}
+                        accept="image/*,application/pdf"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setReceipt(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          } else {
+                            setReceipt(null);
+                          }
+                        }}
+                        className="w-full text-[10px] text-neutral-500 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-[9px] file:font-bold file:bg-neutral-100 file:text-neutral-700 hover:file:bg-neutral-250 cursor-pointer"
+                      />
+                    </div>
+
                     {/* Submit inside TG Mini App */}
                     <button
                       type="submit"
@@ -737,6 +767,22 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
                     <div className="text-[11px] text-neutral-600 bg-neutral-50 p-2.5 rounded-lg flex items-start gap-2 border border-neutral-150 mt-2">
                       <MessageSquare className="w-3.5 h-3.5 text-neutral-400 mt-0.5 shrink-0" />
                       <p className="italic">"{rep.comments}"</p>
+                    </div>
+                  )}
+
+                  {rep.receipt && (
+                    <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px]">
+                      <span className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">
+                        {lang === 'ru' ? 'Чек / Скриншот:' : lang === 'uz' ? 'Chek / Skrinshot:' : 'Receipt / Screenshot:'}
+                      </span>
+                      <a 
+                        href={rep.receipt} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="text-[9px] font-black text-blue-600 hover:text-blue-800 hover:underline uppercase flex items-center gap-1 cursor-pointer"
+                      >
+                        {lang === 'ru' ? 'Открыть ↗' : lang === 'uz' ? 'Ochish ↗' : 'Open ↗'}
+                      </a>
                     </div>
                   )}
                 </div>

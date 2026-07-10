@@ -36,6 +36,15 @@ class BloggerSubmissionController extends Controller
             'data' => $request->data,
         ]);
 
+        $integration = \App\Models\Integration::findOrFail($request->integrationId);
+
+        // Trigger Telegram submission notification
+        try {
+            \App\Services\TelegramService::sendSubmissionNotification($integration, $request->data);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Failed to send submission webhook: " . $e->getMessage());
+        }
+
         return response()->json([
             'id' => (string) $sub->id,
             'integrationId' => (string) $sub->integration_id,

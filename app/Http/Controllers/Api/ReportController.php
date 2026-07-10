@@ -29,6 +29,7 @@ class ReportController extends Controller
                 'comments' => $report->comments ?? '',
                 'slotsConfig' => $report->slots_config ?? [],
                 'paymentType' => $report->payment_type,
+                'receipt' => $report->receipt,
             ];
         }));
     }
@@ -48,6 +49,7 @@ class ReportController extends Controller
             'comments' => 'nullable|string',
             'slotsConfig' => 'nullable|array',
             'amount' => 'required_if:paymentType,other|nullable|numeric|min:0',
+            'receipt' => 'nullable|string',
         ]);
 
         $paymentType = $request->input('paymentType', 'prepaid');
@@ -132,6 +134,14 @@ class ReportController extends Controller
         // Reload to get calculated values
         $report->refresh();
 
+        // Trigger Telegram & Google Sheets notifications
+        try {
+            \App\Services\TelegramService::sendReportNotification($report, $request->receipt);
+            \App\Services\GoogleSheetsService::appendReport($report);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Failed to run post-report webhooks: " . $e->getMessage());
+        }
+
         return response()->json([
             'id' => (string) $report->id,
             'date' => $report->date->format('Y-m-d'),
@@ -148,6 +158,7 @@ class ReportController extends Controller
             'comments' => $report->comments ?? '',
             'slotsConfig' => $report->slots_config ?? [],
             'paymentType' => $report->payment_type,
+            'receipt' => null,
         ], 201);
     }
 }

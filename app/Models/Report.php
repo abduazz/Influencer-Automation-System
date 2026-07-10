@@ -24,6 +24,7 @@ class Report extends Model
         'total_amount',
         'comments',
         'slots_config',
+        'receipt',
     ];
 
     protected $casts = [

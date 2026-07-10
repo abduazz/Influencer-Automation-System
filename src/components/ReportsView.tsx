@@ -21,9 +21,10 @@ interface ReportsViewProps {
   reports: Report[];
   onAddReport: (report: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => void;
   lang: Language;
+  userRole?: 'super_admin' | 'pr_manager' | 'product_manager';
 }
 
-export default function ReportsView({ projects, reports, onAddReport, lang }: ReportsViewProps) {
+export default function ReportsView({ projects, reports, onAddReport, lang, userRole }: ReportsViewProps) {
   const t = translations[lang];
 
   // Form State
@@ -33,6 +34,13 @@ export default function ReportsView({ projects, reports, onAddReport, lang }: Re
   const [destination, setDestination] = useState<string>('');
   const [channelBlogger, setChannelBlogger] = useState<string>('');
   const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube'>('Telegram');
+
+  // If userRole is pr_manager, force platform to Telegram
+  useEffect(() => {
+    if (userRole === 'pr_manager') {
+      setPlatform('Telegram');
+    }
+  }, [userRole]);
   const [slotsCount, setSlotsCount] = useState<number>(5);
   const [paidSlotsCount, setPaidSlotsCount] = useState<number>(3);
   const [pricePerSlot, setPricePerSlot] = useState<number>(200);
@@ -274,21 +282,32 @@ export default function ReportsView({ projects, reports, onAddReport, lang }: Re
                         {t.platformColumn} *
                       </label>
                       <div className="grid grid-cols-3 gap-1">
-                        {(['Telegram', 'Instagram', 'YouTube'] as const).map((plat) => (
-                          <button
-                            key={plat}
-                            type="button"
-                            onClick={() => setPlatform(plat)}
-                            className={`py-1 rounded border text-[9px] font-bold transition duration-100 ${
-                              platform === plat
-                                ? 'bg-black border-black text-white'
-                                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                            }`}
-                          >
-                            {plat}
-                          </button>
-                        ))}
+                        {(['Telegram', 'Instagram', 'YouTube'] as const).map((plat) => {
+                          const isDisabled = userRole === 'pr_manager' && plat !== 'Telegram';
+                          return (
+                            <button
+                              key={plat}
+                              type="button"
+                              disabled={isDisabled}
+                              onClick={() => setPlatform(plat)}
+                              className={`py-1 rounded border text-[9px] font-bold transition duration-100 ${
+                                platform === plat
+                                  ? 'bg-black border-black text-white'
+                                  : isDisabled
+                                  ? 'bg-neutral-50 border-neutral-100 text-neutral-300 cursor-not-allowed'
+                                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                              }`}
+                            >
+                              {plat}
+                            </button>
+                          );
+                        })}
                       </div>
+                      {userRole === 'pr_manager' && (
+                        <p className="text-[9px] text-blue-600 font-bold mt-1 text-left">
+                          {lang === 'ru' ? '• Доступ ограничен: только Telegram' : lang === 'uz' ? '• Kirish cheklangan: faqat Telegram' : '• Restricted Access: Telegram only'}
+                        </p>
+                      )}
                     </div>
 
                     {/* Reactive Grid: Price & Slots */}

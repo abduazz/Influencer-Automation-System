@@ -10,17 +10,23 @@ import {
   UserSquare2, 
   Radio, 
   Layers,
-  Globe
+  Globe,
+  Shield,
+  LogOut,
+  User
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
 interface SidebarProps {
-  activeTab: 'projects' | 'reports' | 'blogger' | 'code';
-  setActiveTab: (tab: 'projects' | 'reports' | 'blogger' | 'code') => void;
+  activeTab: 'projects' | 'reports' | 'blogger' | 'code' | 'access';
+  setActiveTab: (tab: 'projects' | 'reports' | 'blogger' | 'code' | 'access') => void;
   projectsCount: number;
   integrationsCount: number;
   lang: Language;
   setLang: (lang: Language) => void;
+  userEmail: string;
+  userRole: 'super_admin' | 'pr_manager' | 'product_manager';
+  onLogout: () => void;
 }
 
 export default function Sidebar({ 
@@ -29,7 +35,10 @@ export default function Sidebar({
   projectsCount, 
   integrationsCount,
   lang,
-  setLang
+  setLang,
+  userEmail,
+  userRole,
+  onLogout
 }: SidebarProps) {
   const t = translations[lang];
 
@@ -77,39 +86,62 @@ export default function Sidebar({
             </span>
           </button>
 
-          <button
-            id="nav-reports-btn"
-            onClick={() => setActiveTab('reports')}
-            className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
-              activeTab === 'reports'
-                ? 'bg-black text-white'
-                : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-            }`}
-          >
-            <div className="flex items-center gap-3.5">
-              <FilePlus className="w-4 h-4" />
-              <span>{t.createReport}</span>
-            </div>
-          </button>
+          {userRole !== 'product_manager' && (
+            <button
+              id="nav-reports-btn"
+              onClick={() => setActiveTab('reports')}
+              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'reports'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+            >
+              <div className="flex items-center gap-3.5">
+                <FilePlus className="w-4 h-4" />
+                <span>{t.createReport}</span>
+              </div>
+            </button>
+          )}
 
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest pl-3 pt-6 mb-2">
-            {t.bloggerPortal}
-          </p>
+          {userRole === 'super_admin' && (
+            <button
+              id="nav-access-btn"
+              onClick={() => setActiveTab('access')}
+              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'access'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+            >
+              <div className="flex items-center gap-3.5">
+                <Shield className="w-4 h-4" />
+                <span>{t.accessTab}</span>
+              </div>
+            </button>
+          )}
 
-          <button
-            id="nav-blogger-btn"
-            onClick={() => setActiveTab('blogger')}
-            className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
-              activeTab === 'blogger'
-                ? 'bg-black text-white'
-                : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-            }`}
-          >
-            <div className="flex items-center gap-3.5">
-              <UserSquare2 className="w-4 h-4" />
-              <span>{t.bloggerWorkCabinet}</span>
-            </div>
-          </button>
+          {userRole === 'super_admin' && (
+            <>
+              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest pl-3 pt-6 mb-2">
+                {t.bloggerPortal}
+              </p>
+
+              <button
+                id="nav-blogger-btn"
+                onClick={() => setActiveTab('blogger')}
+                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 group ${
+                  activeTab === 'blogger'
+                    ? 'bg-black text-white'
+                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+                }`}
+              >
+                <div className="flex items-center gap-3.5">
+                  <UserSquare2 className="w-4 h-4" />
+                  <span>{t.bloggerWorkCabinet}</span>
+                </div>
+              </button>
+            </>
+          )}
         </nav>
       </div>
 
@@ -137,9 +169,31 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Footer (Simplified to absolute minimum) */}
-        <div className="p-6 border-t border-neutral-100 bg-neutral-50/50">
-          <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+        {/* Profile Card and Logout */}
+        <div className="p-4 border-t border-neutral-100 bg-neutral-50/50 text-left">
+          <div className="flex items-center justify-between gap-2 bg-white border border-neutral-200/60 p-3 rounded-xl shadow-2xs">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold shrink-0">
+                <User className="w-4 h-4" />
+              </div>
+              <div className="overflow-hidden">
+                <h4 className="text-[11px] font-black text-neutral-900 truncate leading-tight" title={userEmail}>
+                  {userEmail}
+                </h4>
+                <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider leading-none mt-1">
+                  {userRole === 'super_admin' ? t.roleSuperAdmin : userRole === 'pr_manager' ? 'PR Manager' : 'Product'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onLogout}
+              className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition duration-150 shrink-0 cursor-pointer"
+              title={t.logoutBtn}
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-[9px] font-bold text-neutral-400 uppercase tracking-wider mt-3 pl-1">
             <Layers className="w-3.5 h-3.5 text-neutral-400" />
             <span>{t.systemActive}</span>
           </div>

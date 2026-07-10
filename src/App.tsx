@@ -13,6 +13,8 @@ import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import ReportsView from './components/ReportsView';
 import BloggerCabinetView from './components/BloggerCabinetView';
+import AccessManagementView from './components/AccessManagementView';
+import LoginView from './components/LoginView';
 import CodeViewer from './components/CodeViewer';
 import { Language } from './translations';
 
@@ -21,10 +23,12 @@ import {
   Integration,
   Report,
   BloggerSubmission,
+  AllowedUser,
   INITIAL_PROJECTS,
   INITIAL_INTEGRATIONS,
   INITIAL_REPORTS,
-  INITIAL_SUBMISSIONS
+  INITIAL_SUBMISSIONS,
+  INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
 import { Info, HelpCircle, RefreshCw, Layers } from 'lucide-react';
@@ -41,8 +45,71 @@ export default function App() {
     localStorage.setItem('ff_lang', newLang);
   };
 
+  // Whitelisted Users & Role State
+  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>(() => {
+    const cached = localStorage.getItem('ff_allowed_users');
+    if (cached) return JSON.parse(cached);
+    return INITIAL_ALLOWED_USERS;
+  });
+
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(() => {
+    return localStorage.getItem('ff_user_email');
+  });
+
+  const [currentUserRole, setCurrentUserRole] = useState<'super_admin' | 'pr_manager' | 'product_manager' | null>(() => {
+    const cachedRole = localStorage.getItem('ff_user_role');
+    if (cachedRole) return cachedRole as any;
+
+    const email = localStorage.getItem('ff_user_email');
+    if (email) {
+      const cachedUsers = localStorage.getItem('ff_allowed_users');
+      const usersList: AllowedUser[] = cachedUsers ? JSON.parse(cachedUsers) : INITIAL_ALLOWED_USERS;
+      const found = usersList.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      if (found) {
+        localStorage.setItem('ff_user_role', found.role);
+        return found.role;
+      }
+    }
+    return null;
+  });
+
   // Navigation Tabs State
-  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'blogger' | 'code'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'blogger' | 'code' | 'access'>('projects');
+
+  // Whitelist operations helper
+  const saveAllowedUsers = (newUsers: AllowedUser[]) => {
+    setAllowedUsers(newUsers);
+    localStorage.setItem('ff_allowed_users', JSON.stringify(newUsers));
+  };
+
+  const handleAddUser = (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
+    const newUser: AllowedUser = {
+      id: `user-${Date.now()}`,
+      email,
+      role,
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    saveAllowedUsers([...allowedUsers, newUser]);
+  };
+
+  const handleRemoveUser = (id: string) => {
+    saveAllowedUsers(allowedUsers.filter(u => u.id !== id));
+  };
+
+  const handleLoginSuccess = (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
+    setCurrentUserEmail(email);
+    setCurrentUserRole(role);
+    localStorage.setItem('ff_user_email', email);
+    localStorage.setItem('ff_user_role', role);
+    setActiveTab('projects');
+  };
+
+  const handleLogout = () => {
+    setCurrentUserEmail(null);
+    setCurrentUserRole(null);
+    localStorage.removeItem('ff_user_email');
+    localStorage.removeItem('ff_user_role');
+  };
 
   // Mapped URL simulated routing parameters state
   const [simulatedUrlParams, setSimulatedUrlParams] = useState<{
@@ -253,13 +320,27 @@ export default function App() {
       setIntegrations(INITIAL_INTEGRATIONS);
       setReports(INITIAL_REPORTS);
       setSubmissions(INITIAL_SUBMISSIONS);
+      setAllowedUsers(INITIAL_ALLOWED_USERS);
       localStorage.setItem('ff_projects', JSON.stringify(INITIAL_PROJECTS));
       localStorage.setItem('ff_integrations', JSON.stringify(INITIAL_INTEGRATIONS));
       localStorage.setItem('ff_reports', JSON.stringify(INITIAL_REPORTS));
       localStorage.setItem('ff_submissions', JSON.stringify(INITIAL_SUBMISSIONS));
+      localStorage.setItem('ff_allowed_users', JSON.stringify(INITIAL_ALLOWED_USERS));
       window.location.reload();
     }
   };
+
+  // White-list Gate
+  if (!currentUserEmail || !currentUserRole) {
+    return (
+      <LoginView
+        allowedUsers={allowedUsers}
+        onLoginSuccess={handleLoginSuccess}
+        lang={lang}
+        setLang={handleSetLang}
+      />
+    );
+  }
 
   return (
     <div className="flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans">
@@ -271,6 +352,9 @@ export default function App() {
         integrationsCount={integrations.length}
         lang={lang}
         setLang={handleSetLang}
+        userEmail={currentUserEmail}
+        userRole={currentUserRole}
+        onLogout={handleLogout}
       />
 
       {/* Main Core View Area */}
@@ -311,21 +395,32 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'reports' && (
+        {activeTab === 'reports' && currentUserRole !== 'product_manager' && (
           <ReportsView
             projects={projects}
             reports={reports}
             onAddReport={handleAddReport}
             lang={lang}
+            userRole={currentUserRole}
           />
         )}
 
-        {activeTab === 'blogger' && (
+        {activeTab === 'blogger' && currentUserRole === 'super_admin' && (
           <BloggerCabinetView
             integrations={integrations}
             submissions={submissions}
             onAddSubmission={handleAddSubmission}
             urlParams={simulatedUrlParams}
+            lang={lang}
+          />
+        )}
+
+        {activeTab === 'access' && currentUserRole === 'super_admin' && (
+          <AccessManagementView
+            allowedUsers={allowedUsers}
+            onAddUser={handleAddUser}
+            onRemoveUser={handleRemoveUser}
+            currentUserEmail={currentUserEmail}
             lang={lang}
           />
         )}

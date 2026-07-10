@@ -1,0 +1,278 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState } from 'react';
+import { AllowedUser } from '../data/mockData';
+import { translations, Language } from '../translations';
+import { Users, UserPlus, Shield, Mail, Trash2, Key, Info } from 'lucide-react';
+
+interface AccessManagementViewProps {
+  allowedUsers: AllowedUser[];
+  onAddUser: (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => void;
+  onRemoveUser: (id: string) => void;
+  currentUserEmail: string;
+  lang: Language;
+}
+
+export default function AccessManagementView({
+  allowedUsers,
+  onAddUser,
+  onRemoveUser,
+  currentUserEmail,
+  lang,
+}: AccessManagementViewProps) {
+  const t = translations[lang];
+
+  // Form states
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'super_admin' | 'pr_manager' | 'product_manager'>('pr_manager');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setErrorMsg(lang === 'ru' ? 'Некорректный формат email!' : lang === 'uz' ? 'Email formati noto‘g‘ri!' : 'Invalid email format!');
+      return;
+    }
+
+    // Check if email already exists in list (case-insensitive)
+    const exists = allowedUsers.some((u) => u.email.toLowerCase() === cleanEmail);
+    if (exists) {
+      setErrorMsg(t.emailAlreadyExists);
+      return;
+    }
+
+    onAddUser(cleanEmail, role);
+    setEmail('');
+    setSuccessMsg(t.addSuccessToast.replace('{email}', cleanEmail));
+    
+    // Clear success message after 4s
+    setTimeout(() => {
+      setSuccessMsg(null);
+    }, 4000);
+  };
+
+  const handleDelete = (user: AllowedUser) => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (user.email.toLowerCase() === currentUserEmail.toLowerCase()) {
+      setErrorMsg(t.cannotDeleteSelf);
+      return;
+    }
+
+    const confirmMsg = lang === 'ru' 
+      ? `Вы уверены, что хотите закрыть доступ для ${user.email}?` 
+      : lang === 'uz' 
+      ? `Haqiqatan ham ${user.email} uchun ruxsatni bekor qilmoqchimisiz?` 
+      : `Are you sure you want to revoke access for ${user.email}?`;
+
+    if (confirm(confirmMsg)) {
+      onRemoveUser(user.id);
+      setSuccessMsg(t.removeSuccessToast);
+      
+      setTimeout(() => {
+        setSuccessMsg(null);
+      }, 4000);
+    }
+  };
+
+  const getRoleBadgeColor = (userRole: string) => {
+    switch (userRole) {
+      case 'super_admin':
+        return 'bg-neutral-900 text-white border-neutral-900';
+      case 'pr_manager':
+        return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'product_manager':
+        return 'bg-purple-50 text-purple-700 border-purple-200';
+      default:
+        return 'bg-neutral-50 text-neutral-600 border-neutral-200';
+    }
+  };
+
+  const getRoleLabel = (userRole: string) => {
+    switch (userRole) {
+      case 'super_admin':
+        return t.roleSuperAdmin;
+      case 'pr_manager':
+        return t.rolePRManager;
+      case 'product_manager':
+        return t.roleProductManager;
+      default:
+        return userRole;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-200 pb-5 text-left">
+        <div>
+          <h2 className="text-xl font-black text-black tracking-tight flex items-center gap-2">
+            <Shield className="w-5 h-5 text-black" />
+            {t.accessManagementTitle}
+          </h2>
+          <p className="text-xs text-neutral-500 mt-1">
+            {t.accessManagementDesc}
+          </p>
+        </div>
+      </div>
+
+      {/* Success / Error Banners */}
+      {successMsg && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-bold text-left animate-fade-in">
+          {successMsg}
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-xs font-bold text-left animate-fade-in">
+          {errorMsg}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Form: Grant New Access */}
+        <div className="bg-white border border-neutral-200 rounded-2xl p-6 text-left shadow-2xs h-fit space-y-4">
+          <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
+            <UserPlus className="w-4 h-4 text-black" />
+            <h3 className="font-bold text-black text-xs uppercase tracking-wider">{t.addUserBtn}</h3>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Email Field */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                {t.userEmailLabel}
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={t.userEmailPlaceholder}
+                  className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs font-medium text-black focus:outline-hidden transition duration-150"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Role Picker Field */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                {t.userRoleLabel}
+              </label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as any)}
+                className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-lg px-3 py-2 text-xs font-bold text-black focus:outline-hidden transition duration-150"
+              >
+                <option value="pr_manager">{t.rolePRManager}</option>
+                <option value="product_manager">{t.roleProductManager}</option>
+                <option value="super_admin">{t.roleSuperAdmin}</option>
+              </select>
+            </div>
+
+            {/* Quick Helper Explaining Roles */}
+            <div className="p-3 bg-neutral-50 rounded-lg text-[11px] text-neutral-500 space-y-1 border border-neutral-100">
+              <div className="flex items-center gap-1 font-bold text-neutral-700">
+                <Info className="w-3.5 h-3.5 text-neutral-400" />
+                <span>{lang === 'ru' ? 'Права доступа:' : lang === 'uz' ? 'Ruxsat darajalari:' : 'Access Info:'}</span>
+              </div>
+              <p>• <strong>{t.roleSuperAdmin}</strong>: {lang === 'ru' ? 'Полный доступ ко всему, включая доступы.' : lang === 'uz' ? 'Barcha bo‘limlarga to‘liq kirish.' : 'Full system privileges including whitelisting.'}</p>
+              <p>• <strong>{t.rolePRManager}</strong>: {lang === 'ru' ? 'Доступ к дешборду и создание отчетов только для Telegram.' : lang === 'uz' ? 'Panel va faqat Telegram hisoboti yaratish.' : 'Dashboard and Telegram-only report logs.'}</p>
+              <p>• <strong>{t.roleProductManager}</strong>: {lang === 'ru' ? 'Доступ только к дешборду (без отчетов).' : lang === 'uz' ? 'Faqat loyihalar paneliga kirish (hisobotsiz).' : 'Only dashboard view, reports disabled.'}</p>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-black hover:bg-neutral-800 text-white font-extrabold text-xs py-2.5 rounded-lg transition duration-150 shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Key className="w-3.5 h-3.5" />
+              {t.addUserBtn}
+            </button>
+          </form>
+        </div>
+
+        {/* List of Active Authorized Members */}
+        <div className="bg-white border border-neutral-200 rounded-2xl p-6 text-left shadow-2xs lg:col-span-2 space-y-4">
+          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-black" />
+              <h3 className="font-bold text-black text-xs uppercase tracking-wider">{t.activeUsersTitle}</h3>
+            </div>
+            <span className="text-[10px] font-black bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">
+              {allowedUsers.length}
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-neutral-200 bg-neutral-50/50 text-[9px] font-bold text-neutral-500 uppercase tracking-widest">
+                  <th className="py-2.5 px-4">{t.userEmailLabel.replace('*', '')}</th>
+                  <th className="py-2.5 px-4">{t.userRoleLabel.replace('*', '')}</th>
+                  <th className="py-2.5 px-4">{lang === 'ru' ? 'Дата добавления' : lang === 'uz' ? 'Qo‘shilgan sana' : 'Date Authorized'}</th>
+                  <th className="py-2.5 px-4 text-right">{t.actionsColumn}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 text-xs font-medium text-neutral-700">
+                {allowedUsers.map((user) => {
+                  const isSelf = user.email.toLowerCase() === currentUserEmail.toLowerCase();
+                  return (
+                    <tr key={user.id} className="hover:bg-neutral-50/30 transition duration-150">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-neutral-900">{user.email}</span>
+                          {isSelf && (
+                            <span className="text-[8px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 rounded px-1.5 py-0.2 animate-pulse">
+                              {lang === 'ru' ? 'ВЫ' : lang === 'uz' ? 'SIZ' : 'YOU'}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded border text-[10px] font-bold ${getRoleBadgeColor(user.role)}`}>
+                          {getRoleLabel(user.role)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-neutral-500 text-[11px]">
+                        {user.createdAt}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => handleDelete(user)}
+                          disabled={isSelf}
+                          className={`p-1.5 rounded transition duration-150 ${
+                            isSelf
+                              ? 'text-neutral-300 cursor-not-allowed'
+                              : 'text-neutral-400 hover:text-black hover:bg-neutral-100'
+                          }`}
+                          title={isSelf ? t.cannotDeleteSelf : t.revokeAccessBtn}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -60,6 +60,34 @@ export interface BloggerSubmission {
   };
 }
 
+export interface AllowedUser {
+  id: string;
+  email: string;
+  role: 'super_admin' | 'pr_manager' | 'product_manager';
+  createdAt: string;
+}
+
+export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
+  {
+    id: 'user-1',
+    email: 'abduazizmurodqosimov@gmail.com',
+    role: 'super_admin',
+    createdAt: '2026-07-10',
+  },
+  {
+    id: 'user-2',
+    email: 'pr@fluenceflow.com',
+    role: 'pr_manager',
+    createdAt: '2026-07-10',
+  },
+  {
+    id: 'user-3',
+    email: 'product@fluenceflow.com',
+    role: 'product_manager',
+    createdAt: '2026-07-10',
+  },
+];
+
 export const INITIAL_PROJECTS: Project[] = [
   {
     id: 'proj-1',

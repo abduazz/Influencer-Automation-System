@@ -27,20 +27,24 @@ class BloggerSubmissionController extends Controller
             'integrationId' => 'required|exists:integrations,id',
             'status' => 'nullable|in:pending,approved,rejected',
             'data' => 'required|array',
+            'lang' => 'nullable|string|in:ru,en,uz',
         ]);
 
-        $sub = BloggerSubmission::create([
-            'integration_id' => $request->integrationId,
-            'status' => $request->status ?? 'pending',
-            'submitted_at' => now(),
-            'data' => $request->data,
-        ]);
+        $sub = BloggerSubmission::updateOrCreate(
+            ['integration_id' => $request->integrationId],
+            [
+                'status' => $request->status ?? 'pending',
+                'submitted_at' => now(),
+                'data' => $request->data,
+            ]
+        );
 
         $integration = \App\Models\Integration::findOrFail($request->integrationId);
 
         // Trigger Telegram submission notification
         try {
-            \App\Services\TelegramService::sendSubmissionNotification($integration, $request->data);
+            $lang = $request->input('lang', 'ru');
+            \App\Services\TelegramService::sendSubmissionNotification($integration, $request->data, $lang);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error("Failed to send submission webhook: " . $e->getMessage());
         }

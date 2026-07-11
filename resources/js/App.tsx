@@ -12,6 +12,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import ReportsView from './components/ReportsView';
+import ReportsFeedView from './components/ReportsFeedView';
 import BloggerCabinetView from './components/BloggerCabinetView';
 import AccessManagementView from './components/AccessManagementView';
 import LoginView from './components/LoginView';
@@ -75,8 +76,9 @@ export default function App() {
   });
 
   // Navigation Tabs State
-  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'blogger' | 'code' | 'access'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access'>('projects');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
 
   const handleAddUser = async (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
     const newUser = await createAllowedUser(email, role);
@@ -207,43 +209,92 @@ export default function App() {
     setReports((prev) => [report, ...prev]);
     const ints = await fetchIntegrations();
     setIntegrations(ints);
+    return report;
   };
 
-  const handleAddSubmission = async (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'>) => {
-    const submission = await createSubmission(newSub.integrationId, newSub.data);
-    setSubmissions((prev) => [submission, ...prev]);
+  const handleAddSubmission = async (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => {
+    const submission = await createSubmission(newSub.integrationId, newSub.data, newSub.lang);
+    setSubmissions((prev) => {
+      const exists = prev.some(s => s.integrationId === newSub.integrationId);
+      if (exists) {
+        return prev.map(s => s.integrationId === newSub.integrationId ? submission : s);
+      }
+      return [submission, ...prev];
+    });
   };
 
   // URL Simulator router check
   // Watcher listening for simulated link-clicks (e.g. "?cabinet=true")
+  // Watcher listening for URL search parameters to route between tabs
   useEffect(() => {
-    const handleUrlSim = () => {
-      const searchParams = new URLSearchParams(window.location.search);
-      const isCabinet = searchParams.get('cabinet') === 'true';
-      const platform = searchParams.get('platform');
-      const slotsCount = searchParams.get('slots_count');
-      const integrationId = searchParams.get('id');
+    // Detect if we are running in a real Telegram WebApp
+    const searchParams = new URLSearchParams(window.location.search);
+    const isTg = searchParams.get('tgWebAppPlatform') !== null || 
+                 searchParams.get('tgWebAppVersion') !== null ||
+                 window.location.search.includes('tgWebAppPlatform') ||
+                 (window as any).Telegram?.WebApp?.initData !== undefined;
+
+    if (isTg) {
+      setIsTelegramWebApp(true);
+      setActiveTab('reports');
+      
+      // Auto-login Telegram WebApp user if not set
+      if (!localStorage.getItem('ff_user_email')) {
+        localStorage.setItem('ff_user_email', 'telegram-manager@fluenceflow.net');
+        localStorage.setItem('ff_user_role', 'super_admin');
+        setCurrentUserEmail('telegram-manager@fluenceflow.net');
+        setCurrentUserRole('super_admin');
+      }
+    }
+
+    const parseUrlRoute = () => {
+      const params = new URLSearchParams(window.location.search);
+      const isCabinet = params.get('cabinet') === 'true';
+      const page = params.get('page');
 
       if (isCabinet) {
         setSimulatedUrlParams({
-          platform: platform || undefined,
-          slotsCount: slotsCount || undefined,
-          integrationId: integrationId || undefined
+          platform: params.get('platform') || undefined,
+          slotsCount: params.get('slots_count') || undefined,
+          integrationId: params.get('id') || undefined
         });
         setActiveTab('blogger');
-        
-        // Clean URL to prevent recurring loops
-        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (page && ['projects', 'reports', 'reports_feed', 'blogger', 'code', 'access'].includes(page)) {
+        setActiveTab(page as any);
+      } else if (!isTg) {
+        setActiveTab('projects');
       }
     };
 
     // Run on startup
-    handleUrlSim();
+    parseUrlRoute();
 
     // Listen for custom address mutations
-    window.addEventListener('popstate', handleUrlSim);
-    return () => window.removeEventListener('popstate', handleUrlSim);
+    window.addEventListener('popstate', parseUrlRoute);
+    return () => window.removeEventListener('popstate', parseUrlRoute);
   }, []);
+
+  // Update browser URL query string whenever activeTab changes
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    
+    if (activeTab === 'blogger') {
+      if (params.get('cabinet') !== 'true') {
+        params.set('cabinet', 'true');
+        params.delete('page');
+        window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+      }
+    } else {
+      if (params.get('page') !== activeTab) {
+        params.delete('cabinet');
+        params.delete('id');
+        params.delete('platform');
+        params.delete('slots_count');
+        params.set('page', activeTab);
+        window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+      }
+    }
+  }, [activeTab]);
 
   // Database Reset handler
   const handleResetToFactory = async () => {
@@ -287,24 +338,26 @@ export default function App() {
   }
 
   return (
-    <div className={`flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={`flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans ${isSidebarCollapsed ? 'sidebar-collapsed' : ''} ${isTelegramWebApp ? 'telegram-webapp-view' : ''}`}>
       {/* Dynamic Navigation Rail Sidebar */}
-      <Sidebar 
-        isCollapsed={isSidebarCollapsed}
-        setIsCollapsed={setIsSidebarCollapsed}
-        activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
-        projectsCount={projects.length}
-        integrationsCount={integrations.length}
-        lang={lang}
-        setLang={handleSetLang}
-        userEmail={currentUserEmail}
-        userRole={currentUserRole}
-        onLogout={handleLogout}
-      />
+      {!isTelegramWebApp && (
+        <Sidebar 
+          isCollapsed={isSidebarCollapsed}
+          setIsCollapsed={setIsSidebarCollapsed}
+          activeTab={activeTab} 
+          setActiveTab={setActiveTab} 
+          projectsCount={projects.length}
+          integrationsCount={integrations.length}
+          lang={lang}
+          setLang={handleSetLang}
+          userEmail={currentUserEmail}
+          userRole={currentUserRole}
+          onLogout={handleLogout}
+        />
+      )}
 
       {/* Main Core View Area */}
-      <main className="flex-1 overflow-y-auto h-screen p-8 lg:p-12 relative">
+      <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'p-8 lg:p-12'}`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
         {simulatedUrlParams.platform && (
           <div className="mb-6 p-4 bg-white border-2 border-black rounded-lg flex items-center justify-between text-left text-xs text-black shadow-sm">
@@ -344,10 +397,20 @@ export default function App() {
         {activeTab === 'reports' && currentUserRole !== 'product_manager' && (
           <ReportsView
             projects={projects}
+            integrations={integrations}
             reports={reports}
             onAddReport={handleAddReport}
             lang={lang}
             userRole={currentUserRole}
+            isWebApp={isTelegramWebApp}
+          />
+        )}
+
+        {activeTab === 'reports_feed' && currentUserRole !== 'product_manager' && (
+          <ReportsFeedView
+            projects={projects}
+            reports={reports}
+            lang={lang}
           />
         )}
 

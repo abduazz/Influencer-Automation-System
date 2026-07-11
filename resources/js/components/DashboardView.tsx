@@ -503,7 +503,7 @@ export default function DashboardView({
                             <input
                               type="text"
                               readOnly
-                              value={`${window.location.origin}/?cabinet=true&platform=${item.platform}&slots_count=${item.slotsCount}&id=${item.id}`}
+                              value={`${window.location.origin}/?cabinet=true&id=${item.bloggerCabinetToken || item.id}`}
                               onClick={(e) => {
                                 const target = e.target as HTMLInputElement;
                                 target.select();

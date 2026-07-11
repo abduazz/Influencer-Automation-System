@@ -34,39 +34,102 @@ class TelegramService
         }
     }
 
-    public static function sendReportNotification($report, $receiptBase64 = null)
+    public static function sendReportNotification($report, $receiptBase64 = null, $lang = 'ru')
     {
         $chatId = env('TELEGRAM_REPORTS_CHAT_ID');
         if (!$chatId) {
             $chatId = env('TELEGRAM_CHAT_ID'); // fallback
         }
 
-        $paymentTypeNames = [
-            'prepaid' => 'Предоплата (Prepaid)',
-            'full' => 'Полная оплата (Full)',
-            'other' => 'Прочие расходы (Other)',
+        $locales = [
+            'ru' => [
+                'new_report' => '📝 *Создан новый отчет!*',
+                'date' => '📅 *Дата:*',
+                'project' => '📂 *Проект:*',
+                'payment_type' => '💳 *Тип оплаты:*',
+                'destination' => '🎯 *Назначение:*',
+                'blogger' => '👤 *Блогер:*',
+                'platform' => '📱 *Платформа:*',
+                'slots_count' => '🔢 *Количество слотов:*',
+                'price_per_slot' => '💵 *Цена за слот:*',
+                'total_amount' => '💰 *Итоговая сумма:*',
+                'prepaid_amount' => '💳 *Сумма предоплаты:*',
+                'comments' => '💬 *Комментарии:*',
+                'receipt_attached' => '📎 *Чек/Скриншот прикреплен к отчету.*',
+                'prepaid' => 'Предоплата (Prepaid)',
+                'full' => 'Полная оплата (Full)',
+                'other' => 'Прочие расходы (Other)',
+            ],
+            'en' => [
+                'new_report' => '📝 *New Report Created!*',
+                'date' => '📅 *Date:*',
+                'project' => '📂 *Project:*',
+                'payment_type' => '💳 *Payment Type:*',
+                'destination' => '🎯 *Purpose:*',
+                'blogger' => '👤 *Blogger:*',
+                'platform' => '📱 *Platform:*',
+                'slots_count' => '🔢 *Slots Count:*',
+                'price_per_slot' => '💵 *Price per Slot:*',
+                'total_amount' => '💰 *Total Amount:*',
+                'prepaid_amount' => '💳 *Prepayment Amount:*',
+                'comments' => '💬 *Comments:*',
+                'receipt_attached' => '📎 *Receipt/Screenshot is attached to the report.*',
+                'prepaid' => 'Prepayment (Prepaid)',
+                'full' => 'Full Payment (Full)',
+                'other' => 'Other Expenses (Other)',
+            ],
+            'uz' => [
+                'new_report' => '📝 *Yangi hisobot yaratildi!*',
+                'date' => '📅 *Sana:*',
+                'project' => '📂 *Loyiha:*',
+                'payment_type' => '💳 *To\'lov turi:*',
+                'destination' => '🎯 *Maqsad:*',
+                'blogger' => '👤 *Blogger:*',
+                'platform' => '📱 *Platforma:*',
+                'slots_count' => '🔢 *Slotlar soni:*',
+                'price_per_slot' => '💵 *Slot narxi:*',
+                'total_amount' => '💰 *Jami summa:*',
+                'prepaid_amount' => '💳 *Oldindan to\'lov summasi:*',
+                'comments' => '💬 *Izohlar:*',
+                'receipt_attached' => '📎 *Chek/Skrinshot hisobotga biriktirilgan.*',
+                'prepaid' => 'Oldindan to\'lov (Prepaid)',
+                'full' => 'To\'liq to\'lov (Full)',
+                'other' => 'Boshqa xarajatlar (Other)',
+            ]
         ];
 
-        $paymentType = $paymentTypeNames[$report->payment_type] ?? $report->payment_type;
+        // Safe fallback for language key
+        $l = isset($locales[$lang]) ? $lang : 'ru';
+        $t = $locales[$l];
+
+        $paymentType = $t[$report->payment_type] ?? $report->payment_type;
+        if ($report->payment_type === 'prepaid' && $report->slots_count > 0) {
+            $percentage = round(($report->paid_slots_count / $report->slots_count) * 100);
+            $paymentType .= " - {$percentage}%";
+        }
         $projectName = $report->project->name ?? '—';
 
-        $text = "📝 *Создан новый отчет!*\n\n";
-        $text .= "📅 *Дата:* " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";
-        $text .= "📂 *Проект:* {$projectName}\n";
-        $text .= "💳 *Тип оплаты:* {$paymentType}\n";
-        $text .= "🎯 *Назначение:* {$report->destination}\n";
+        $text = "{$t['new_report']}\n\n";
+        $text .= "{$t['date']} " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";
+        $text .= "{$t['project']} {$projectName}\n";
+        $text .= "{$t['payment_type']} {$paymentType}\n";
+        $text .= "{$t['destination']} {$report->destination}\n";
 
         if ($report->payment_type !== 'other') {
-            $text .= "👤 *Блогер:* " . ($report->channel_blogger ?? '—') . "\n";
-            $text .= "📱 *Платформа:* " . ($report->platform ?? '—') . "\n";
-            $text .= "🔢 *Количество слотов:* " . ($report->slots_count ?? '0') . "\n";
-            $text .= "💵 *Цена за слот:* " . number_format($report->price_per_slot ?? 0, 0, '.', ' ') . " UZS\n";
+            $text .= "{$t['blogger']} " . ($report->channel_blogger ?? '—') . "\n";
+            $text .= "{$t['platform']} " . ($report->platform ?? '—') . "\n";
+            $text .= "{$t['slots_count']} " . ($report->slots_count ?? '0') . "\n";
+            $text .= "{$t['price_per_slot']} " . number_format($report->price_per_slot ?? 0, 0, '.', ' ') . " UZS\n";
         }
 
-        $text .= "💰 *Итоговая сумма:* " . number_format($report->total_amount ?? 0, 0, '.', ' ') . " UZS\n";
+        if ($report->payment_type === 'prepaid') {
+            $text .= "{$t['prepaid_amount']} " . number_format($report->paid_amount ?? 0, 0, '.', ' ') . " UZS\n";
+        }
+
+        $text .= "{$t['total_amount']} " . number_format($report->total_amount ?? 0, 0, '.', ' ') . " UZS\n";
 
         if ($report->comments) {
-            $text .= "💬 *Комментарии:* _{$report->comments}_\n";
+            $text .= "{$t['comments']} _{$report->comments}_\n";
         }
 
         // If a Base64 receipt is provided, send it as photo or document directly
@@ -103,12 +166,45 @@ class TelegramService
         return self::sendMessage($chatId, $text);
     }
 
-    public static function sendSubmissionNotification($integration, $data)
+    public static function sendSubmissionNotification($integration, $data, $lang = 'ru')
     {
         $chatId = env('TELEGRAM_SUBMISSIONS_CHAT_ID');
         if (!$chatId) {
             $chatId = env('TELEGRAM_CHAT_ID'); // fallback
         }
+
+        $locales = [
+            'ru' => [
+                'submission_title' => '📢 *Выполнение работы блогером!*',
+                'blogger' => '👤 *Блогер:*',
+                'platform' => '📱 *Платформа:*',
+                'completed_slots' => '📝 *Выполненные слоты:*',
+                'slot_number' => 'Слот',
+                'total_purchased' => '📊 *Количество купленных слотов:*',
+                'remaining_slots' => '⏳ *Оставшиеся слоты:*',
+            ],
+            'en' => [
+                'submission_title' => '📢 *Work Performed by Blogger!*',
+                'blogger' => '👤 *Blogger:*',
+                'platform' => '📱 *Platform:*',
+                'completed_slots' => '📝 *Completed Slots:*',
+                'slot_number' => 'Slot',
+                'total_purchased' => '📊 *Total Purchased Slots:*',
+                'remaining_slots' => '⏳ *Remaining Slots:*',
+            ],
+            'uz' => [
+                'submission_title' => '📢 *Blogger ishni bajardi!*',
+                'blogger' => '👤 *Blogger:*',
+                'platform' => '📱 *Platforma:*',
+                'completed_slots' => '📝 *Bajarilgan slotlar:*',
+                'slot_number' => 'Slot',
+                'total_purchased' => '📊 *Sotib olingan slotlar soni:*',
+                'remaining_slots' => '⏳ *Qolgan slotlar:*',
+            ]
+        ];
+
+        $l = isset($locales[$lang]) ? $lang : 'ru';
+        $t = $locales[$l];
 
         $blogger = $integration->blogger_name;
         $platform = $integration->platform;
@@ -122,18 +218,18 @@ class TelegramService
         $filledCount = $filledSlots->count();
         $remaining = max(0, $totalSlots - $filledCount);
 
-        $text = "📢 *Выполнение работы блогером!*\n\n";
-        $text .= "👤 *Блогер:* {$blogger}\n";
-        $text .= "📱 *Платформа:* {$platform}\n\n";
-        $text .= "📝 *Выполненные слоты:* \n";
+        $text = "{$t['submission_title']}\n\n";
+        $text .= "{$t['blogger']} {$blogger}\n";
+        $text .= "{$t['platform']} {$platform}\n\n";
+        $text .= "{$t['completed_slots']} \n";
 
         foreach ($filledSlots as $key => $link) {
             $slotNumber = str_replace('slot_', '', $key);
-            $text .= "  • *Слот #{$slotNumber}:* {$link}\n";
+            $text .= "  • *{$t['slot_number']} #{$slotNumber}:* {$link}\n";
         }
 
-        $text .= "\n📊 *Количество купленных слотов:* {$totalSlots}\n";
-        $text .= "⏳ *Оставшиеся слоты:* {$remaining}\n";
+        $text .= "\n{$t['total_purchased']} {$totalSlots}\n";
+        $text .= "{$t['remaining_slots']} {$remaining}\n";
 
         return self::sendMessage($chatId, $text);
     }

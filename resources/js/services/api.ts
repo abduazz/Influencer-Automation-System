@@ -76,10 +76,10 @@ export function createReport(data: Omit<Report, 'id' | 'totalAmount' | 'paidAmou
 export function fetchSubmissions(): Promise<BloggerSubmission[]> {
   return request<BloggerSubmission[]>('/api/blogger-submissions');
 }
-export function createSubmission(integrationId: string, data: Record<string, string>): Promise<BloggerSubmission> {
+export function createSubmission(integrationId: string, data: Record<string, string>, lang?: string): Promise<BloggerSubmission> {
   return request<BloggerSubmission>('/api/blogger-submissions', {
     method: 'POST',
-    body: JSON.stringify({ integrationId, data }),
+    body: JSON.stringify({ integrationId, data, lang }),
   });
 }
 

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Project, Report, SlotConfig } from '../data/mockData';
+import { Project, Report, SlotConfig, Integration } from '../data/mockData';
 import { 
   Send, 
   CheckCircle2, 
@@ -18,13 +18,15 @@ import { Language, translations } from '../translations';
 
 interface ReportsViewProps {
   projects: Project[];
+  integrations: Integration[];
   reports: Report[];
-  onAddReport: (report: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => void;
+  onAddReport: (report: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => Promise<Report | undefined>;
   lang: Language;
   userRole?: 'super_admin' | 'pr_manager' | 'product_manager';
+  isWebApp?: boolean;
 }
 
-export default function ReportsView({ projects, reports, onAddReport, lang, userRole }: ReportsViewProps) {
+export default function ReportsView({ projects, integrations, reports, onAddReport, lang, userRole, isWebApp }: ReportsViewProps) {
   const t = translations[lang];
 
   // Form State
@@ -33,6 +35,8 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
   const [projectId, setProjectId] = useState<string>(projects[0]?.id || '');
   const [destination, setDestination] = useState<string>('');
   const [channelBlogger, setChannelBlogger] = useState<string>('');
+  const [bloggerType, setBloggerType] = useState<'existing' | 'new'>('existing');
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
 
   // If userRole is pr_manager, force platform to Telegram
@@ -55,6 +59,11 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
   const [receipt, setReceipt] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState<number>(0);
 
+  const existingBloggers = Array.from(new Set(integrations.map(i => i.bloggerName).filter(Boolean)));
+  const suggestions = channelBlogger.trim() !== ''
+    ? existingBloggers.filter(name => name.toLowerCase().includes(channelBlogger.toLowerCase()))
+    : existingBloggers;
+
   const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX') => {
     if (plat === 'Instagram') return 'Stories';
     if (plat === 'Telegram') return 'Post';
@@ -69,7 +78,8 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
   }, [slotsCount]);
 
   // Success state for toast
-  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<{ message: string; link?: string | null } | null>(null);
+  const [createdReportResult, setCreatedReportResult] = useState<Report | null>(null);
 
   // Sync slotsConfig size with slotsCount
   useEffect(() => {
@@ -107,7 +117,7 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
     }
   }, [paymentType, slotsCount, paidSlotsCount]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!destination.trim()) return;
     if (paymentType !== 'other' && (!projectId || !channelBlogger.trim())) return;
@@ -131,6 +141,7 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
       comments,
       paymentType,
       receipt,
+      lang,
     };
 
     if (paymentType === 'other') {
@@ -162,14 +173,26 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
       payload.slotsConfig = finalSlotsConfig;
     }
 
-    onAddReport(payload);
+    const createdReport = await onAddReport(payload);
+
+    if (createdReport) {
+      setCreatedReportResult(createdReport);
+    }
 
     // Flash Toast
     const toastSubject = paymentType === 'other' ? destination : channelBlogger;
-    setSuccessToast(`${t.reportCreatedMsg} ${toastSubject}!`);
+    let cabinetLink: string | null = null;
+    if (createdReport?.bloggerCabinetToken) {
+      cabinetLink = `${window.location.origin}/?cabinet=true&id=${createdReport.bloggerCabinetToken}`;
+    }
+
+    setSuccessToast({
+      message: `${t.reportCreatedMsg} ${toastSubject}!`,
+      link: cabinetLink
+    });
     setTimeout(() => {
       setSuccessToast(null);
-    }, 4500);
+    }, 10000);
 
     // Reset inputs but preserve some logical constants
     setDestination('');
@@ -185,56 +208,127 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
   };
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
+    <div className={`space-y-8 max-w-7xl mx-auto text-neutral-900 ${isWebApp ? 'p-0' : ''}`}>
       {/* View Header */}
-      <div className="border-b border-neutral-200 pb-5 text-left">
-        <h2 className="text-xl font-black text-black tracking-tight">{t.miniAppReportsTitle}</h2>
-        <p className="text-xs text-neutral-500">
-          {t.miniAppReportsDesc}
-        </p>
-      </div>
+      {!isWebApp && (
+        <div className="border-b border-neutral-200 pb-5 text-left">
+          <h2 className="text-xl font-black text-black tracking-tight">{t.miniAppReportsTitle}</h2>
+          <p className="text-xs text-neutral-500">
+            {t.miniAppReportsDesc}
+          </p>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="w-full max-w-[380px] mx-auto p-4 flex justify-center">
         {/* LEFT COLUMN: Physical phone simulator containing the Mini App */}
-        <div className="lg:col-span-5 flex justify-center">
-          <div className="relative mx-auto max-w-[340px] w-full bg-white p-3 rounded-[36px] shadow-sm border border-neutral-200">
+        <div className="w-full">
+          <div className={isWebApp ? 'w-full' : 'relative mx-auto max-w-[340px] w-full bg-white p-3 rounded-[36px] shadow-sm border border-neutral-200'}>
             {/* Camera notch */}
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-28 h-3.5 bg-neutral-100 rounded-full z-20 flex justify-center items-center border border-neutral-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-neutral-300 mr-1.5"></span>
-              <span className="w-1 h-1 rounded-full bg-neutral-200"></span>
-            </div>
+            {!isWebApp && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-28 h-3.5 bg-neutral-100 rounded-full z-20 flex justify-center items-center border border-neutral-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-neutral-300 mr-1.5"></span>
+                <span className="w-1 h-1 rounded-full bg-neutral-200"></span>
+              </div>
+            )}
 
             {/* Inner Phone Screen */}
-            <div className="bg-neutral-50 rounded-[28px] overflow-hidden border border-neutral-200 text-left min-h-[580px] flex flex-col justify-between">
+            <div className={isWebApp ? 'w-full bg-white border border-neutral-250 rounded-xl p-4 shadow-sm' : 'bg-neutral-50 rounded-[28px] overflow-hidden border border-neutral-200 text-left min-h-[580px] flex flex-col justify-between'}>
               {/* Phone Status Bar */}
-              <div className="bg-neutral-50 text-neutral-400 text-[9px] px-5 pt-3 pb-1.5 flex justify-between items-center font-bold font-mono">
-                <span>03:18 AM</span>
-                <div className="flex items-center gap-1">
-                  <span>LTE</span>
-                  <span className="w-3.5 h-2 bg-neutral-300 rounded-xs"></span>
-                </div>
-              </div>
-
-              {/* Telegram App Bar Header */}
-              <div className="bg-white px-4 py-2.5 text-black flex justify-between items-center border-b border-neutral-100">
-                <div className="flex items-center gap-2">
-                  <ChevronLeft className="w-4 h-4 text-black cursor-pointer" />
-                  <div>
-                    <h4 className="font-bold text-[11px] tracking-tight text-black">FluenceFlow Bot</h4>
-                    <p className="text-[8px] text-neutral-400">Telegram Mini App</p>
+              {!isWebApp && (
+                <div className="bg-neutral-50 text-neutral-400 text-[9px] px-5 pt-3 pb-1.5 flex justify-between items-center font-bold font-mono">
+                  <span>03:18 AM</span>
+                  <div className="flex items-center gap-1">
+                    <span>LTE</span>
+                    <span className="w-3.5 h-2 bg-neutral-300 rounded-xs"></span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] border border-neutral-200 text-neutral-600 font-bold px-1.5 py-0.2 rounded-md">
-                    close
-                  </span>
-                  <MoreVertical className="w-3.5 h-3.5 text-neutral-400" />
+              )}
+
+              {/* Telegram App Bar Header */}
+              {!isWebApp && (
+                <div className="bg-white px-4 py-2.5 text-black flex justify-between items-center border-b border-neutral-100">
+                  <div className="flex items-center gap-2">
+                    <ChevronLeft className="w-4 h-4 text-black cursor-pointer" />
+                    <div>
+                      <h4 className="font-bold text-[11px] tracking-tight text-black">FluenceFlow Bot</h4>
+                      <p className="text-[8px] text-neutral-400">Telegram Mini App</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] border border-neutral-200 text-neutral-600 font-bold px-1.5 py-0.2 rounded-md">
+                      close
+                    </span>
+                    <MoreVertical className="w-3.5 h-3.5 text-neutral-400" />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Mini App Canvas Scroll */}
-              <div className="p-3.5 flex-1 overflow-y-auto max-h-[440px] space-y-3">
-                <div className="bg-white border border-neutral-200 rounded-xl p-3.5 shadow-2xs">
+              <div className={isWebApp ? 'space-y-3' : 'p-3.5 flex-1 overflow-y-auto max-h-[440px] space-y-3'}>
+                {createdReportResult ? (
+                  <div className={isWebApp ? 'bg-white border border-neutral-250 rounded-xl p-6 shadow-sm text-center space-y-4' : 'bg-white border border-neutral-200 rounded-xl p-5 shadow-2xs text-center space-y-4'}>
+                    <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center mx-auto shadow-sm">
+                      <CheckCircle2 className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-black uppercase tracking-wider">
+                        {lang === 'ru' ? 'Отчет отправлен!' : lang === 'uz' ? 'Hisobot yuborildi!' : 'Report Sent!'}
+                      </h3>
+                      <p className="text-[10px] text-neutral-500 mt-1">
+                        {createdReportResult.paymentType === 'other'
+                          ? (lang === 'ru' ? 'Прочие расходы сохранены в базе данных.' : lang === 'uz' ? 'Boshqa xarajatlar ma\'lumotlar bazasida saqlandi.' : 'Other expenses saved in database.')
+                          : (lang === 'ru' ? `Отчет по покупке слотов у ${createdReportResult.channelBlogger} успешно обработан.` : lang === 'uz' ? `Blogger ${createdReportResult.channelBlogger} uchun slot xaridi hisoboti muvaffaqiyatli saqlandi.` : `Report for slots purchase from ${createdReportResult.channelBlogger} processed successfully.`)}
+                      </p>
+                    </div>
+
+                    {/* Copyable Cabinet URL for blogger campaigns */}
+                    {createdReportResult.bloggerCabinetToken && (
+                      <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg text-left space-y-1.5">
+                        <label className="block text-[8px] font-black text-neutral-400 uppercase tracking-wider">
+                          {lang === 'ru' ? 'Ссылка на кабинет блогера:' : lang === 'uz' ? 'Blogger kabineti havolasi:' : 'Blogger Cabinet URL:'}
+                        </label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            readOnly
+                            value={`${window.location.origin}/?cabinet=true&id=${createdReportResult.bloggerCabinetToken}`}
+                            onClick={(e) => {
+                              const target = e.target as HTMLInputElement;
+                              target.select();
+                              navigator.clipboard.writeText(target.value);
+                            }}
+                            className="flex-1 bg-white border border-neutral-200 rounded px-2 py-0.5 text-[9px] text-neutral-600 font-mono font-bold focus:outline-none select-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const url = `${window.location.origin}/?cabinet=true&id=${createdReportResult.bloggerCabinetToken}`;
+                              navigator.clipboard.writeText(url);
+                              alert(lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!');
+                            }}
+                            className="px-2.5 py-0.5 bg-black hover:bg-neutral-900 text-white rounded text-[9px] font-bold shrink-0 transition"
+                          >
+                            {lang === 'ru' ? 'Копия' : lang === 'uz' ? 'Nusxa' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-[8px] text-neutral-400">
+                          {lang === 'ru' ? 'Перешлите эту ссылку блогеру для загрузки скриншотов / ссылок.' : 
+                           lang === 'uz' ? 'Bloggerga skrinshotlar / havolalarni yuklashi uchun ushbu havolani yuboring.' : 
+                           'Send this link to the blogger to upload screenshots / links.'}
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setCreatedReportResult(null)}
+                      className="w-full py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150 shadow-xs"
+                    >
+                      {lang === 'ru' ? 'Создать новый отчет' : lang === 'uz' ? 'Yangi hisobot yaratish' : 'Create New Report'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className={isWebApp ? '' : 'bg-white border border-neutral-200 rounded-xl p-3.5 shadow-2xs'}>
                   <div className="flex items-center gap-2 mb-2.5 border-b border-neutral-100 pb-2">
                     <span className="text-[9px] uppercase font-bold text-black tracking-wider">
                       {t.reportForm}
@@ -357,19 +451,85 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
                     ) : (
                       /* Fields for standard blogger campaign payment types */
                       <>
-                        {/* Blogger */}
+                        {/* Blogger Type Selection */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                            {lang === 'ru' ? 'Тип блогера' : lang === 'uz' ? 'Blogger turi' : 'Blogger Type'} *
+                          </label>
+                          <div className="grid grid-cols-2 gap-1.5 mb-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBloggerType('existing');
+                                setChannelBlogger('');
+                              }}
+                              className={`py-1 rounded-lg border text-[9px] font-bold transition duration-100 ${
+                                bloggerType === 'existing'
+                                  ? 'bg-black border-black text-white'
+                                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                              }`}
+                            >
+                              {lang === 'ru' ? 'Существующий' : lang === 'uz' ? 'Mavjud' : 'Existing'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBloggerType('new');
+                                setChannelBlogger('');
+                              }}
+                              className={`py-1 rounded-lg border text-[9px] font-bold transition duration-100 ${
+                                bloggerType === 'new'
+                                  ? 'bg-black border-black text-white'
+                                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                              }`}
+                            >
+                              {lang === 'ru' ? 'Новый' : lang === 'uz' ? 'Yangi' : 'New'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Blogger Input with Auto-Suggestions */}
                         <div>
                           <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
                             {t.bloggerColumn} *
                           </label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g. @tech_geek_tg"
-                            value={channelBlogger}
-                            onChange={(e) => setChannelBlogger(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                          />
+                          <div className="relative">
+                            <input
+                              type="text"
+                              required
+                              placeholder={bloggerType === 'existing' ? (lang === 'ru' ? 'Выберите блогера...' : lang === 'uz' ? 'Bloggeri tanlang...' : 'Select blogger...') : 'e.g. @tech_geek_tg'}
+                              value={channelBlogger}
+                              onChange={(e) => {
+                                setChannelBlogger(e.target.value);
+                                setShowSuggestions(true);
+                              }}
+                              onFocus={() => setShowSuggestions(true)}
+                              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                            />
+                            {bloggerType === 'existing' && showSuggestions && suggestions.length > 0 && (
+                              <div className="absolute left-0 right-0 z-50 mt-1 max-h-32 overflow-y-auto bg-white border border-neutral-200 rounded-md shadow-lg text-left">
+                                {suggestions.map((name) => (
+                                  <button
+                                    key={name}
+                                    type="button"
+                                    onClick={() => {
+                                      setChannelBlogger(name);
+                                      setShowSuggestions(false);
+                                      // Auto-detect and pre-fill platform
+                                      const matchedInt = integrations.find(i => i.bloggerName === name);
+                                      if (matchedInt) {
+                                        setPlatform(matchedInt.platform);
+                                      }
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-[11px] text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100 last:border-0 font-bold"
+                                  >
+                                    {name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         {/* Platform Selector */}
@@ -689,126 +849,51 @@ export default function ReportsView({ projects, reports, onAddReport, lang, user
                     </button>
                   </form>
                 </div>
+                )}
               </div>
 
               {/* Bot menu bar bottom */}
-              <div className="bg-white border-t border-neutral-100 p-2.5 flex justify-around items-center text-[9px] text-neutral-400 font-bold">
-                <span className="text-black">{t.reportForm}</span>
-                <span className="w-1 h-1 rounded-full bg-neutral-300"></span>
-                <span>{t.integrationsTitle}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: Saved Reports List Feed */}
-        <div className="lg:col-span-7 space-y-4 text-left">
-          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
-            {t.savedReportsTitle} ({reports.length})
-          </h3>
-
-          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-            {reports.map((rep) => {
-              const resolvedProject = projects.find(p => p.id === rep.projectId);
-              const isOther = rep.paymentType === 'other';
-
-              return (
-                <div
-                  key={rep.id}
-                  className="p-4 bg-white border border-neutral-200 rounded-xl shadow-2xs hover:border-black transition duration-150"
-                >
-                  <div className="flex justify-between items-start gap-3 mb-2 pb-2 border-b border-neutral-100">
-                    <div>
-                      <h4 className="font-bold text-xs text-black">
-                        {isOther ? t.paymentOther : rep.channelBlogger}
-                      </h4>
-                      <p className="text-[10px] text-neutral-400 font-medium mt-0.5">
-                        {t.campaignTitleField}: <span className="text-neutral-700 font-bold">{resolvedProject?.name || '—'}</span>
-                      </p>
-                      {isOther && (
-                        <p className="text-[10px] text-neutral-500 font-medium mt-1">
-                          {t.purposeField}: <span className="text-neutral-800 font-bold">{rep.destination}</span>
-                        </p>
-                      )}
-                    </div>
-                    <span className="text-[10px] bg-neutral-50 font-bold px-2 py-0.5 rounded border border-neutral-200 text-neutral-500 flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-neutral-400" /> {rep.date}
-                    </span>
-                  </div>
-
-                  {!isOther && (
-                    <p className="text-[10px] text-neutral-500 font-medium mb-2.5">
-                      {t.referralLinkField}: <span className="text-neutral-800 font-bold">{rep.destination}</span>
-                    </p>
-                  )}
-
-                  <div className="grid grid-cols-3 gap-2 py-1 text-[11px]">
-                    <div>
-                      <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">{t.platformColumn}</span>
-                      <span className="font-bold text-neutral-800">
-                        {isOther ? '—' : rep.platform}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">
-                        {isOther ? t.sumField : `${t.slotsColumn} x ${t.priceColumn}`}
-                      </span>
-                      <span className="font-bold text-neutral-800">
-                        {isOther ? `${rep.totalAmount}` : `${rep.slotsCount} x ${rep.pricePerSlot}`}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">{t.totalSumColumn}</span>
-                      <span className="font-bold text-black">{rep.totalAmount}</span>
-                    </div>
-                  </div>
-
-                  {rep.comments && (
-                    <div className="text-[11px] text-neutral-600 bg-neutral-50 p-2.5 rounded-lg flex items-start gap-2 border border-neutral-150 mt-2">
-                      <MessageSquare className="w-3.5 h-3.5 text-neutral-400 mt-0.5 shrink-0" />
-                      <p className="italic">"{rep.comments}"</p>
-                    </div>
-                  )}
-
-                  {rep.receipt && (
-                    <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px]">
-                      <span className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">
-                        {lang === 'ru' ? 'Чек / Скриншот:' : lang === 'uz' ? 'Chek / Skrinshot:' : 'Receipt / Screenshot:'}
-                      </span>
-                      <a 
-                        href={rep.receipt} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="text-[9px] font-black text-blue-600 hover:text-blue-800 hover:underline uppercase flex items-center gap-1 cursor-pointer"
-                      >
-                        {lang === 'ru' ? 'Открыть ↗' : lang === 'uz' ? 'Ochish ↗' : 'Open ↗'}
-                      </a>
-                    </div>
-                  )}
+              {!isWebApp && (
+                <div className="bg-white border-t border-neutral-100 p-2.5 flex justify-around items-center text-[9px] text-neutral-400 font-bold">
+                  <span className="text-black">{t.reportForm}</span>
+                  <span className="w-1 h-1 rounded-full bg-neutral-300"></span>
+                  <span>{t.integrationsTitle}</span>
                 </div>
-              );
-            })}
-
-            {reports.length === 0 && (
-              <div className="p-8 text-center bg-white border border-dashed border-neutral-200 rounded-xl">
-                <Clock className="w-6 h-6 text-neutral-300 mx-auto mb-2" />
-                <p className="text-xs font-bold text-neutral-600">{t.noReportsTitle}</p>
-                <p className="text-[11px] text-neutral-400 mt-1">{t.noReportsDesc}</p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Dynamic Success Toast */}
       {successToast && (
-        <div className="fixed bottom-6 right-6 bg-white border border-neutral-300 text-black p-4 rounded-xl shadow-lg flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-5 duration-200">
-          <div className="w-7 h-7 rounded-full bg-neutral-100 text-black flex items-center justify-center">
+        <div className="fixed bottom-6 right-6 bg-white border border-neutral-300 text-black p-4 rounded-xl shadow-lg flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-5 duration-200 max-w-sm">
+          <div className="w-7 h-7 rounded-full bg-neutral-100 text-black flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-4 h-4 text-black" />
           </div>
-          <div className="text-left">
+          <div className="text-left min-w-0">
             <p className="text-xs font-bold text-black">{t.dbSyncedToast}</p>
-            <p className="text-[10px] text-neutral-500">{successToast}</p>
+            <p className="text-[10px] text-neutral-500 break-words">{successToast.message}</p>
+            {successToast.link && (
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={successToast.link}
+                  className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] text-neutral-600 focus:outline-none w-full select-all font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(successToast.link!);
+                    alert(t.copiedAlert || 'Copied to clipboard!');
+                  }}
+                  className="px-2 py-0.5 bg-black hover:bg-neutral-900 text-white rounded text-[8px] font-bold shrink-0 transition"
+                >
+                  Copy
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

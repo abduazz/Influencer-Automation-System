@@ -22,7 +22,7 @@ import { Language, translations } from '../translations';
 interface BloggerCabinetViewProps {
   integrations: Integration[];
   submissions: BloggerSubmission[];
-  onAddSubmission: (submission: Omit<BloggerSubmission, 'id' | 'submittedAt'>) => void;
+  onAddSubmission: (submission: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => void;
   urlParams?: { platform?: string; slotsCount?: string; integrationId?: string };
   lang: Language;
 }
@@ -46,7 +46,7 @@ export default function BloggerCabinetView({
   // Load state from URL parameters if present
   useEffect(() => {
     if (urlParams?.integrationId) {
-      const matched = integrations.find(i => i.id === urlParams.integrationId);
+      const matched = integrations.find(i => i.id === urlParams.integrationId || i.bloggerCabinetToken === urlParams.integrationId);
       if (matched) {
         setSelectedIntegrationId(matched.id);
         setActivePlatform(matched.platform);
@@ -81,14 +81,37 @@ export default function BloggerCabinetView({
   useEffect(() => {
     const initialData: Record<string, string> = {};
     const initialPreviews: Record<string, string> = {};
+
+    const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
+    const submittedData = existingSub?.data || {};
+
     for (let i = 1; i <= activeSlotsCount; i++) {
-      initialData[`slot_${i}`] = '';
+      const key = `slot_${i}`;
+      initialData[key] = submittedData[key] || '';
+      
+      // If it's a file submission (visual simulator), set a fake preview URL
+      if (submittedData[key] && !submittedData[key].startsWith('http')) {
+        initialPreviews[key] = 'mock-file-url';
+      }
     }
+
     setFormData(initialData);
     setFilePreviews(initialPreviews);
-    setFormSubmitted(false);
+
+    // Determine if form is completely submitted (locked)
+    const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
+    let hasUnfilled = false;
+    for (let i = 1; i <= maxPaid; i++) {
+      const key = `slot_${i}`;
+      if (!submittedData[key]) {
+        hasUnfilled = true;
+        break;
+      }
+    }
+
+    setFormSubmitted(!!existingSub && !hasUnfilled);
     setShowConfirm(false);
-  }, [activePlatform, activeSlotsCount]);
+  }, [activePlatform, activeSlotsCount, selectedIntegrationId, submissions, integrations]);
 
   // Handle file picker simulation
   const handleFileChangeSim = (slotKey: string, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,7 +166,8 @@ export default function BloggerCabinetView({
     onAddSubmission({
       integrationId: selectedIntegrationId,
       status: 'pending',
-      data: submittedPayload
+      data: submittedPayload,
+      lang: lang
     });
 
     setFormSubmitted(true);
@@ -394,6 +418,10 @@ export default function BloggerCabinetView({
                       const slotNum = index + 1;
                       const slotKey = `slot_${slotNum}`;
 
+                      const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
+                      const submittedData = existingSub?.data || {};
+                      const isSlotSubmitted = !!(submittedData[slotKey]);
+
                       // Retrieve individual slot configuration if set in Report Form
                       const slotConfig = selectedIntegration?.slotsConfig?.[index];
                       const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
@@ -444,7 +472,21 @@ export default function BloggerCabinetView({
                           {slotPlatform === 'Instagram' ? (
                             /* SCREENSHOT FILE UPLOAD COMPONENT FOR INSTAGRAM STORIES/REELS */
                             <div className="space-y-2">
-                              {filePreviews[slotKey] ? (
+                              {isSlotSubmitted ? (
+                                <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl opacity-90 select-none text-left">
+                                  <div className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 flex items-center justify-center">
+                                    {formData[slotKey].startsWith('mock') || !filePreviews[slotKey] ? (
+                                      <CheckCircle className="w-5 h-5 text-emerald-600" />
+                                    ) : (
+                                      <img src={filePreviews[slotKey]} alt="Screenshot" className="w-full h-full object-cover" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[11px] font-bold text-black truncate">{formData[slotKey]}</p>
+                                    <p className="text-[9px] text-emerald-600 font-extrabold uppercase">✓ {lang === 'ru' ? 'Отправлено' : lang === 'uz' ? 'Yuborilgan' : 'Submitted'}</p>
+                                  </div>
+                                </div>
+                              ) : filePreviews[slotKey] ? (
                                 <div className="flex items-center gap-3 p-2 bg-neutral-50 border border-neutral-200 rounded-lg">
                                   <div className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0">
                                     <img src={filePreviews[slotKey]} alt="Screenshot" className="w-full h-full object-cover" />
@@ -488,6 +530,7 @@ export default function BloggerCabinetView({
                               <input
                                 type="url"
                                 required={isPaid}
+                                disabled={isSlotSubmitted}
                                 placeholder={
                                   slotPlatform === 'Telegram' 
                                     ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
@@ -495,8 +538,17 @@ export default function BloggerCabinetView({
                                 }
                                 value={formData[slotKey] || ''}
                                 onChange={(e) => handleLinkChange(slotKey, e.target.value)}
-                                className="w-full pl-9 pr-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-xs focus:outline-none text-black font-medium"
+                                className={`w-full pl-9 pr-10 py-1.5 border focus:border-black rounded-md text-xs focus:outline-none transition ${
+                                  isSlotSubmitted 
+                                    ? 'bg-neutral-100 border-neutral-200 text-neutral-400 font-mono font-bold select-all' 
+                                    : 'bg-white border-neutral-200 text-black font-medium'
+                                }`}
                               />
+                              {isSlotSubmitted && (
+                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

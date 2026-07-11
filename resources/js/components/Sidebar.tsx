@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { 
   FolderKanban, 
   FilePlus, 
+  FileText,
   UserSquare2, 
   Radio, 
   Layers,
@@ -20,8 +21,8 @@ import {
 import { Language, translations } from '../translations';
 
 interface SidebarProps {
-  activeTab: 'projects' | 'reports' | 'blogger' | 'code' | 'access';
-  setActiveTab: (tab: 'projects' | 'reports' | 'blogger' | 'code' | 'access') => void;
+  activeTab: 'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access';
+  setActiveTab: (tab: 'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access') => void;
   projectsCount: number;
   integrationsCount: number;
   lang: Language;
@@ -114,21 +115,39 @@ export default function Sidebar({
           </button>
 
           {userRole !== 'product_manager' && (
-            <button
-              id="nav-reports-btn"
-              onClick={() => setActiveTab('reports')}
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
-                activeTab === 'reports'
-                  ? 'bg-black text-white'
-                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-              }`}
-              title={t.createReport}
-            >
-              <div className="flex items-center gap-3.5">
-                <FilePlus className="w-4 h-4" />
-                {!isCollapsed && <span>{t.createReport}</span>}
-              </div>
-            </button>
+            <>
+              <button
+                id="nav-reports-btn"
+                onClick={() => setActiveTab('reports')}
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                  activeTab === 'reports'
+                    ? 'bg-black text-white'
+                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+                }`}
+                title={t.createReport}
+              >
+                <div className="flex items-center gap-3.5">
+                  <FilePlus className="w-4 h-4" />
+                  {!isCollapsed && <span>{t.createReport}</span>}
+                </div>
+              </button>
+
+              <button
+                id="nav-reports-feed-btn"
+                onClick={() => setActiveTab('reports_feed')}
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                  activeTab === 'reports_feed'
+                    ? 'bg-black text-white'
+                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+                }`}
+                title={t.reportsListTab || 'Reports List'}
+              >
+                <div className="flex items-center gap-3.5">
+                  <FileText className="w-4 h-4" />
+                  {!isCollapsed && <span>{t.reportsListTab || 'Reports List'}</span>}
+                </div>
+              </button>
+            </>
           )}
 
           {userRole === 'super_admin' && (

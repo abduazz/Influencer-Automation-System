@@ -51,6 +51,8 @@ export interface Report {
   paymentType?: 'prepaid' | 'full' | 'other';
   amount?: number;
   receipt?: string | null;
+  lang?: string;
+  bloggerCabinetToken?: string | null;
 }
 
 export interface BloggerSubmission {

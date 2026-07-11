@@ -50,6 +50,7 @@ class ReportController extends Controller
             'slotsConfig' => 'nullable|array',
             'amount' => 'required_if:paymentType,other|nullable|numeric|min:0',
             'receipt' => 'nullable|string',
+            'lang' => 'nullable|string|in:ru,en,uz',
         ]);
 
         $paymentType = $request->input('paymentType', 'prepaid');
@@ -134,9 +135,22 @@ class ReportController extends Controller
         // Reload to get calculated values
         $report->refresh();
 
+        $cabinetToken = null;
+        if ($paymentType !== 'other') {
+            $cleanBloggerName = trim(str_replace(['@', '#'], '', $report->channel_blogger));
+            $integration = Integration::where('project_id', $report->project_id)
+                ->where('platform', $report->platform)
+                ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                ->first();
+            if ($integration) {
+                $cabinetToken = $integration->blogger_cabinet_token;
+            }
+        }
+
         // Trigger Telegram & Google Sheets notifications
         try {
-            \App\Services\TelegramService::sendReportNotification($report, $request->receipt);
+            $lang = $request->input('lang', 'ru');
+            \App\Services\TelegramService::sendReportNotification($report, $request->receipt, $lang);
             \App\Services\GoogleSheetsService::appendReport($report);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error("Failed to run post-report webhooks: " . $e->getMessage());
@@ -159,6 +173,7 @@ class ReportController extends Controller
             'slotsConfig' => $report->slots_config ?? [],
             'paymentType' => $report->payment_type,
             'receipt' => null,
+            'bloggerCabinetToken' => $cabinetToken,
         ], 201);
     }
 }

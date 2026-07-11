@@ -25,6 +25,7 @@ interface BloggerCabinetViewProps {
   onAddSubmission: (submission: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => void;
   urlParams?: { platform?: string; slotsCount?: string; integrationId?: string };
   lang: Language;
+  userRole?: string | null;
 }
 
 export default function BloggerCabinetView({
@@ -32,7 +33,8 @@ export default function BloggerCabinetView({
   submissions,
   onAddSubmission,
   urlParams,
-  lang
+  lang,
+  userRole
 }: BloggerCabinetViewProps) {
   const t = translations[lang];
 
@@ -186,107 +188,109 @@ export default function BloggerCabinetView({
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT COLUMN: URL Parameters / Form Controller (Manager Tool) */}
-        <div className="lg:col-span-4 space-y-4 text-left">
-          <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-2xs">
-            <div className="flex items-center gap-2 border-b border-neutral-100 pb-2.5">
-              <Settings className="w-4 h-4 text-black" />
-              <h3 className="font-bold text-xs text-black uppercase tracking-wider">
-                {t.interactiveControls}
-              </h3>
-            </div>
-            
-            <p className="text-[11px] text-neutral-500 leading-relaxed">
-              {t.interactiveControlsDesc}
-            </p>
-
-            {/* Platform Select */}
-            <div>
-              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {t.platformColumn}
-              </label>
-              <div className="grid grid-cols-3 gap-1">
-                {(['Telegram', 'Instagram', 'YouTube'] as const).map((plat) => (
-                  <button
-                    key={plat}
-                    onClick={() => {
-                      setActivePlatform(plat);
-                      // Auto pick an integration of this platform type
-                      const match = integrations.find(i => i.platform === plat);
-                      if (match) setSelectedIntegrationId(match.id);
-                    }}
-                    className={`py-1 rounded text-[10px] font-bold border transition ${
-                      activePlatform === plat
-                        ? 'bg-black border-black text-white'
-                        : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                    }`}
-                  >
-                    {plat}
-                  </button>
-                ))}
+        {userRole === 'super_admin' && (
+          <div className="lg:col-span-4 space-y-4 text-left">
+            <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-2xs">
+              <div className="flex items-center gap-2 border-b border-neutral-100 pb-2.5">
+                <Settings className="w-4 h-4 text-black" />
+                <h3 className="font-bold text-xs text-black uppercase tracking-wider">
+                  {t.interactiveControls}
+                </h3>
               </div>
-            </div>
+              
+              <p className="text-[11px] text-neutral-500 leading-relaxed">
+                {t.interactiveControlsDesc}
+              </p>
 
-            {/* Slots count slider */}
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
-                  {t.slotsColumn}
+              {/* Platform Select */}
+              <div>
+                <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {t.platformColumn}
                 </label>
-                <span className="text-xs font-black text-black">{activeSlotsCount} {t.slotsColumn.toLowerCase()}</span>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['Telegram', 'Instagram', 'YouTube'] as const).map((plat) => (
+                    <button
+                      key={plat}
+                      onClick={() => {
+                        setActivePlatform(plat);
+                        // Auto pick an integration of this platform type
+                        const match = integrations.find(i => i.platform === plat);
+                        if (match) setSelectedIntegrationId(match.id);
+                      }}
+                      className={`py-1 rounded text-[10px] font-bold border transition ${
+                        activePlatform === plat
+                          ? 'bg-black border-black text-white'
+                          : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                      }`}
+                    >
+                      {plat}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <input
-                type="range"
-                min={1}
-                max={6}
-                value={activeSlotsCount}
-                onChange={(e) => setActiveSlotsCount(Number(e.target.value))}
-                className="w-full accent-black cursor-pointer"
-              />
-            </div>
 
-            {/* Integration link dropdown */}
-            <div>
-              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {t.selectedProjectLabel}
-              </label>
-              <select
-                value={selectedIntegrationId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setSelectedIntegrationId(id);
-                  const matched = integrations.find(i => i.id === id);
-                  if (matched) {
-                    setActivePlatform(matched.platform);
-                    setActiveSlotsCount(matched.slotsCount);
-                  }
+              {/* Slots count slider */}
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
+                    {t.slotsColumn}
+                  </label>
+                  <span className="text-xs font-black text-black">{activeSlotsCount} {t.slotsColumn.toLowerCase()}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={6}
+                  value={activeSlotsCount}
+                  onChange={(e) => setActiveSlotsCount(Number(e.target.value))}
+                  className="w-full accent-black cursor-pointer"
+                />
+              </div>
+
+              {/* Integration link dropdown */}
+              <div>
+                <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {t.selectedProjectLabel}
+                </label>
+                <select
+                  value={selectedIntegrationId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedIntegrationId(id);
+                    const matched = integrations.find(i => i.id === id);
+                    if (matched) {
+                      setActivePlatform(matched.platform);
+                      setActiveSlotsCount(matched.slotsCount);
+                    }
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 rounded-md text-[11px] font-medium text-black focus:border-black outline-none"
+                >
+                  {integrations.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.bloggerName} ({i.platform}, {i.slotsCount} {t.slotsColumn.toLowerCase()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Copy simulation link */}
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/?cabinet=true&platform=${activePlatform}&slots_count=${activeSlotsCount}&integrationId=${selectedIntegrationId}`;
+                  navigator.clipboard.writeText(url);
+                  alert(`${t.copiedAlert}\n${url}`);
                 }}
-                className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 rounded-md text-[11px] font-medium text-black focus:border-black outline-none"
+                className="w-full py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-md transition flex items-center justify-center gap-1.5"
               >
-                {integrations.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.bloggerName} ({i.platform}, {i.slotsCount} {t.slotsColumn.toLowerCase()})
-                  </option>
-                ))}
-              </select>
+                <Link className="w-3.5 h-3.5 text-white" />
+                <span>{t.copyTooltip}</span>
+              </button>
             </div>
-
-            {/* Copy simulation link */}
-            <button
-              onClick={() => {
-                const url = `${window.location.origin}/?cabinet=true&platform=${activePlatform}&slots_count=${activeSlotsCount}&integrationId=${selectedIntegrationId}`;
-                navigator.clipboard.writeText(url);
-                alert(`${t.copiedAlert}\n${url}`);
-              }}
-              className="w-full py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-md transition flex items-center justify-center gap-1.5"
-            >
-              <Link className="w-3.5 h-3.5 text-white" />
-              <span>{t.copyTooltip}</span>
-            </button>
           </div>
-        </div>
+        )}
 
         {/* RIGHT COLUMN: The Interactive Guest Web Page Frame */}
-        <div className="lg:col-span-8 space-y-6">
+        <div className={userRole === 'super_admin' ? "lg:col-span-8 space-y-6" : "lg:col-span-12 space-y-6"}>
           <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
             {/* Browser Address Bar Header */}
             <div className="bg-neutral-50 px-4 py-2 border-b border-neutral-200 flex items-center gap-2">

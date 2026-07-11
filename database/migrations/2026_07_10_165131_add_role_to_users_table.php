@@ -11,13 +11,14 @@ return new class extends Migration
         Schema::table('users', function (Blueprint $table) {
             $table->string('role')->default('pr_manager')->after('email');
             $table->string('password')->nullable()->change();
+            $table->json('allowed_metrics')->nullable()->after('role');
         });
     }
 
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('role');
+            $table->dropColumn(['role', 'allowed_metrics']);
             $table->string('password')->nullable(false)->change();
         });
     }

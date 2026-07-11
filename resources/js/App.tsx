@@ -80,8 +80,8 @@ export default function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
 
-  const handleAddUser = async (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
-    const newUser = await createAllowedUser(email, role);
+  const handleAddUser = async (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => {
+    const newUser = await createAllowedUser(email, role, allowedMetrics);
     setAllowedUsers((prev) => [...prev, newUser]);
   };
 
@@ -324,8 +324,10 @@ export default function App() {
     }
   };
 
-  // White-list Gate
-  if (!currentUserEmail || !currentUserRole) {
+  // White-list Gate (bypass if it's the guest blogger cabinet page)
+  const isBloggerCabinetRoute = new URLSearchParams(window.location.search).get('cabinet') === 'true';
+
+  if (!isBloggerCabinetRoute && (!currentUserEmail || !currentUserRole)) {
     return (
       <LoginView
         allowedUsers={allowedUsers}
@@ -391,6 +393,7 @@ export default function App() {
             onEditIntegration={handleEditIntegration}
             onDeleteIntegration={handleDeleteIntegration}
             lang={lang}
+            allowedMetrics={allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
           />
         )}
 
@@ -414,13 +417,14 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'blogger' && currentUserRole === 'super_admin' && (
+        {activeTab === 'blogger' && (
           <BloggerCabinetView
             integrations={integrations}
             submissions={submissions}
             onAddSubmission={handleAddSubmission}
             urlParams={simulatedUrlParams}
             lang={lang}
+            userRole={currentUserRole}
           />
         )}
 

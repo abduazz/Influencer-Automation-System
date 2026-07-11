@@ -37,6 +37,7 @@ interface DashboardViewProps {
   onEditIntegration: (id: string, integration: Partial<Integration>) => void;
   onDeleteIntegration: (id: string) => void;
   lang: Language;
+  allowedMetrics?: string[];
 }
 
 export default function DashboardView({
@@ -48,7 +49,8 @@ export default function DashboardView({
   onAddIntegration,
   onEditIntegration,
   onDeleteIntegration,
-  lang
+  lang,
+  allowedMetrics = ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']
 }: DashboardViewProps) {
   // Current active project selection
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
@@ -283,27 +285,37 @@ export default function DashboardView({
       </div>
 
       {/* Analytics Mini Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 border border-neutral-200 bg-white p-4 rounded-xl shadow-xs">
-        <div className="text-left">
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.bloggerDeals}</p>
-          <p className="text-xl font-black text-black">{activeProjectIntegrations.length}</p>
-        </div>
-        <div className="text-left border-l border-neutral-100 pl-4">
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.allocatedSpend}</p>
-          <p className="text-xl font-black text-black">{totalSpend.toLocaleString()}</p>
-        </div>
-        <div className="text-left border-l border-neutral-100 pl-4">
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.totalSlotsLabel}</p>
-          <p className="text-xl font-black text-black">{totalSlotsCount}</p>
-        </div>
-        <div className="text-left border-l border-neutral-100 pl-4">
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricSlotsPublished}</p>
-          <p className="text-xl font-black text-emerald-600">{totalPublishedSlots}</p>
-        </div>
-        <div className="text-left border-l border-neutral-100 pl-4">
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricSlotsRemaining}</p>
-          <p className="text-xl font-black text-amber-600">{totalRemainingSlots}</p>
-        </div>
+      <div className="flex flex-wrap items-center gap-4 md:gap-8 border border-neutral-200 bg-white p-4 rounded-xl shadow-xs">
+        {allowedMetrics.includes('deals') && (
+          <div className="text-left min-w-[100px]">
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.bloggerDeals}</p>
+            <p className="text-xl font-black text-black">{activeProjectIntegrations.length}</p>
+          </div>
+        )}
+        {allowedMetrics.includes('spend') && (
+          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.allocatedSpend}</p>
+            <p className="text-xl font-black text-black">{totalSpend.toLocaleString()}</p>
+          </div>
+        )}
+        {allowedMetrics.includes('total_slots') && (
+          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.totalSlotsLabel}</p>
+            <p className="text-xl font-black text-black">{totalSlotsCount}</p>
+          </div>
+        )}
+        {allowedMetrics.includes('slots_published') && (
+          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricSlotsPublished}</p>
+            <p className="text-xl font-black text-emerald-600">{totalPublishedSlots}</p>
+          </div>
+        )}
+        {allowedMetrics.includes('slots_remaining') && (
+          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricSlotsRemaining}</p>
+            <p className="text-xl font-black text-amber-600">{totalRemainingSlots}</p>
+          </div>
+        )}
       </div>
 
       {/* Primary Panels Layout */}
@@ -385,10 +397,18 @@ export default function DashboardView({
                       <th className="py-3 px-4 whitespace-nowrap">{t.totalSumColumn}</th>
                       <th className="py-3 px-4 whitespace-nowrap">{t.startDateColumn}</th>
                       <th className="py-3 px-4 whitespace-nowrap">{t.endDateColumn}</th>
-                      <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold whitespace-nowrap">{t.metricPaidToBlogger}</th>
-                      <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold whitespace-nowrap">{t.metricRemainingToPay}</th>
-                      <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold text-center whitespace-nowrap">{t.metricSlotsPublished}</th>
-                      <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold text-center whitespace-nowrap">{t.metricSlotsRemaining}</th>
+                      {allowedMetrics.includes('financial_metrics') && (
+                        <>
+                          <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold whitespace-nowrap">{t.metricPaidToBlogger}</th>
+                          <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold whitespace-nowrap">{t.metricRemainingToPay}</th>
+                        </>
+                      )}
+                      {allowedMetrics.includes('slots_published') && (
+                        <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold text-center whitespace-nowrap">{t.metricSlotsPublished}</th>
+                      )}
+                      {allowedMetrics.includes('slots_remaining') && (
+                        <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold text-center whitespace-nowrap">{t.metricSlotsRemaining}</th>
+                      )}
                       <th className="py-3 px-6 text-right whitespace-nowrap">{t.actionsColumn}</th>
                     </tr>
                   </thead>
@@ -442,7 +462,7 @@ export default function DashboardView({
                           <span className="font-extrabold text-black block">
                             {item.totalAmount.toLocaleString('ru-RU')}
                           </span>
-                          {item.paidAmount !== undefined && (
+                          {allowedMetrics.includes('financial_metrics') && item.paidAmount !== undefined && (
                             <span className="text-[10px] text-neutral-500 font-bold block">
                               {t.paidSuffix}: {item.paidAmount.toLocaleString('ru-RU')}
                             </span>
@@ -464,37 +484,45 @@ export default function DashboardView({
                         </td>
 
                         {/* Metric 1: Paid to Blogger */}
-                        <td className="py-3.5 px-4 font-black text-black bg-neutral-50/30 whitespace-nowrap">
-                          {item.paidAmount?.toLocaleString('ru-RU') || 0}
-                        </td>
+                        {allowedMetrics.includes('financial_metrics') && (
+                          <td className="py-3.5 px-4 font-black text-black bg-neutral-50/30 whitespace-nowrap">
+                            {item.paidAmount?.toLocaleString('ru-RU') || 0}
+                          </td>
+                        )}
 
                         {/* Metric 2: Remaining to Pay */}
-                        <td className="py-3.5 px-4 font-black text-neutral-800 bg-neutral-50/30 whitespace-nowrap">
-                          {Math.max(0, item.totalAmount - (item.paidAmount || 0)).toLocaleString('ru-RU')}
-                        </td>
+                        {allowedMetrics.includes('financial_metrics') && (
+                          <td className="py-3.5 px-4 font-black text-neutral-800 bg-neutral-50/30 whitespace-nowrap">
+                            {Math.max(0, item.totalAmount - (item.paidAmount || 0)).toLocaleString('ru-RU')}
+                          </td>
+                        )}
 
                         {/* Metric 3: Slots Published */}
-                        <td className="py-3.5 px-4 text-center bg-neutral-50/30 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[11px] border border-emerald-100/80 whitespace-nowrap">
-                            {(() => {
-                              const sub = submissions.find(s => s.integrationId === item.id);
-                              const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
-                              return `${slotsSubmitted} / ${item.slotsCount}`;
-                            })()}
-                          </span>
-                        </td>
+                        {allowedMetrics.includes('slots_published') && (
+                          <td className="py-3.5 px-4 text-center bg-neutral-50/30 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[11px] border border-emerald-100/80 whitespace-nowrap">
+                              {(() => {
+                                const sub = submissions.find(s => s.integrationId === item.id);
+                                const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
+                                return `${slotsSubmitted} / ${item.slotsCount}`;
+                              })()}
+                            </span>
+                          </td>
+                        )}
 
                         {/* Metric 4: Slots Remaining */}
-                        <td className="py-3.5 px-4 text-center bg-neutral-50/30 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-extrabold text-[11px] border border-amber-100/80 whitespace-nowrap">
-                            {(() => {
-                              const sub = submissions.find(s => s.integrationId === item.id);
-                              const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
-                              const slotsRemaining = Math.max(0, item.slotsCount - slotsSubmitted);
-                              return slotsRemaining;
-                            })()}
-                          </span>
-                        </td>
+                        {allowedMetrics.includes('slots_remaining') && (
+                          <td className="py-3.5 px-4 text-center bg-neutral-50/30 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-extrabold text-[11px] border border-amber-100/80 whitespace-nowrap">
+                              {(() => {
+                                const sub = submissions.find(s => s.integrationId === item.id);
+                                const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
+                                const slotsRemaining = Math.max(0, item.slotsCount - slotsSubmitted);
+                                return slotsRemaining;
+                              })()}
+                            </span>
+                          </td>
+                        )}
 
                         {/* Actions */}
                         <td className="py-3.5 px-6 text-right">

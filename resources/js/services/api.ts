@@ -87,10 +87,10 @@ export function createSubmission(integrationId: string, data: Record<string, str
 export function fetchAllowedUsers(): Promise<AllowedUser[]> {
   return request<AllowedUser[]>('/api/allowed-users');
 }
-export function createAllowedUser(email: string, role: AllowedUser['role']): Promise<AllowedUser> {
+export function createAllowedUser(email: string, role: AllowedUser['role'], allowedMetrics?: string[]): Promise<AllowedUser> {
   return request<AllowedUser>('/api/allowed-users', {
     method: 'POST',
-    body: JSON.stringify({ email, role }),
+    body: JSON.stringify({ email, role, allowedMetrics }),
   });
 }
 export function deleteAllowedUser(id: string): Promise<void> {

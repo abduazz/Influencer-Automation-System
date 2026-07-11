@@ -10,7 +10,7 @@ import { Users, UserPlus, Shield, Mail, Trash2, Key, Info } from 'lucide-react';
 
 interface AccessManagementViewProps {
   allowedUsers: AllowedUser[];
-  onAddUser: (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => Promise<void>;
+  onAddUser: (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => Promise<void>;
   onRemoveUser: (id: string) => Promise<void>;
   currentUserEmail: string;
   lang: Language;
@@ -30,6 +30,16 @@ export default function AccessManagementView({
   const [role, setRole] = useState<'super_admin' | 'pr_manager' | 'product_manager'>('pr_manager');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Allowed Metrics state
+  const [metricsPermissions, setMetricsPermissions] = useState<Record<string, boolean>>({
+    deals: true,
+    spend: true,
+    total_slots: true,
+    slots_published: true,
+    slots_remaining: true,
+    financial_metrics: true
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,9 +63,21 @@ export default function AccessManagementView({
       return;
     }
 
+    const allowedMetrics = Object.entries(metricsPermissions)
+      .filter(([_, allowed]) => allowed)
+      .map(([name]) => name);
+
     try {
-      await onAddUser(cleanEmail, role);
+      await onAddUser(cleanEmail, role, allowedMetrics);
       setEmail('');
+      setMetricsPermissions({
+        deals: true,
+        spend: true,
+        total_slots: true,
+        slots_published: true,
+        slots_remaining: true,
+        financial_metrics: true
+      });
       setSuccessMsg(t.addSuccessToast.replace('{email}', cleanEmail));
 
       setTimeout(() => {
@@ -207,6 +229,51 @@ export default function AccessManagementView({
                 <option value="product_manager">{t.roleProductManager}</option>
                 <option value="super_admin">{t.roleSuperAdmin}</option>
               </select>
+            </div>
+
+            {/* Allowed Dashboard Metrics Checklist */}
+            <div className="space-y-2 border-t border-neutral-100 pt-3">
+              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                {lang === 'ru' ? 'Разрешенные метрики на дешборде:' : lang === 'uz' ? 'Ruxsat berilgan ko‘rsatkichlar:' : 'Allowed Dashboard Metrics:'}
+              </label>
+              
+              <div className="space-y-2">
+                {[
+                  { key: 'deals', labelRu: 'Сделки с блогерами', labelUz: 'Bloggerlar bilan bitimlar', labelEn: 'Blogger Deals' },
+                  { key: 'spend', labelRu: 'Бюджет проекта (Расходы)', labelUz: 'Loyiha budjeti (Xarajatlar)', labelEn: 'Allocated Spend' },
+                  { key: 'total_slots', labelRu: 'Всего куплено слотов', labelUz: 'Jami sotib olingan slotlar', labelEn: 'Total Slots' },
+                  { key: 'slots_published', labelRu: 'Выполнено слотов', labelUz: 'Bajarilgan slotlar', labelEn: 'Slots Published' },
+                  { key: 'slots_remaining', labelRu: 'Осталось выполнить слотов', labelUz: 'Bajarilishi kerak bo‘lgan slotlar', labelEn: 'Slots Remaining' },
+                  { key: 'financial_metrics', labelRu: 'Выплаты блогерам (таблица)', labelUz: 'Bloggerlar to‘lovlari (jadval)', labelEn: 'Blogger Payouts (table)' },
+                ].map((m) => {
+                  const isChecked = metricsPermissions[m.key];
+                  const label = lang === 'ru' ? m.labelRu : lang === 'uz' ? m.labelUz : m.labelEn;
+                  
+                  return (
+                    <div key={m.key} className="flex items-center justify-between p-2 rounded-lg border border-neutral-200 bg-neutral-50/50 hover:bg-neutral-50 transition duration-100">
+                      <span className="text-[11px] font-semibold text-neutral-850">{label}</span>
+                      
+                      {/* Premium Toggle Switch */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMetricsPermissions(prev => ({
+                            ...prev,
+                            [m.key]: !prev[m.key]
+                          }));
+                        }}
+                        className={`w-8 h-4 rounded-full transition duration-200 relative ${
+                          isChecked ? 'bg-black' : 'bg-neutral-250'
+                        }`}
+                      >
+                        <span className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
+                          isChecked ? 'right-0.5' : 'left-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Quick Helper Explaining Roles */}

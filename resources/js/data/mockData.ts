@@ -70,6 +70,7 @@ export interface AllowedUser {
   email: string;
   role: 'super_admin' | 'pr_manager' | 'product_manager';
   createdAt: string;
+  allowedMetrics?: string[];
 }
 
 export const INITIAL_ALLOWED_USERS: AllowedUser[] = [

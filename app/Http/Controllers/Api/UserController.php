@@ -16,6 +16,7 @@ class UserController extends Controller
                 'id' => (string) $user->id,
                 'email' => $user->email,
                 'role' => $user->role->value,
+                'allowedMetrics' => $user->allowed_metrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
                 'createdAt' => $user->created_at->format('Y-m-d'),
             ];
         }));
@@ -26,6 +27,7 @@ class UserController extends Controller
         $request->validate([
             'email' => 'required|email|unique:users,email',
             'role' => 'required|in:super_admin,pr_manager,product_manager',
+            'allowedMetrics' => 'nullable|array',
         ]);
 
         $user = User::create([
@@ -33,12 +35,14 @@ class UserController extends Controller
             'email' => strtolower($request->email),
             'role' => $request->role,
             'password' => Hash::make('password'),
+            'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
         ]);
 
         return response()->json([
             'id' => (string) $user->id,
             'email' => $user->email,
             'role' => $user->role->value,
+            'allowedMetrics' => $user->allowed_metrics,
             'createdAt' => $user->created_at->format('Y-m-d'),
         ], 201);
     }

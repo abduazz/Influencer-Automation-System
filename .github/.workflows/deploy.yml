@@ -1,0 +1,63 @@
+name: Laravel Deploy
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    name: Deploy Development
+    runs-on: ubuntu-latest
+    steps:
+      - name: Upload to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: 167.235.222.200
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE }}
+          port: ${{ secrets.PORT }}
+          script: |
+            cd inf.khalilovdev.uz
+            bash ./deploy.sh
+
+            # Send telegram notifications only after the entire job
+      - name: Send error telegram notification
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: html
+          message: |
+            <blockquote>
+            ⚠️❌ <b>BACKEND DEPLOY FAILED</b>
+            </blockquote>
+
+            👤 <b>User:</b> <code>${{ github.actor }}</code>
+            🌿 <b>Branch:</b> <code>${{ github.head_ref || github.ref_name }}</code>
+            📦 <b>Repository:</b> <code>${{ github.repository }}</code>
+            🕒 <b>Time:</b> <code>${{ github.event.head_commit.timestamp }}</code>
+
+            📝 <b>Commit message:</b> <code>${{ github.event.commits[0].message }}</code>
+
+            🔗 <b>View Commit:</b> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">Open on GitHub</a>
+
+      - name: Send success telegram notification
+        if: success()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: html
+          message: |
+            <blockquote>
+            🎉✅ <b>BACKEND DEPLOY SUCCESS</b>
+            </blockquote>
+
+            👤 <b>User:</b> <code>${{ github.actor }}</code>
+            🌿 <b>Branch:</b> <code>${{ github.head_ref || github.ref_name }}</code>
+            📦 <b>Repository:</b> <code>${{ github.repository }}</code>
+            🕒 <b>Time:</b> <code>${{ github.event.head_commit.timestamp }}</code>
+
+            📝 <b>Commit message:</b> <code>${{ github.event.commits[0].message }}</code>
+
+            🔗 <b>View Commit:</b> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">Open on GitHub</a>

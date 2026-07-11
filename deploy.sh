@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+echo "🚚 Deploying application"
+
+echo "🚀 Pulling latest changes..."
+git reset --hard && git pull
+
+echo "📦 Installing composer dependencies"
+php composer.phar install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+
+# Assets are pre-compiled locally and committed to the repository, npm is not needed on the server.
+
+echo "🗃️ Running migrations"
+php artisan migrate --force
+
+echo "⚡ Optimizing application caches"
+php artisan optimize
+
+echo "🎉 Deployed application"
+
+

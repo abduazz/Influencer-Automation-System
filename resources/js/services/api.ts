@@ -96,8 +96,3 @@ export function createAllowedUser(email: string, role: AllowedUser['role'], allo
 export function deleteAllowedUser(id: string): Promise<void> {
   return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
 }
-
-// Database Reset API
-export function resetDatabase(): Promise<{ message: string }> {
-  return request<{ message: string }>('/api/reset', { method: 'POST' });
-}

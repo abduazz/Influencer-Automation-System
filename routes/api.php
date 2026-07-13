@@ -26,8 +26,3 @@ Route::post('/reports', [ReportController::class, 'store']);
 
 Route::get('/blogger-submissions', [BloggerSubmissionController::class, 'index']);
 Route::post('/blogger-submissions', [BloggerSubmissionController::class, 'store']);
-
-Route::post('/reset', function () {
-    Artisan::call('migrate:fresh', ['--seed' => true]);
-    return response()->json(['message' => 'Database successfully reset to campaign defaults.']);
-});

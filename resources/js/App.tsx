@@ -33,7 +33,6 @@ import {
   createReport,
   fetchSubmissions,
   createSubmission,
-  resetDatabase,
 } from './services/api';
 
 import {
@@ -296,33 +295,6 @@ export default function App() {
     }
   }, [activeTab]);
 
-  // Database Reset handler
-  const handleResetToFactory = async () => {
-    if (confirm("Reset simulator database back to initial campaign defaults?")) {
-      setLoading(true);
-      try {
-        await resetDatabase();
-        const [users, projs, ints, reps, subs] = await Promise.all([
-          fetchAllowedUsers(),
-          fetchProjects(),
-          fetchIntegrations(),
-          fetchReports(),
-          fetchSubmissions()
-        ]);
-        setAllowedUsers(users);
-        setProjects(projs);
-        setIntegrations(ints);
-        setReports(reps);
-        setSubmissions(subs);
-        alert("Database successfully reset!");
-      } catch (err) {
-        console.error("Reset failed", err);
-        alert("Reset failed. Check server logs.");
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
 
   // White-list Gate (bypass if it's the guest blogger cabinet page)
   const isBloggerCabinetRoute = new URLSearchParams(window.location.search).get('cabinet') === 'true';

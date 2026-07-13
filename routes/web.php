@@ -10,14 +10,11 @@ Route::get('/deploy-bash', function () {
     $process->run();
 
     if ($process->isSuccessful()) {
-        return response()
-            ->setContent('<pre>' . e($process->getOutput()) . '</pre>')
+        return response('<pre>' . e($process->getOutput()) . '</pre>')
             ->header('Content-Type', 'text/html');
     }
 
-    return response()
-        ->setContent("<h2>Deployment Failed</h2><pre>" . e($process->getErrorOutput() ?: $process->getOutput()) . "</pre>")
-        ->setStatusCode(500)
+    return response("<h2>Deployment Failed</h2><pre>" . e($process->getErrorOutput() ?: $process->getOutput()) . "</pre>", 500)
         ->header('Content-Type', 'text/html');
 });
 

@@ -28,6 +28,12 @@ class DatabaseSeeder extends Seeder
                 'password' => Hash::make('password'),
             ],
             [
+                'name' => 'Super Admin 2',
+                'email' => 'khalilovdev@gmail.com',
+                'role' => UserRole::SuperAdmin,
+                'password' => Hash::make('password'),
+            ],
+            [
                 'name' => 'PR Manager',
                 'email' => 'pr@fluenceflow.com',
                 'role' => UserRole::PrManager,

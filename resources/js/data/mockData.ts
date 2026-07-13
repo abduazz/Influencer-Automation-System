@@ -81,6 +81,12 @@ export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
     createdAt: '2026-07-10',
   },
   {
+    id: 'user-4',
+    email: 'khalilovdev@gmail.com',
+    role: 'super_admin',
+    createdAt: '2026-07-10',
+  },
+  {
     id: 'user-2',
     email: 'pr@fluenceflow.com',
     role: 'pr_manager',

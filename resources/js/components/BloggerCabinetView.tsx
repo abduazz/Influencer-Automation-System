@@ -45,6 +45,10 @@ export default function BloggerCabinetView({
 
   const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId);
 
+  const visibleSubmissions = userRole === 'super_admin'
+    ? submissions
+    : submissions.filter(sub => sub.integrationId === selectedIntegrationId);
+
   // Load state from URL parameters if present
   useEffect(() => {
     if (urlParams?.integrationId) {
@@ -575,7 +579,7 @@ export default function BloggerCabinetView({
           {/* ACTIVE SUBMISSIONS LOG TABLE */}
           <div className="space-y-3 text-left">
             <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
-              {t.viewSubmissionTitle} ({submissions.length})
+              {t.viewSubmissionTitle} ({visibleSubmissions.length})
             </h3>
 
             <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
@@ -590,7 +594,7 @@ export default function BloggerCabinetView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
-                    {submissions.map((sub) => {
+                    {visibleSubmissions.map((sub) => {
                       const matchingInt = integrations.find(i => i.id === sub.integrationId);
 
                       return (
@@ -640,7 +644,7 @@ export default function BloggerCabinetView({
                       );
                     })}
 
-                    {submissions.length === 0 && (
+                    {visibleSubmissions.length === 0 && (
                       <tr>
                         <td colSpan={4} className="py-8 px-5 text-center text-neutral-400">
                           <AlertCircle className="w-5 h-5 text-neutral-300 mx-auto mb-1" />

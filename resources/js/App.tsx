@@ -256,7 +256,7 @@ export default function App() {
         setSimulatedUrlParams({
           platform: params.get('platform') || undefined,
           slotsCount: params.get('slots_count') || undefined,
-          integrationId: params.get('id') || undefined
+          integrationId: params.get('integrationId') || params.get('id') || undefined
         });
         setActiveTab('blogger');
       } else if (page && ['projects', 'reports', 'reports_feed', 'blogger', 'code', 'access'].includes(page)) {
@@ -315,7 +315,7 @@ export default function App() {
   return (
     <div className={`flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans ${isSidebarCollapsed ? 'sidebar-collapsed' : ''} ${isTelegramWebApp ? 'telegram-webapp-view' : ''}`}>
       {/* Dynamic Navigation Rail Sidebar */}
-      {!isTelegramWebApp && (
+      {!isTelegramWebApp && !isBloggerCabinetRoute && (
         <Sidebar 
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
@@ -334,7 +334,7 @@ export default function App() {
       {/* Main Core View Area */}
       <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'p-4 pb-24 md:p-8 lg:p-12'}`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
-        {simulatedUrlParams.platform && (
+        {simulatedUrlParams.platform && currentUserRole === 'super_admin' && (
           <div className="mb-6 p-4 bg-white border-2 border-black rounded-lg flex items-center justify-between text-left text-xs text-black shadow-sm">
             <div className="flex items-start gap-2.5">
               <Info className="w-4 h-4 text-black mt-0.5 shrink-0" />
@@ -354,43 +354,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Active Tab Router */}
-        {activeTab === 'projects' && (
-          <DashboardView
-            projects={projects}
-            integrations={integrations}
-            submissions={submissions}
-            onAddProject={handleAddProject}
-            onDeleteProject={handleDeleteProject}
-            onAddIntegration={handleAddIntegration}
-            onEditIntegration={handleEditIntegration}
-            onDeleteIntegration={handleDeleteIntegration}
-            lang={lang}
-            allowedMetrics={allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
-          />
-        )}
-
-        {activeTab === 'reports' && currentUserRole !== 'product_manager' && (
-          <ReportsView
-            projects={projects}
-            integrations={integrations}
-            reports={reports}
-            onAddReport={handleAddReport}
-            lang={lang}
-            userRole={currentUserRole}
-            isWebApp={isTelegramWebApp}
-          />
-        )}
-
-        {activeTab === 'reports_feed' && currentUserRole !== 'product_manager' && (
-          <ReportsFeedView
-            projects={projects}
-            reports={reports}
-            lang={lang}
-          />
-        )}
-
-        {activeTab === 'blogger' && (
+        {/* Active Tab Router / Guest Blogger Route Gate */}
+        {isBloggerCabinetRoute ? (
           <BloggerCabinetView
             integrations={integrations}
             submissions={submissions}
@@ -399,27 +364,75 @@ export default function App() {
             lang={lang}
             userRole={currentUserRole}
           />
-        )}
+        ) : (
+          <>
+            {activeTab === 'projects' && (
+              <DashboardView
+                projects={projects}
+                integrations={integrations}
+                submissions={submissions}
+                onAddProject={handleAddProject}
+                onDeleteProject={handleDeleteProject}
+                onAddIntegration={handleAddIntegration}
+                onEditIntegration={handleEditIntegration}
+                onDeleteIntegration={handleDeleteIntegration}
+                lang={lang}
+                allowedMetrics={allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
+              />
+            )}
 
-        {activeTab === 'access' && currentUserRole === 'super_admin' && (
-          <AccessManagementView
-            allowedUsers={allowedUsers}
-            onAddUser={handleAddUser}
-            onRemoveUser={handleRemoveUser}
-            currentUserEmail={currentUserEmail}
-            lang={lang}
-          />
-        )}
+            {activeTab === 'reports' && currentUserRole !== 'product_manager' && (
+              <ReportsView
+                projects={projects}
+                integrations={integrations}
+                reports={reports}
+                onAddReport={handleAddReport}
+                lang={lang}
+                userRole={currentUserRole}
+                isWebApp={isTelegramWebApp}
+              />
+            )}
 
-        {activeTab === 'logs' && currentUserRole === 'super_admin' && (
-          <LogsView
-            lang={lang}
-          />
+            {activeTab === 'reports_feed' && currentUserRole !== 'product_manager' && (
+              <ReportsFeedView
+                projects={projects}
+                reports={reports}
+                lang={lang}
+              />
+            )}
+
+            {activeTab === 'blogger' && (
+              <BloggerCabinetView
+                integrations={integrations}
+                submissions={submissions}
+                onAddSubmission={handleAddSubmission}
+                urlParams={simulatedUrlParams}
+                lang={lang}
+                userRole={currentUserRole}
+              />
+            )}
+
+            {activeTab === 'access' && currentUserRole === 'super_admin' && (
+              <AccessManagementView
+                allowedUsers={allowedUsers}
+                onAddUser={handleAddUser}
+                onRemoveUser={handleRemoveUser}
+                currentUserEmail={currentUserEmail}
+                lang={lang}
+              />
+            )}
+
+            {activeTab === 'logs' && currentUserRole === 'super_admin' && (
+              <LogsView
+                lang={lang}
+              />
+            )}
+          </>
         )}
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
-      {!isTelegramWebApp && (
+      {!isTelegramWebApp && !isBloggerCabinetRoute && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200/80 h-16 flex items-center justify-around px-2 z-50 md:hidden shadow-lg backdrop-blur-md">
           {/* Projects Tab */}
           <button

@@ -19,6 +19,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Clean up old mock users
+        User::whereIn('email', ['pr@fluenceflow.com', 'product@fluenceflow.com'])->delete();
+
         // Seed Whitelisted Users
         $users = [
             [

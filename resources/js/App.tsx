@@ -44,7 +44,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield } from 'lucide-react';
 
 export default function App() {
   // Language state (Russian by default)
@@ -331,7 +331,7 @@ export default function App() {
       )}
 
       {/* Main Core View Area */}
-      <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'p-8 lg:p-12'}`}>
+      <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'p-4 pb-24 md:p-8 lg:p-12'}`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
         {simulatedUrlParams.platform && (
           <div className="mb-6 p-4 bg-white border-2 border-black rounded-lg flex items-center justify-between text-left text-xs text-black shadow-sm">
@@ -410,6 +410,84 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      {!isTelegramWebApp && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200/80 h-16 flex items-center justify-around px-2 z-50 md:hidden shadow-lg backdrop-blur-md">
+          {/* Projects Tab */}
+          <button
+            onClick={() => setActiveTab('projects')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+              activeTab === 'projects' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+            }`}
+          >
+            <FolderKanban className="w-5 h-5" />
+            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+              {lang === 'ru' ? 'Проекты' : lang === 'uz' ? 'Loyihalar' : 'Projects'}
+            </span>
+          </button>
+
+          {/* Create Report Tab */}
+          {currentUserRole !== 'product_manager' && (
+            <button
+              onClick={() => setActiveTab('reports')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'reports' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <FilePlus className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Отчет' : lang === 'uz' ? 'Hisobot' : 'Report'}
+              </span>
+            </button>
+          )}
+
+          {/* Reports Feed Tab */}
+          {currentUserRole !== 'product_manager' && (
+            <button
+              onClick={() => setActiveTab('reports_feed')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'reports_feed' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <FileText className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Лента' : lang === 'uz' ? 'Lenta' : 'Feed'}
+              </span>
+            </button>
+          )}
+
+          {/* Blogger Cabinet Tab */}
+          {currentUserRole === 'super_admin' && (
+            <button
+              onClick={() => setActiveTab('blogger')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'blogger' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <UserSquare2 className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Кабинет' : lang === 'uz' ? 'Kabinet' : 'Cabinet'}
+              </span>
+            </button>
+          )}
+
+          {/* Access Management Tab */}
+          {currentUserRole === 'super_admin' && (
+            <button
+              onClick={() => setActiveTab('access')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'access' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <Shield className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Доступ' : lang === 'uz' ? 'Ruxsat' : 'Access'}
+              </span>
+            </button>
+          )}
+        </nav>
+      )}
     </div>
   );
 }

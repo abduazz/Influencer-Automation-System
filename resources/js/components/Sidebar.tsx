@@ -50,7 +50,7 @@ export default function Sidebar({
   const t = translations[lang];
 
   return (
-    <aside className={`bg-white border-r border-neutral-200 flex flex-col justify-between h-screen sticky top-0 text-neutral-800 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-80'}`}>
+    <aside className={`hidden md:flex bg-white border-r border-neutral-200 flex-col justify-between h-screen sticky top-0 text-neutral-800 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-80'}`}>
       {/* Upper Brand */}
       <div className={`p-6 ${isCollapsed ? 'flex flex-col items-center' : ''}`}>
         <div className={`flex ${isCollapsed ? 'flex-col gap-4' : 'items-center justify-between'} mb-8 w-full`}>

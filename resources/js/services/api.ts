@@ -96,3 +96,19 @@ export function createAllowedUser(email: string, role: AllowedUser['role'], allo
 export function deleteAllowedUser(id: string): Promise<void> {
   return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
 }
+
+// System Logs API
+export interface LogEntry {
+  timestamp: string;
+  environment: string;
+  level: string;
+  message: string;
+}
+
+export function fetchLogs(): Promise<LogEntry[]> {
+  return request<LogEntry[]>('/api/logs');
+}
+
+export function clearLogs(): Promise<void> {
+  return request<void>('/api/logs', { method: 'DELETE' });
+}

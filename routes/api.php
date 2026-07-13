@@ -26,3 +26,6 @@ Route::post('/reports', [ReportController::class, 'store']);
 
 Route::get('/blogger-submissions', [BloggerSubmissionController::class, 'index']);
 Route::post('/blogger-submissions', [BloggerSubmissionController::class, 'store']);
+
+Route::get('/logs', [\App\Http\Controllers\Api\LogController::class, 'index']);
+Route::delete('/logs', [\App\Http\Controllers\Api\LogController::class, 'destroy']);

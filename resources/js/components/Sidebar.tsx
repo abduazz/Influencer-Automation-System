@@ -16,13 +16,14 @@ import {
   LogOut,
   User,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Terminal
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
 interface SidebarProps {
-  activeTab: 'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access';
-  setActiveTab: (tab: 'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access') => void;
+  activeTab: 'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access' | 'logs';
+  setActiveTab: (tab: 'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access' | 'logs') => void;
   projectsCount: number;
   integrationsCount: number;
   lang: Language;
@@ -151,21 +152,39 @@ export default function Sidebar({
           )}
 
           {userRole === 'super_admin' && (
-            <button
-              id="nav-access-btn"
-              onClick={() => setActiveTab('access')}
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
-                activeTab === 'access'
-                  ? 'bg-black text-white'
-                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-              }`}
-              title={t.accessTab}
-            >
-              <div className="flex items-center gap-3.5">
-                <Shield className="w-4 h-4" />
-                {!isCollapsed && <span>{t.accessTab}</span>}
-              </div>
-            </button>
+            <>
+              <button
+                id="nav-access-btn"
+                onClick={() => setActiveTab('access')}
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                  activeTab === 'access'
+                    ? 'bg-black text-white'
+                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+                }`}
+                title={t.accessTab}
+              >
+                <div className="flex items-center gap-3.5">
+                  <Shield className="w-4 h-4" />
+                  {!isCollapsed && <span>{t.accessTab}</span>}
+                </div>
+              </button>
+
+              <button
+                id="nav-logs-btn"
+                onClick={() => setActiveTab('logs')}
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                  activeTab === 'logs'
+                    ? 'bg-black text-white'
+                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+                }`}
+                title={lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'System Logs'}
+              >
+                <div className="flex items-center gap-3.5">
+                  <Terminal className="w-4 h-4" />
+                  {!isCollapsed && <span>{lang === 'ru' ? 'Системные логи' : lang === 'uz' ? 'Tizim loglari' : 'System Logs'}</span>}
+                </div>
+              </button>
+            </>
           )}
 
           {userRole === 'super_admin' && (

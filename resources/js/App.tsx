@@ -15,6 +15,7 @@ import ReportsView from './components/ReportsView';
 import ReportsFeedView from './components/ReportsFeedView';
 import BloggerCabinetView from './components/BloggerCabinetView';
 import AccessManagementView from './components/AccessManagementView';
+import LogsView from './components/LogsView';
 import LoginView from './components/LoginView';
 import CodeViewer from './components/CodeViewer';
 import { Language } from './translations';
@@ -44,7 +45,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield, Terminal } from 'lucide-react';
 
 export default function App() {
   // Language state (Russian by default)
@@ -75,7 +76,7 @@ export default function App() {
   });
 
   // Navigation Tabs State
-  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access' | 'logs'>('projects');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
 
@@ -409,6 +410,12 @@ export default function App() {
             lang={lang}
           />
         )}
+
+        {activeTab === 'logs' && currentUserRole === 'super_admin' && (
+          <LogsView
+            lang={lang}
+          />
+        )}
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
@@ -483,6 +490,21 @@ export default function App() {
               <Shield className="w-5 h-5" />
               <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
                 {lang === 'ru' ? 'Доступ' : lang === 'uz' ? 'Ruxsat' : 'Access'}
+              </span>
+            </button>
+          )}
+
+          {/* System Logs Tab */}
+          {currentUserRole === 'super_admin' && (
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'logs' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <Terminal className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'Logs'}
               </span>
             </button>
           )}

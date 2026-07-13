@@ -35,6 +35,18 @@ Route::get('/logs', function () {
         ->header('Content-Type', 'text/html');
 });
 
+Route::get('/check-env', function () {
+    $token = env('TELEGRAM_BOT_TOKEN');
+    $masked_token = $token ? (substr($token, 0, 10) . '...' . substr($token, -5)) : 'NOT SET';
+    
+    return response()->json([
+        'TELEGRAM_BOT_TOKEN_MASKED' => $masked_token,
+        'TELEGRAM_REPORTS_CHAT_ID' => env('TELEGRAM_REPORTS_CHAT_ID', 'NOT SET'),
+        'TELEGRAM_SUBMISSIONS_CHAT_ID' => env('TELEGRAM_SUBMISSIONS_CHAT_ID', 'NOT SET'),
+        'TELEGRAM_CHAT_ID' => env('TELEGRAM_CHAT_ID', 'NOT SET'),
+    ]);
+});
+
 Route::get('/{any}', function () {
     return view('app');
 })->where('any', '^(?!admin|api).*$');

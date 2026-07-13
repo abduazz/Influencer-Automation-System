@@ -18,6 +18,17 @@ Route::get('/deploy-bash', function () {
         ->header('Content-Type', 'text/html');
 });
 
+Route::get('/logs', function () {
+    $path = storage_path('logs/laravel.log');
+    if (!file_exists($path)) {
+        return "Log file not found.";
+    }
+    $lines = file($path);
+    $last_lines = array_slice($lines, -100);
+    return response('<pre>' . e(implode("", $last_lines)) . '</pre>')
+        ->header('Content-Type', 'text/html');
+});
+
 Route::get('/{any}', function () {
     return view('app');
 })->where('any', '^(?!admin|api).*$');

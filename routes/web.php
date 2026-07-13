@@ -24,8 +24,14 @@ Route::get('/logs', function () {
         return "Log file not found.";
     }
     $lines = file($path);
-    $last_lines = array_slice($lines, -100);
-    return response('<pre>' . e(implode("", $last_lines)) . '</pre>')
+    $errors = [];
+    foreach ($lines as $line) {
+        if (str_contains($line, '.ERROR:') || str_contains($line, 'exception') || str_contains($line, 'Exception')) {
+            $errors[] = $line;
+        }
+    }
+    $last_errors = array_slice($errors, -30);
+    return response('<pre>' . e(implode("", $last_errors)) . '</pre>')
         ->header('Content-Type', 'text/html');
 });
 

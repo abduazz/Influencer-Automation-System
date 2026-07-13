@@ -97,6 +97,16 @@ export function deleteAllowedUser(id: string): Promise<void> {
   return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
 }
 
+export async function shortenUrl(longUrl: string): Promise<string> {
+  try {
+    const data = await request<{ short_url: string }>(`/api/shorten-url?url=${encodeURIComponent(longUrl)}`);
+    return data.short_url;
+  } catch (e) {
+    console.error("Shorten API failed, fallback to original", e);
+    return longUrl;
+  }
+}
+
 // System Logs API
 export interface LogEntry {
   timestamp: string;

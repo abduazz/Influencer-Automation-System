@@ -18,6 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Language, translations } from '../translations';
+import { shortenUrl } from '../services/api';
 
 interface BloggerCabinetViewProps {
   integrations: Integration[];
@@ -42,6 +43,7 @@ export default function BloggerCabinetView({
   const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Instagram');
   const [activeSlotsCount, setActiveSlotsCount] = useState<number>(4);
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>('int-2');
+  const [isShortening, setIsShortening] = useState(false);
 
   const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId);
 
@@ -279,15 +281,26 @@ export default function BloggerCabinetView({
 
               {/* Copy simulation link */}
               <button
-                onClick={() => {
-                  const url = `${window.location.origin}/?cabinet=true&platform=${activePlatform}&slots_count=${activeSlotsCount}&integrationId=${selectedIntegrationId}`;
-                  navigator.clipboard.writeText(url);
-                  alert(`${t.copiedAlert}\n${url}`);
+                onClick={async () => {
+                  const tokenOrId = selectedIntegration?.bloggerCabinetToken || selectedIntegrationId;
+                  const longUrl = `${window.location.origin}/c/${tokenOrId}`;
+                  
+                  setIsShortening(true);
+                  try {
+                    const shortUrl = await shortenUrl(longUrl);
+                    await navigator.clipboard.writeText(shortUrl);
+                    alert(`${t.copiedAlert}\n${shortUrl}`);
+                  } catch (err) {
+                    console.error("Failed to copy short URL", err);
+                  } finally {
+                    setIsShortening(false);
+                  }
                 }}
-                className="w-full py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-md transition flex items-center justify-center gap-1.5"
+                disabled={isShortening}
+                className="w-full py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-md transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Link className="w-3.5 h-3.5 text-white" />
-                <span>{t.copyTooltip}</span>
+                <span>{isShortening ? (lang === 'ru' ? 'Сокращение...' : 'Shortening...') : t.copyTooltip}</span>
               </button>
             </div>
           </div>

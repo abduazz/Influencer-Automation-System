@@ -112,6 +112,10 @@ export default function App() {
     integrationId?: string;
   }>({});
 
+  // Check if current URL route matches a blogger cabinet guest access pattern
+  const isBloggerCabinetRoute = new URLSearchParams(window.location.search).get('cabinet') === 'true' ||
+                                window.location.pathname.startsWith('/c/');
+
   // Core Persistent State Hook (Persisting data to server database)
   const [projects, setProjects] = useState<Project[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
@@ -249,14 +253,18 @@ export default function App() {
 
     const parseUrlRoute = () => {
       const params = new URLSearchParams(window.location.search);
-      const isCabinet = params.get('cabinet') === 'true';
+      const isCabinet = isBloggerCabinetRoute;
       const page = params.get('page');
 
       if (isCabinet) {
+        let integrationId = params.get('integrationId') || params.get('id') || undefined;
+        if (window.location.pathname.startsWith('/c/')) {
+          integrationId = window.location.pathname.substring(3); // remove "/c/"
+        }
         setSimulatedUrlParams({
           platform: params.get('platform') || undefined,
           slotsCount: params.get('slots_count') || undefined,
-          integrationId: params.get('integrationId') || params.get('id') || undefined
+          integrationId: integrationId
         });
         setActiveTab('blogger');
       } else if (page && ['projects', 'reports', 'reports_feed', 'blogger', 'code', 'access'].includes(page)) {
@@ -276,6 +284,8 @@ export default function App() {
 
   // Update browser URL query string whenever activeTab changes
   useEffect(() => {
+    if (isBloggerCabinetRoute) return;
+
     const params = new URLSearchParams(window.location.search);
     
     if (activeTab === 'blogger') {
@@ -294,12 +304,10 @@ export default function App() {
         window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
       }
     }
-  }, [activeTab]);
+  }, [activeTab, isBloggerCabinetRoute]);
 
 
   // White-list Gate (bypass if it's the guest blogger cabinet page)
-  const isBloggerCabinetRoute = new URLSearchParams(window.location.search).get('cabinet') === 'true';
-
   if (!isBloggerCabinetRoute && (!currentUserEmail || !currentUserRole)) {
     return (
       <LoginView

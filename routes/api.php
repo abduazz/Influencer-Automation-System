@@ -29,3 +29,32 @@ Route::post('/blogger-submissions', [BloggerSubmissionController::class, 'store'
 
 Route::get('/logs', [\App\Http\Controllers\Api\LogController::class, 'index']);
 Route::delete('/logs', [\App\Http\Controllers\Api\LogController::class, 'destroy']);
+
+Route::get('/shorten-url', function (\Illuminate\Http\Request $request) {
+    $url = $request->query('url');
+    if (!$url) {
+        return response()->json(['error' => 'URL is required'], 400);
+    }
+    
+    try {
+        $response = \Illuminate\Support\Facades\Http::timeout(5)->get('https://clck.ru/--', [
+            'url' => $url
+        ]);
+        if ($response->successful()) {
+            return response()->json(['short_url' => trim($response->body())]);
+        }
+    } catch (\Exception $e) {
+    }
+    
+    try {
+        $response = \Illuminate\Support\Facades\Http::timeout(5)->get('http://tinyurl.com/api-create.php', [
+            'url' => $url
+        ]);
+        if ($response->successful()) {
+            return response()->json(['short_url' => trim($response->body())]);
+        }
+    } catch (\Exception $e) {
+    }
+
+    return response()->json(['short_url' => $url]);
+});

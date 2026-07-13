@@ -39,12 +39,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
 
-  // If userRole is pr_manager, force platform to Telegram
-  useEffect(() => {
-    if (userRole === 'pr_manager') {
-      setPlatform('Telegram');
-    }
-  }, [userRole]);
+
   const [slotsCount, setSlotsCount] = useState<number>(5);
   const [paidSlotsCount, setPaidSlotsCount] = useState<number>(3);
   const [pricePerSlot, setPricePerSlot] = useState<number>(200);
@@ -81,23 +76,34 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
   const [successToast, setSuccessToast] = useState<{ message: string; link?: string | null } | null>(null);
   const [createdReportResult, setCreatedReportResult] = useState<Report | null>(null);
 
-  // Sync slotsConfig size with slotsCount
+  // Sync slotsConfig size and platform/format with slotsCount and platform
   useEffect(() => {
-    setSlotsConfig((prev) => {
-      const next = [...prev];
-      if (next.length < slotsCount) {
-        for (let i = next.length; i < slotsCount; i++) {
-          next.push({
-            platform: platform,
-            format: platform === 'Instagram' ? 'Stories' : platform === 'Telegram' ? 'Post' : 'Release',
-          });
-        }
-      } else if (next.length > slotsCount) {
-        next.splice(slotsCount);
+    if (!customizeSlots) {
+      const next: SlotConfig[] = [];
+      for (let i = 0; i < slotsCount; i++) {
+        next.push({
+          platform: platform,
+          format: platform === 'Instagram' ? 'Stories' : platform === 'Telegram' ? 'Post' : 'Release',
+        });
       }
-      return next;
-    });
-  }, [slotsCount, platform]);
+      setSlotsConfig(next);
+    } else {
+      setSlotsConfig((prev) => {
+        const next = [...prev];
+        if (next.length < slotsCount) {
+          for (let i = next.length; i < slotsCount; i++) {
+            next.push({
+              platform: platform,
+              format: platform === 'Instagram' ? 'Stories' : platform === 'Telegram' ? 'Post' : 'Release',
+            });
+          }
+        } else if (next.length > slotsCount) {
+          next.splice(slotsCount);
+        }
+        return next;
+      });
+    }
+  }, [slotsCount, platform, customizeSlots]);
 
   // Calculate total and paid amount "on the fly" mimicking ->live() and ->afterStateUpdated()
   useEffect(() => {
@@ -542,24 +548,15 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                             onChange={(e) => setPlatform(e.target.value as any)}
                             className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
                           >
-                            {(['Telegram', 'Instagram', 'YouTube', 'MAX'] as const).map((plat) => {
-                              const isDisabled = userRole === 'pr_manager' && plat !== 'Telegram';
-                              return (
-                                <option
-                                  key={plat}
-                                  value={plat}
-                                  disabled={isDisabled}
-                                >
-                                  {plat}
-                                </option>
-                              );
-                            })}
+                            {(['Telegram', 'Instagram', 'YouTube', 'MAX'] as const).map((plat) => (
+                              <option
+                                key={plat}
+                                value={plat}
+                              >
+                                {plat}
+                              </option>
+                            ))}
                           </select>
-                          {userRole === 'pr_manager' && (
-                            <p className="text-[9px] text-blue-600 font-bold mt-1 text-left">
-                              {lang === 'ru' ? '• Доступ ограничен: только Telegram' : lang === 'uz' ? '• Kirish cheklangan: faqat Telegram' : '• Restricted Access: Telegram only'}
-                            </p>
-                          )}
                         </div>
 
                         {/* Reactive Grid: Price & Slots */}

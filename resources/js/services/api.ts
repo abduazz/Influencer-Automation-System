@@ -37,8 +37,9 @@ export function createProject(name: string, description: string): Promise<Projec
     body: JSON.stringify({ name, description }),
   });
 }
-export function deleteProject(id: string): Promise<void> {
-  return request<void>(`/api/projects/${id}`, { method: 'DELETE' });
+export function deleteProject(id: string, userEmail?: string): Promise<void> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
+  return request<void>(`/api/projects/${id}`, { method: 'DELETE', headers });
 }
 
 // Integrations API

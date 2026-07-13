@@ -186,7 +186,7 @@ export default function App() {
   };
 
   const handleDeleteProject = async (projectId: string) => {
-    await deleteProject(projectId);
+    await deleteProject(projectId, currentUserEmail || undefined);
     const projs = await fetchProjects();
     const ints = await fetchIntegrations();
     setProjects(projs);
@@ -386,6 +386,7 @@ export default function App() {
                 onDeleteIntegration={handleDeleteIntegration}
                 lang={lang}
                 allowedMetrics={allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
+                userRole={currentUserRole}
               />
             )}
 

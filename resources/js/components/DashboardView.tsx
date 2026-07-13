@@ -38,6 +38,7 @@ interface DashboardViewProps {
   onDeleteIntegration: (id: string) => void;
   lang: Language;
   allowedMetrics?: string[];
+  userRole?: string | null;
 }
 
 export default function DashboardView({
@@ -50,7 +51,8 @@ export default function DashboardView({
   onEditIntegration,
   onDeleteIntegration,
   lang,
-  allowedMetrics = ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']
+  allowedMetrics = ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
+  userRole
 }: DashboardViewProps) {
   // Current active project selection
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
@@ -329,25 +331,27 @@ export default function DashboardView({
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.selectedCampaignDetails}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(t.confirmDeleteProject)) {
-                          onDeleteProject(selectedProject.id);
-                          if (projects.length > 1) {
-                            const remaining = projects.filter(p => p.id !== selectedProject.id);
-                            setSelectedProjectId(remaining[0].id);
-                          } else {
-                            setSelectedProjectId('');
+                    {userRole === 'super_admin' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(t.confirmDeleteProject)) {
+                            onDeleteProject(selectedProject.id);
+                            if (projects.length > 1) {
+                              const remaining = projects.filter(p => p.id !== selectedProject.id);
+                              setSelectedProjectId(remaining[0].id);
+                            } else {
+                              setSelectedProjectId('');
+                            }
                           }
-                        }
-                      }}
-                      id={`delete-project-${selectedProject.id}`}
-                      className="text-neutral-400 hover:text-red-600 p-1 rounded transition duration-150 cursor-pointer"
-                      title={t.deleteProjectTooltip}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                        }}
+                        id={`delete-project-${selectedProject.id}`}
+                        className="text-neutral-400 hover:text-red-600 p-1 rounded transition duration-150 cursor-pointer"
+                        title={t.deleteProjectTooltip}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                   <h3 className="text-sm font-black text-black">{selectedProject.name}</h3>
                   <p className="text-xs text-neutral-500 max-w-3xl leading-relaxed">

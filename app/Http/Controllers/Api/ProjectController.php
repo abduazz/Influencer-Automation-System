@@ -40,8 +40,23 @@ class ProjectController extends Controller
         ], 201);
     }
 
-    public function destroy(Project $project)
+    public function destroy(Request $request, Project $project)
     {
+        $user = auth()->user();
+
+        if (!$user) {
+            $email = $request->header('X-User-Email');
+            if ($email) {
+                $user = \App\Models\User::where('email', strtolower($email))->first();
+            }
+        }
+
+        if (!$user || $user->role !== \App\Enums\UserRole::SuperAdmin) {
+            return response()->json([
+                'error' => 'Forbidden. Only Super Admin can delete projects.'
+            ], 403);
+        }
+
         $project->delete();
         return response()->noContent();
     }

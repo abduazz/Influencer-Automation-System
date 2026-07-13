@@ -47,6 +47,36 @@ Route::get('/check-env', function () {
     ]);
 });
 
+Route::get('/setup-telegram', function () {
+    $path = base_path('.env');
+    if (!file_exists($path)) {
+        return "env file not found.";
+    }
+    
+    $content = file_get_contents($path);
+    $added = false;
+    
+    if (!str_contains($content, 'TELEGRAM_BOT_TOKEN=')) {
+        $content .= "\nTELEGRAM_BOT_TOKEN=8618987059:AAF0YBxGMpXMsGE98N2NZS1oWrSmaCUUhvI";
+        $added = true;
+    }
+    if (!str_contains($content, 'TELEGRAM_REPORTS_CHAT_ID=')) {
+        $content .= "\nTELEGRAM_REPORTS_CHAT_ID=-4904683057";
+        $added = true;
+    }
+    if (!str_contains($content, 'TELEGRAM_SUBMISSIONS_CHAT_ID=')) {
+        $content .= "\nTELEGRAM_SUBMISSIONS_CHAT_ID=-4140182239";
+        $added = true;
+    }
+    
+    if ($added) {
+        file_put_contents($path, $content);
+        return "Telegram configurations appended successfully. Please run /deploy-bash to refresh configuration cache.";
+    }
+    
+    return "Telegram configurations already set or nothing added.";
+});
+
 Route::get('/{any}', function () {
     return view('app');
 })->where('any', '^(?!admin|api).*$');

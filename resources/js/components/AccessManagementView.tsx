@@ -85,15 +85,15 @@ export default function AccessManagementView({
       }, 4000);
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
-      if (message.toLowerCase().includes('already exists')) {
+      if (message.toLowerCase().includes('already exists') || message.toLowerCase().includes('taken')) {
         setErrorMsg(t.emailAlreadyExists);
       } else {
         setErrorMsg(
           lang === 'ru'
-            ? 'Не удалось сохранить доступ. Проверьте подключение к серверу.'
+            ? `Не удалось сохранить доступ: ${message || 'Проверьте подключение к серверу.'}`
             : lang === 'uz'
-            ? 'Ruxsatni saqlab bo‘lmadi. Server bilan ulanishni tekshiring.'
-            : 'Failed to save access. Please check server connection.'
+            ? `Ruxsatni saqlab bo‘lmadi: ${message || 'Server bilan ulanishni tekshiring.'}`
+            : `Failed to save access: ${message || 'Please check server connection.'}`
         );
       }
     }
@@ -122,13 +122,14 @@ export default function AccessManagementView({
         setTimeout(() => {
           setSuccessMsg(null);
         }, 4000);
-      } catch {
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '';
         setErrorMsg(
           lang === 'ru'
-            ? 'Не удалось удалить доступ. Проверьте подключение к серверу.'
+            ? `Не удалось удалить доступ: ${message || 'Проверьте подключение к серверу.'}`
             : lang === 'uz'
-            ? 'Ruxsatni o‘chirib bo‘lmadi. Server bilan ulanishni tekshiring.'
-            : 'Failed to revoke access. Please check server connection.'
+            ? `Ruxsatni o‘chirib bo‘lmadi: ${message || 'Server bilan ulanishni tekshiring.'}`
+            : `Failed to revoke access: ${message || 'Please check server connection.'}`
         );
       }
     }

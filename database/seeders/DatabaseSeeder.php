@@ -33,18 +33,6 @@ class DatabaseSeeder extends Seeder
                 'role' => UserRole::SuperAdmin,
                 'password' => Hash::make('password'),
             ],
-            [
-                'name' => 'PR Manager',
-                'email' => 'pr@fluenceflow.com',
-                'role' => UserRole::PrManager,
-                'password' => Hash::make('password'),
-            ],
-            [
-                'name' => 'Product Manager',
-                'email' => 'product@fluenceflow.com',
-                'role' => UserRole::ProductManager,
-                'password' => Hash::make('password'),
-            ],
         ];
 
         foreach ($users as $userData) {

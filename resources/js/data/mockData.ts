@@ -86,18 +86,6 @@ export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
     role: 'super_admin',
     createdAt: '2026-07-10',
   },
-  {
-    id: 'user-2',
-    email: 'pr@fluenceflow.com',
-    role: 'pr_manager',
-    createdAt: '2026-07-10',
-  },
-  {
-    id: 'user-3',
-    email: 'product@fluenceflow.com',
-    role: 'product_manager',
-    createdAt: '2026-07-10',
-  },
 ];
 
 export const INITIAL_PROJECTS: Project[] = [

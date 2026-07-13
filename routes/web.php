@@ -36,14 +36,14 @@ Route::get('/logs', function () {
 });
 
 Route::get('/check-env', function () {
-    $token = env('TELEGRAM_BOT_TOKEN');
+    $token = config('services.telegram.bot_token');
     $masked_token = $token ? (substr($token, 0, 10) . '...' . substr($token, -5)) : 'NOT SET';
     
     return response()->json([
         'TELEGRAM_BOT_TOKEN_MASKED' => $masked_token,
-        'TELEGRAM_REPORTS_CHAT_ID' => env('TELEGRAM_REPORTS_CHAT_ID', 'NOT SET'),
-        'TELEGRAM_SUBMISSIONS_CHAT_ID' => env('TELEGRAM_SUBMISSIONS_CHAT_ID', 'NOT SET'),
-        'TELEGRAM_CHAT_ID' => env('TELEGRAM_CHAT_ID', 'NOT SET'),
+        'TELEGRAM_REPORTS_CHAT_ID' => config('services.telegram.reports_chat_id', 'NOT SET'),
+        'TELEGRAM_SUBMISSIONS_CHAT_ID' => config('services.telegram.submissions_chat_id', 'NOT SET'),
+        'TELEGRAM_CHAT_ID' => config('services.telegram.chat_id', 'NOT SET'),
     ]);
 });
 

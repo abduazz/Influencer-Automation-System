@@ -9,7 +9,7 @@ class TelegramService
 {
     public static function sendMessage($chatId, $text)
     {
-        $token = env('TELEGRAM_BOT_TOKEN');
+        $token = config('services.telegram.bot_token');
         if (!$token || !$chatId) {
             Log::info("Telegram Bot Token or Chat ID not set. Message: \n" . $text);
             return false;
@@ -36,9 +36,9 @@ class TelegramService
 
     public static function sendReportNotification($report, $receiptBase64 = null, $lang = 'ru')
     {
-        $chatId = env('TELEGRAM_REPORTS_CHAT_ID');
+        $chatId = config('services.telegram.reports_chat_id');
         if (!$chatId) {
-            $chatId = env('TELEGRAM_CHAT_ID'); // fallback
+            $chatId = config('services.telegram.chat_id'); // fallback
         }
 
         $locales = [
@@ -138,7 +138,7 @@ class TelegramService
             $base64Data = $matches[2];
             $binaryData = base64_decode($base64Data);
 
-            $token = env('TELEGRAM_BOT_TOKEN');
+            $token = config('services.telegram.bot_token');
             if ($token && $chatId) {
                 try {
                     $isPdf = str_contains($mimeType, 'pdf');
@@ -168,9 +168,9 @@ class TelegramService
 
     public static function sendSubmissionNotification($integration, $data, $lang = 'ru')
     {
-        $chatId = env('TELEGRAM_SUBMISSIONS_CHAT_ID');
+        $chatId = config('services.telegram.submissions_chat_id');
         if (!$chatId) {
-            $chatId = env('TELEGRAM_CHAT_ID'); // fallback
+            $chatId = config('services.telegram.chat_id'); // fallback
         }
 
         $locales = [

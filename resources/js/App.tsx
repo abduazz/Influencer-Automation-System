@@ -146,9 +146,10 @@ export default function App() {
     integrationId?: string;
   }>({});
 
-  // Check if current URL route matches a blogger cabinet guest access pattern
-  const isBloggerCabinetRoute = new URLSearchParams(window.location.search).get('cabinet') === 'true' ||
-                                window.location.pathname.startsWith('/c/');
+  // Check if current URL route matches a blogger cabinet guest access pattern (and user is not logged in)
+  const isBloggerCabinetRoute = (new URLSearchParams(window.location.search).get('cabinet') === 'true' ||
+                                 window.location.pathname.startsWith('/c/')) && 
+                                 !currentUserRole;
 
   // Core Persistent State Hook (Persisting data to server database)
   const [projects, setProjects] = useState<Project[]>([]);
@@ -293,10 +294,10 @@ export default function App() {
 
     const parseUrlRoute = () => {
       const params = new URLSearchParams(window.location.search);
-      const isCabinet = isBloggerCabinetRoute;
+      const hasCabinetParam = params.get('cabinet') === 'true' || window.location.pathname.startsWith('/c/');
       const page = params.get('page');
 
-      if (isCabinet) {
+      if (hasCabinetParam) {
         let integrationId = params.get('integrationId') || params.get('id') || undefined;
         if (window.location.pathname.startsWith('/c/')) {
           integrationId = window.location.pathname.substring(3); // remove "/c/"

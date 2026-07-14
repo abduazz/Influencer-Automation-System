@@ -109,9 +109,8 @@ export default function BloggerCabinetView({
     setFilePreviews(initialPreviews);
 
     // Determine if form is completely submitted (locked)
-    const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
     let hasUnfilled = false;
-    for (let i = 1; i <= maxPaid; i++) {
+    for (let i = 1; i <= activeSlotsCount; i++) {
       const key = `slot_${i}`;
       if (!submittedData[key]) {
         hasUnfilled = true;
@@ -150,12 +149,11 @@ export default function BloggerCabinetView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
     const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
     const submittedData = existingSub?.data || {};
 
     // Check if at least one new slot is being filled in this turn
-    const hasNewInput = Array.from({ length: maxPaid }).some((_, idx) => {
+    const hasNewInput = Array.from({ length: activeSlotsCount }).some((_, idx) => {
       const key = `slot_${idx + 1}`;
       return !submittedData[key] && !!formData[key];
     });
@@ -184,9 +182,8 @@ export default function BloggerCabinetView({
       return;
     }
 
-    const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
     const submittedPayload: Record<string, string> = {};
-    for (let i = 1; i <= maxPaid; i++) {
+    for (let i = 1; i <= activeSlotsCount; i++) {
       const key = `slot_${i}`;
       submittedPayload[key] = formData[key] || '';
     }

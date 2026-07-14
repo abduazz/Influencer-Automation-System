@@ -190,7 +190,7 @@ export default function BloggerCabinetView({
 
     onAddSubmission({
       integrationId: selectedIntegrationId,
-      status: 'pending',
+      status: 'approved',
       data: submittedPayload,
       lang: lang
     });

@@ -33,7 +33,7 @@ class BloggerSubmissionController extends Controller
         $sub = BloggerSubmission::updateOrCreate(
             ['integration_id' => $request->integrationId],
             [
-                'status' => $request->status ?? 'pending',
+                'status' => 'approved',
                 'submitted_at' => now(),
                 'data' => $request->data,
             ]

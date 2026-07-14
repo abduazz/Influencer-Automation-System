@@ -61,9 +61,11 @@ class GoogleSheetsService
             // Ensure the sheet/tab exists
             self::ensureSheetExists($accessToken, $spreadsheetId, $sheetName);
 
-            // Get next sequential index for the first column
-            $index = self::getNextIndex($accessToken, $spreadsheetId, $sheetName);
-
+            // Find the exact row number and index by checking column A values
+            $targetInfo = self::getTargetRowAndIndex($accessToken, $spreadsheetId, $sheetName);
+            $targetRow = $targetInfo['row'];
+            $index = $targetInfo['index'];
+ 
             // Row columns: №, Назначение, Канал, Платформа, Сумма, Дата, Комментарии
             $values = [
                 [
@@ -76,20 +78,20 @@ class GoogleSheetsService
                     $report->comments ?? '',
                 ]
             ];
-
-            // Append right after the table ending
-            $range = urlencode("'{$sheetName}'!A3");
-            $url = "https://sheets.googleapis.com/v4/spreadsheets/{$spreadsheetId}/values/{$range}:append?valueInputOption=USER_ENTERED";
-
-            $response = Http::withToken($accessToken)->post($url, [
+ 
+            // Write directly to the target row (this fills pre-formatted empty rows)
+            $range = urlencode("'{$sheetName}'!A{$targetRow}:G{$targetRow}");
+            $url = "https://sheets.googleapis.com/v4/spreadsheets/{$spreadsheetId}/values/{$range}?valueInputOption=USER_ENTERED";
+ 
+            $response = Http::withToken($accessToken)->put($url, [
                 'values' => $values
             ]);
-
+ 
             if (!$response->successful()) {
-                throw new \Exception("Google Sheets append API failed: " . $response->body());
+                throw new \Exception("Google Sheets update API failed: " . $response->body());
             }
-
-            Log::info("Successfully duplicated report ID {$report->id} to Google Sheet tab '{$sheetName}'.");
+ 
+            Log::info("Successfully duplicated report ID {$report->id} to Google Sheet tab '{$sheetName}' at row {$targetRow}.");
             return true;
         } catch (\Throwable $e) {
             Log::error("Failed to append report to Google Sheets: " . $e->getMessage());
@@ -154,22 +156,32 @@ class GoogleSheetsService
         }
     }
 
-    private static function getNextIndex($accessToken, $spreadsheetId, $sheetName)
+    private static function getTargetRowAndIndex($accessToken, $spreadsheetId, $sheetName)
     {
         $range = urlencode("'{$sheetName}'!A3:A1000");
         $url = "https://sheets.googleapis.com/v4/spreadsheets/{$spreadsheetId}/values/{$range}";
 
+        $targetRow = 3;
+        $index = 1;
+
         $response = Http::withToken($accessToken)->get($url);
-        if (!$response->successful()) {
-            return 1;
+        if ($response->successful()) {
+            $data = $response->json();
+            $values = $data['values'] ?? [];
+            
+            foreach ($values as $row) {
+                $cellValue = isset($row[0]) ? trim($row[0]) : '';
+                if ($cellValue === '') {
+                    break;
+                }
+                $targetRow++;
+                $index = intval($cellValue) + 1;
+            }
         }
 
-        $data = $response->json();
-        $values = $data['values'] ?? [];
-        if (empty($values)) {
-            return 1;
-        }
-
-        return count($values) + 1;
+        return [
+            'row' => $targetRow,
+            'index' => $index
+        ];
     }
 }

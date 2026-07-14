@@ -116,7 +116,7 @@ class ReportController extends Controller
                 $token = 'tok_' . time() . '_' . $slugName;
                 $referralLink = "https://fluenceflow.net/p/{$report->project_id}?utm_source={$slugName}";
                 
-                $startDate = $report->date;
+                $startDate = \Carbon\Carbon::parse($report->date);
                 $endDate = $startDate->copy()->addDays(14);
 
                 Integration::create([

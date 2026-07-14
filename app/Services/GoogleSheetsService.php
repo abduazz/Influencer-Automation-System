@@ -47,6 +47,11 @@ class GoogleSheetsService
             return false;
         }
 
+        if (!$report->project_id) {
+            Log::info("Skipping Google Sheets append: Report ID {$report->id} has no project.");
+            return true;
+        }
+
         try {
             $accessToken = self::getAccessToken();
 

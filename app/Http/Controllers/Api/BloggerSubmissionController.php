@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BloggerSubmission;
+use App\Models\Integration;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class BloggerSubmissionController extends Controller
 {
@@ -23,23 +25,37 @@ class BloggerSubmissionController extends Controller
 
     public function store(Request $request)
     {
-        \Illuminate\Support\Facades\Log::info('BloggerSubmission store called', [
-            'integrationId' => $request->input('integrationId'),
+        $rawId = $request->input('integrationId');
+
+        Log::info('BloggerSubmission store called', [
+            'integrationId_raw' => $rawId,
             'lang' => $request->input('lang'),
-            'data_keys' => array_keys((array)$request->input('data', [])),
+            'data_keys' => array_keys((array) $request->input('data', [])),
         ]);
 
-        $validated = $request->validate([
-            'integrationId' => 'required|exists:integrations,id',
+        // Validate basic shape (not DB existence yet — we resolve it below)
+        $request->validate([
+            'integrationId' => 'required|string',
             'status' => 'nullable|in:pending,approved,rejected',
             'data' => 'required|array',
             'lang' => 'nullable|string|in:ru,en,uz',
         ]);
 
-        \Illuminate\Support\Facades\Log::info('BloggerSubmission validation passed, saving to DB');
+        // Resolve integration: accept numeric ID OR blogger_cabinet_token
+        $integration = Integration::find($rawId)
+            ?? Integration::where('blogger_cabinet_token', $rawId)->first();
+
+        if (!$integration) {
+            Log::error('BloggerSubmission: integration not found for id/token: ' . $rawId);
+            return response()->json([
+                'message' => 'Integration not found. Please use the correct blogger link.'
+            ], 422);
+        }
+
+        Log::info('BloggerSubmission resolved integration: id=' . $integration->id . ' blogger=' . $integration->blogger_name);
 
         $sub = BloggerSubmission::updateOrCreate(
-            ['integration_id' => $request->integrationId],
+            ['integration_id' => $integration->id],
             [
                 'status' => 'approved',
                 'submitted_at' => now(),
@@ -47,18 +63,16 @@ class BloggerSubmissionController extends Controller
             ]
         );
 
-        \Illuminate\Support\Facades\Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
-
-        $integration = \App\Models\Integration::findOrFail($request->integrationId);
+        Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
 
         // Trigger Telegram submission notification
         try {
             $lang = $request->input('lang', 'ru');
-            \Illuminate\Support\Facades\Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
+            Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
             $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $request->data, $lang);
-            \Illuminate\Support\Facades\Log::info('Telegram sendSubmissionNotification result: ' . ($result ? 'true' : 'false'));
+            Log::info('Telegram sendSubmissionNotification result: ' . ($result ? 'true' : 'false'));
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error("Failed to send submission webhook: " . $e->getMessage());
+            Log::error("Failed to send submission webhook: " . $e->getMessage());
         }
 
         return response()->json([

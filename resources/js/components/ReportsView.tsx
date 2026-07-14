@@ -32,7 +32,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
   // Form State
   const [paymentType, setPaymentType] = useState<'prepaid' | 'full' | 'other'>('prepaid');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [projectId, setProjectId] = useState<string>(projects[0]?.id || '');
+  const [projectId, setProjectId] = useState<string>('');
   const [destination, setDestination] = useState<string>('');
   const [channelBlogger, setChannelBlogger] = useState<string>('');
   const [bloggerType, setBloggerType] = useState<'existing' | 'new'>('existing');
@@ -126,7 +126,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!destination.trim()) return;
-    if (paymentType !== 'other' && (!projectId || !channelBlogger.trim())) return;
+    if (paymentType !== 'other' && !channelBlogger.trim()) return;
 
     if (paymentType !== 'other' && customizeSlots) {
       const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
@@ -151,7 +151,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
     };
 
     if (paymentType === 'other') {
-      payload.projectId = null;
+      payload.projectId = projectId || null;
       payload.amount = otherAmount;
       payload.channelBlogger = null;
       payload.platform = null;
@@ -160,7 +160,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
       payload.pricePerSlot = null;
       payload.slotsConfig = [];
     } else {
-      payload.projectId = projectId;
+      payload.projectId = projectId || null;
       payload.channelBlogger = channelBlogger;
       payload.platform = platform;
       payload.slotsCount = slotsCount;
@@ -407,22 +407,23 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                     </div>
 
                     {/* Project Select */}
-                    {paymentType !== 'other' && (
-                      <div>
-                        <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                          {t.targetProjectField} *
-                        </label>
-                        <select
-                          value={projectId}
-                          onChange={(e) => setProjectId(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                        >
-                          {projects.map(p => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
+                    <div>
+                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                        {t.targetProjectField}
+                      </label>
+                      <select
+                        value={projectId}
+                        onChange={(e) => setProjectId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                      >
+                        <option value="">
+                          {lang === 'ru' ? '(Необязательно) Выберите проект' : lang === 'uz' ? '(Ixtiyoriy) Loyihani tanlang' : '(Optional) Select Project'}
+                        </option>
+                        {projects.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
 
                     {/* Destination */}
                     <div>

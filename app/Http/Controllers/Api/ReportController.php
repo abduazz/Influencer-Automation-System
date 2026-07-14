@@ -39,7 +39,7 @@ class ReportController extends Controller
         $request->validate([
             'paymentType' => 'nullable|string|in:prepaid,full,other',
             'date' => 'required|date',
-            'projectId' => 'required_unless:paymentType,other|nullable|exists:projects,id',
+            'projectId' => 'nullable|exists:projects,id',
             'destination' => 'required|string|max:255',
             'channelBlogger' => 'required_unless:paymentType,other|nullable|string|max:255',
             'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX',
@@ -58,7 +58,7 @@ class ReportController extends Controller
         $reportData = [
             'payment_type' => $paymentType,
             'date' => $request->date,
-            'project_id' => $paymentType === 'other' ? null : $request->projectId,
+            'project_id' => $request->projectId,
             'destination' => $request->destination,
             'comments' => $request->comments,
         ];
@@ -84,8 +84,8 @@ class ReportController extends Controller
 
         $report = Report::create($reportData);
 
-        // Auto-create or merge Integration record ONLY if paymentType is not other
-        if ($paymentType !== 'other') {
+        // Auto-create or merge Integration record ONLY if paymentType is not other and project_id is not null
+        if ($paymentType !== 'other' && $report->project_id !== null) {
             $cleanBloggerName = trim(str_replace(['@', '#'], '', $report->channel_blogger));
             
             // Search for existing integration by project_id, platform, and blogger_name (case insensitive)
@@ -136,7 +136,7 @@ class ReportController extends Controller
         $report->refresh();
 
         $cabinetToken = null;
-        if ($paymentType !== 'other') {
+        if ($paymentType !== 'other' && $report->project_id !== null) {
             $cleanBloggerName = trim(str_replace(['@', '#'], '', $report->channel_blogger));
             $integration = Integration::where('project_id', $report->project_id)
                 ->where('platform', $report->platform)

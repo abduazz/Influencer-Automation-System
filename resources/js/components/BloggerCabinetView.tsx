@@ -268,7 +268,7 @@ export default function BloggerCabinetView({
     }
 
     onAddSubmission({
-      integrationId: selectedIntegrationId,
+      integrationId: selectedIntegration?.id || selectedIntegrationId,
       status: 'approved',
       data: submittedPayload,
       lang: lang
@@ -335,27 +335,6 @@ export default function BloggerCabinetView({
       {/* The Interactive Guest Web Page Frame */}
       <div className="space-y-6">
         <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
-            {/* Browser Address Bar Header */}
-            <div className="bg-neutral-50 px-4 py-2 border-b border-neutral-200 flex items-center gap-2">
-              <div className="flex gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-                <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-                <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-              </div>
-              <div className="flex-1 max-w-xl mx-auto bg-white border border-neutral-200 rounded px-2.5 py-0.5 text-center text-[10px] text-neutral-400 truncate font-mono">
-                <span>fluenceflow.net/submit-job?platform=</span>
-                <span className="font-bold text-black">{activePlatform}</span>
-                <span>&slots_count=</span>
-                <span className="font-bold text-black">{activeSlotsCount}</span>
-                {selectedIntegration && (
-                  <>
-                    <span>&blogger=</span>
-                    <span className="font-bold text-black">{selectedIntegration.bloggerName.toLowerCase().replace(/\s+/g, '')}</span>
-                  </>
-                )}
-              </div>
-            </div>
-
             {/* Blogger Portal Inside Content */}
             <div className="p-6 text-left bg-neutral-50 min-h-[420px] flex flex-col justify-between">
               {formSubmitted ? (

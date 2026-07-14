@@ -286,6 +286,7 @@ class TelegramService
                             ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
                                 'chat_id' => $chatId,
                                 'caption' => "🖼️ Screenshot Proof for Slot #{$slotNum} (Blogger: " . self::escape($blogger) . ")",
+                                'parse_mode' => 'HTML',
                             ]);
                     }
                     return true;

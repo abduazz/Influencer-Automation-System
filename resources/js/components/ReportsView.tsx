@@ -272,7 +272,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
     <div className={`space-y-8 max-w-7xl mx-auto text-neutral-900 ${isWebApp ? 'p-0' : ''}`}>
       {/* View Header */}
       {!isWebApp && (
-        <div className="border-b border-neutral-200 pb-5 text-left">
+        <div className="hidden md:block border-b border-neutral-200 pb-5 text-left">
           <h2 className="text-xl font-black text-black tracking-tight">{t.miniAppReportsTitle}</h2>
           <p className="text-xs text-neutral-500">
             {t.miniAppReportsDesc}

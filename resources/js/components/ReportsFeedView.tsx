@@ -64,7 +64,7 @@ export default function ReportsFeedView({ projects, reports, lang }: ReportsFeed
       </div>
 
       {/* Grid of Report Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredReports.map((rep) => {
           const resolvedProject = projects.find(p => p.id === rep.projectId);
           const isOther = rep.paymentType === 'other';
@@ -72,35 +72,35 @@ export default function ReportsFeedView({ projects, reports, lang }: ReportsFeed
           return (
             <div
               key={rep.id}
-              className="p-5 bg-white border border-neutral-200 rounded-2xl shadow-3xs hover:border-black transition duration-150 flex flex-col justify-between"
+              className="p-4 bg-white border border-neutral-200 rounded-xl shadow-3xs hover:border-black transition duration-150 flex flex-col justify-between"
             >
               <div>
-                <div className="flex justify-between items-start gap-3 mb-3 pb-3 border-b border-neutral-100">
+                <div className="flex justify-between items-start gap-2.5 mb-2.5 pb-2.5 border-b border-neutral-100">
                   <div className="text-left">
-                    <h4 className="font-extrabold text-sm text-black">
+                    <h4 className="font-extrabold text-xs text-black uppercase tracking-tight">
                       {isOther ? t.paymentOther : rep.channelBlogger}
                     </h4>
-                    <p className="text-[10px] text-neutral-400 font-medium mt-0.5">
+                    <p className="text-[9px] text-neutral-400 font-medium mt-0.5">
                       {t.campaignTitleField}: <span className="text-neutral-700 font-bold">{resolvedProject?.name || '—'}</span>
                     </p>
                     {isOther && (
-                      <p className="text-[10px] text-neutral-500 font-medium mt-1">
+                      <p className="text-[9px] text-neutral-500 font-medium mt-0.5">
                         {t.purposeField}: <span className="text-neutral-800 font-bold">{rep.destination}</span>
                       </p>
                     )}
                   </div>
-                  <span className="text-[9px] bg-neutral-50 font-bold px-2 py-0.5 rounded-md border border-neutral-200 text-neutral-500 flex items-center gap-1 shrink-0">
+                  <span className="text-[8px] bg-neutral-50 font-black px-1.5 py-0.5 rounded border border-neutral-200 text-neutral-500 flex items-center gap-1 shrink-0">
                     <Calendar className="w-3 h-3 text-neutral-400" /> {rep.date}
                   </span>
                 </div>
 
                 {!isOther && (
-                  <p className="text-[10px] text-neutral-500 font-medium mb-3 text-left">
+                  <p className="text-[9px] text-neutral-400 font-medium mb-2.5 text-left truncate max-w-[200px]" title={rep.destination}>
                     {t.referralLinkField}: <span className="text-neutral-800 font-bold">{rep.destination}</span>
                   </p>
                 )}
 
-                <div className="grid grid-cols-3 gap-2 py-1.5 text-[11px] text-left">
+                <div className="grid grid-cols-3 gap-1.5 py-1 text-[10px] text-left border border-neutral-100 rounded-lg p-2 bg-neutral-50/50">
                   <div>
                     <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">{t.platformColumn}</span>
                     <span className="font-bold text-neutral-800">
@@ -122,7 +122,7 @@ export default function ReportsFeedView({ projects, reports, lang }: ReportsFeed
                 </div>
 
                 {rep.comments && (
-                  <div className="text-[11px] text-neutral-600 bg-neutral-50 p-3 rounded-xl flex items-start gap-2 border border-neutral-150 mt-3 text-left">
+                  <div className="text-[9px] text-neutral-600 bg-neutral-50 p-2 rounded-lg flex items-start gap-1.5 border border-neutral-150 mt-2.5 text-left">
                     <MessageSquare className="w-3.5 h-3.5 text-neutral-400 mt-0.5 shrink-0" />
                     <p className="italic">"{rep.comments}"</p>
                   </div>
@@ -130,7 +130,7 @@ export default function ReportsFeedView({ projects, reports, lang }: ReportsFeed
               </div>
 
               {rep.receipt && (
-                <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px]">
+                <div className="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between text-[10px]">
                   <span className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">
                     {lang === 'ru' ? 'Чек / Скриншот:' : lang === 'uz' ? 'Chek / Skrinshot:' : 'Receipt / Screenshot:'}
                   </span>

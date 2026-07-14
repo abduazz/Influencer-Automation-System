@@ -23,12 +23,20 @@ class BloggerSubmissionController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        \Illuminate\Support\Facades\Log::info('BloggerSubmission store called', [
+            'integrationId' => $request->input('integrationId'),
+            'lang' => $request->input('lang'),
+            'data_keys' => array_keys((array)$request->input('data', [])),
+        ]);
+
+        $validated = $request->validate([
             'integrationId' => 'required|exists:integrations,id',
             'status' => 'nullable|in:pending,approved,rejected',
             'data' => 'required|array',
             'lang' => 'nullable|string|in:ru,en,uz',
         ]);
+
+        \Illuminate\Support\Facades\Log::info('BloggerSubmission validation passed, saving to DB');
 
         $sub = BloggerSubmission::updateOrCreate(
             ['integration_id' => $request->integrationId],
@@ -39,12 +47,16 @@ class BloggerSubmissionController extends Controller
             ]
         );
 
+        \Illuminate\Support\Facades\Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
+
         $integration = \App\Models\Integration::findOrFail($request->integrationId);
 
         // Trigger Telegram submission notification
         try {
             $lang = $request->input('lang', 'ru');
-            \App\Services\TelegramService::sendSubmissionNotification($integration, $request->data, $lang);
+            \Illuminate\Support\Facades\Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
+            $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $request->data, $lang);
+            \Illuminate\Support\Facades\Log::info('Telegram sendSubmissionNotification result: ' . ($result ? 'true' : 'false'));
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error("Failed to send submission webhook: " . $e->getMessage());
         }

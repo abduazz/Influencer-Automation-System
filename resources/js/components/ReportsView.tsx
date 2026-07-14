@@ -12,7 +12,10 @@ import {
   ChevronLeft,
   MoreVertical,
   Clock,
-  MessageSquare
+  MessageSquare,
+  ChevronDown,
+  Search,
+  X
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
@@ -96,8 +99,13 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
   const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[]>([]);
   const [receipt, setReceipt] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState<number>(0);
-
+  const [isBloggerModalOpen, setIsBloggerModalOpen] = useState(false);
+  const [bloggerSearch, setBloggerSearch] = useState('');
+ 
   const existingBloggers = Array.from(new Set(integrations.map(i => i.bloggerName).filter(Boolean)));
+  const filteredExistingBloggers = existingBloggers.filter(name =>
+    name.toLowerCase().includes(bloggerSearch.toLowerCase())
+  );
   const suggestions = channelBlogger.trim() !== ''
     ? existingBloggers.filter(name => name.toLowerCase().includes(channelBlogger.toLowerCase()))
     : existingBloggers;
@@ -564,29 +572,22 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                           </label>
                           <div className="relative">
                             {bloggerType === 'existing' ? (
-                              <select
-                                required
-                                value={channelBlogger}
-                                onChange={(e) => {
-                                  const name = e.target.value;
-                                  setChannelBlogger(name);
-                                  // Auto-detect and pre-fill platform
-                                  const matchedInt = integrations.find(i => i.bloggerName === name);
-                                  if (matchedInt) {
-                                    setPlatform(matchedInt.platform);
-                                  }
-                                }}
-                                className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black cursor-pointer appearance-none"
-                              >
-                                <option value="" disabled>
-                                  {lang === 'ru' ? 'Выберите блогера...' : lang === 'uz' ? 'Bloggeri tanlang...' : 'Select blogger...'}
-                                </option>
-                                {existingBloggers.map((name) => (
-                                  <option key={name} value={name}>
-                                    {name}
-                                  </option>
-                                ))}
-                              </select>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBloggerSearch('');
+                                    setIsBloggerModalOpen(true);
+                                  }}
+                                  className="w-full text-left px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-medium text-black flex justify-between items-center cursor-pointer"
+                                >
+                                  <span className={channelBlogger ? 'text-black' : 'text-neutral-400'}>
+                                    {channelBlogger || (lang === 'ru' ? 'Выберите блогера...' : lang === 'uz' ? 'Bloggeri tanlang...' : 'Select blogger...')}
+                                  </span>
+                                  <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
+                                </button>
+                                <input type="hidden" required value={channelBlogger} />
+                              </>
                             ) : (
                               <input
                                 type="text"
@@ -951,6 +952,70 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Searchable Blogger Selector Modal */}
+      {isBloggerModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4 transition-all duration-200">
+          <div className="w-full md:max-w-md bg-white rounded-t-2xl md:rounded-2xl shadow-xl flex flex-col max-h-[80vh] md:max-h-[600px] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-neutral-100 bg-neutral-50/50">
+              <span className="font-extrabold text-[13px] text-black uppercase tracking-tight">
+                {lang === 'ru' ? 'Выбор блогера' : lang === 'uz' ? 'Blogger tanlash' : 'Select Blogger'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsBloggerModalOpen(false)}
+                className="p-1 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Input Bar */}
+            <div className="p-3 border-b border-neutral-100">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <input
+                  type="text"
+                  placeholder={lang === 'ru' ? 'Поиск блогера...' : lang === 'uz' ? 'Blogger qidirish...' : 'Search blogger...'}
+                  value={bloggerSearch}
+                  onChange={(e) => setBloggerSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-black focus:bg-white text-black transition"
+                />
+              </div>
+            </div>
+
+            {/* Scrollable Blogger List */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {filteredExistingBloggers.length > 0 ? (
+                filteredExistingBloggers.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => {
+                      setChannelBlogger(name);
+                      setIsBloggerModalOpen(false);
+                      const matchedInt = integrations.find(i => i.bloggerName === name);
+                      if (matchedInt) {
+                        setPlatform(matchedInt.platform);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold text-neutral-800 hover:bg-neutral-50 transition flex items-center justify-between border border-transparent hover:border-neutral-200/50"
+                  >
+                    <span>{name}</span>
+                    {channelBlogger === name && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-black"></span>
+                    )}
+                  </button>
+                ))
+              ) : (
+                <div className="py-8 text-center text-neutral-400 text-xs font-medium">
+                  {lang === 'ru' ? 'Блогеры не найдены' : lang === 'uz' ? 'Bloggerlar topilmadi' : 'No bloggers found'}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

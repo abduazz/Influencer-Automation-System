@@ -215,124 +215,62 @@ export default function BloggerCabinetView({
   };
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* LEFT COLUMN: URL Parameters / Form Controller (Manager Tool) */}
-        {userRole === 'super_admin' && (
-          <div className="lg:col-span-4 space-y-4 text-left">
-            <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-2xs">
-              <div className="flex items-center gap-2 border-b border-neutral-100 pb-2.5">
-                <Settings className="w-4 h-4 text-black" />
-                <h3 className="font-bold text-xs text-black uppercase tracking-wider">
-                  {t.interactiveControls}
-                </h3>
-              </div>
-              
-              <p className="text-[11px] text-neutral-500 leading-relaxed">
-                {t.interactiveControlsDesc}
-              </p>
-
-              {/* Platform Select */}
-              <div>
-                <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.platformColumn}
-                </label>
-                <div className="grid grid-cols-3 gap-1">
-                  {(['Telegram', 'Instagram', 'YouTube'] as const).map((plat) => (
-                    <button
-                      key={plat}
-                      onClick={() => {
-                        setActivePlatform(plat);
-                        // Auto pick an integration of this platform type
-                        const match = integrations.find(i => i.platform === plat);
-                        if (match) setSelectedIntegrationId(match.id);
-                      }}
-                      className={`py-1 rounded text-[10px] font-bold border transition ${
-                        activePlatform === plat
-                          ? 'bg-black border-black text-white'
-                          : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                      }`}
-                    >
-                      {plat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Slots count slider */}
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
-                    {t.slotsColumn}
-                  </label>
-                  <span className="text-xs font-black text-black">{activeSlotsCount} {t.slotsColumn.toLowerCase()}</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={6}
-                  value={activeSlotsCount}
-                  onChange={(e) => setActiveSlotsCount(Number(e.target.value))}
-                  className="w-full accent-black cursor-pointer"
-                />
-              </div>
-
-              {/* Integration link dropdown */}
-              <div>
-                <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.selectedProjectLabel}
-                </label>
-                <select
-                  value={selectedIntegrationId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setSelectedIntegrationId(id);
-                    const matched = integrations.find(i => i.id === id);
-                    if (matched) {
-                      setActivePlatform(matched.platform);
-                      setActiveSlotsCount(matched.slotsCount);
-                    }
-                  }}
-                  className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 rounded-md text-[11px] font-medium text-black focus:border-black outline-none"
-                >
-                  {integrations.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.bloggerName} ({i.platform}, {i.slotsCount} {t.slotsColumn.toLowerCase()})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Copy simulation link */}
-              <button
-                onClick={async () => {
-                  const tokenOrId = selectedIntegration?.bloggerCabinetToken || selectedIntegrationId;
-                  const longUrl = `${window.location.origin}/c/${tokenOrId}`;
-                  
-                  setIsShortening(true);
-                  try {
-                    const shortUrl = await shortenUrl(longUrl);
-                    await navigator.clipboard.writeText(shortUrl);
-                    alert(`${t.copiedAlert}\n${shortUrl}`);
-                  } catch (err) {
-                    console.error("Failed to copy short URL", err);
-                  } finally {
-                    setIsShortening(false);
-                  }
-                }}
-                disabled={isShortening}
-                className="w-full py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-md transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Link className="w-3.5 h-3.5 text-white" />
-                <span>{isShortening ? (lang === 'ru' ? 'Сокращение...' : 'Shortening...') : t.copyTooltip}</span>
-              </button>
-            </div>
+    <div className="space-y-8 max-w-3xl mx-auto text-neutral-900 w-full pb-12">
+      {/* Quick Blogger Switch Bar (Only visible to managers/super-admins) */}
+      {userRole === 'super_admin' && (
+        <div className="bg-white border border-neutral-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-2xs text-xs text-left">
+          <div className="flex items-center gap-3">
+            <span className="font-extrabold text-neutral-500 uppercase tracking-wider text-[9px]">
+              {lang === 'ru' ? 'Выбор блогера для просмотра:' : lang === 'uz' ? 'Ko‘rish uchun blogger:' : 'Select Blogger to View:'}
+            </span>
+            <select
+              value={selectedIntegrationId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedIntegrationId(id);
+                const matched = integrations.find(i => i.id === id);
+                if (matched) {
+                  setActivePlatform(matched.platform);
+                  setActiveSlotsCount(matched.slotsCount);
+                }
+              }}
+              className="px-2.5 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md font-bold text-black focus:border-black outline-none cursor-pointer"
+            >
+              {integrations.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.bloggerName} ({i.platform}, {i.slotsCount} {t.slotsColumn.toLowerCase()})
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+          
+          <button
+            onClick={async () => {
+              const tokenOrId = selectedIntegration?.bloggerCabinetToken || selectedIntegrationId;
+              const longUrl = `${window.location.origin}/c/${tokenOrId}`;
+              setIsShortening(true);
+              try {
+                const shortUrl = await shortenUrl(longUrl);
+                await navigator.clipboard.writeText(shortUrl);
+                alert(`${t.copiedAlert}\n${shortUrl}`);
+              } catch (err) {
+                console.error("Failed to copy short URL", err);
+              } finally {
+                setIsShortening(false);
+              }
+            }}
+            disabled={isShortening}
+            className="px-3.5 py-1.5 bg-black hover:bg-neutral-900 text-white font-extrabold rounded-lg transition duration-100 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <Link className="w-3.5 h-3.5" />
+            <span>{isShortening ? (lang === 'ru' ? 'Сокращение...' : 'Shortening...') : (lang === 'ru' ? 'Копировать ссылку для блогера' : lang === 'uz' ? 'Blogger havolasini nusxalash' : 'Copy Blogger Link')}</span>
+          </button>
+        </div>
+      )}
 
-        {/* RIGHT COLUMN: The Interactive Guest Web Page Frame */}
-        <div className={userRole === 'super_admin' ? "lg:col-span-8 space-y-6" : "lg:col-span-12 space-y-6"}>
-          <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
+      {/* The Interactive Guest Web Page Frame */}
+      <div className="space-y-6">
+        <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
             {/* Browser Address Bar Header */}
             <div className="bg-neutral-50 px-4 py-2 border-b border-neutral-200 flex items-center gap-2">
               <div className="flex gap-1.5">
@@ -743,6 +681,5 @@ export default function BloggerCabinetView({
           )}
         </div>
       </div>
-    </div>
   );
 }

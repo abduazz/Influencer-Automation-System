@@ -36,11 +36,12 @@ class ReportController extends Controller
 
     public function store(Request $request)
     {
+        try {
         if ($request->input('projectId') === '') {
             $request->merge(['projectId' => null]);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'paymentType' => 'nullable|string|in:prepaid,full,other',
             'date' => 'required|date',
             'projectId' => 'required_unless:paymentType,other|nullable|exists:projects,id',
@@ -179,6 +180,20 @@ class ReportController extends Controller
             'receipt' => null,
             'bloggerCabinetToken' => $cabinetToken,
         ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Report store error: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+            return response()->json([
+                'message' => $e->getMessage(),
+                'file' => basename($e->getFile()),
+                'line' => $e->getLine(),
+            ], 500);
+        }
     }
 
     public function destroy(Report $report)

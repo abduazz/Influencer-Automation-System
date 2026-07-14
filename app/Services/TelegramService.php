@@ -266,16 +266,27 @@ class TelegramService
                 if (count($screenshots) === 1) {
                     $slotNum = array_key_first($screenshots);
                     $screen = $screenshots[$slotNum];
+                    $safeCaption = strlen($text) > 1024 ? substr($text, 0, 1021) . '...' : $text;
                     $response = Http::attach('photo', $screen['data'], "screenshot_{$slotNum}.jpg")
                         ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
                             'chat_id' => $chatId,
-                            'caption' => $text,
+                            'caption' => $safeCaption,
                             'parse_mode' => 'HTML',
                         ]);
                     if ($response->successful()) {
                         return true;
                     }
                     Log::error("Telegram sendPhoto API Error (Single Submission): " . $response->body());
+                    
+                    // Fallback to sending text first, then the photo separately
+                    self::sendMessage($chatId, $text);
+                    Http::attach('photo', $screen['data'], "screenshot_{$slotNum}.jpg")
+                        ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
+                            'chat_id' => $chatId,
+                            'caption' => "🖼️ Screenshot Proof for Slot #{$slotNum} (Blogger: " . self::escape($blogger) . ")",
+                            'parse_mode' => 'HTML',
+                        ]);
+                    return true;
                 } else {
                     // Send text message first
                     self::sendMessage($chatId, $text);

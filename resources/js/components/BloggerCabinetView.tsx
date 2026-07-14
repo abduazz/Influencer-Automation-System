@@ -122,20 +122,23 @@ export default function BloggerCabinetView({
     setShowConfirm(false);
   }, [activePlatform, activeSlotsCount, selectedIntegrationId, submissions, integrations]);
 
-  // Handle file picker simulation
+  // Handle file picker simulation (converting screenshot to base64)
   const handleFileChangeSim = (slotKey: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Create a local URL for visual feedback
-      const previewUrl = URL.createObjectURL(file);
-      setFilePreviews(prev => ({
-        ...prev,
-        [slotKey]: previewUrl
-      }));
-      setFormData(prev => ({
-        ...prev,
-        [slotKey]: file.name
-      }));
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setFilePreviews(prev => ({
+          ...prev,
+          [slotKey]: base64String
+        }));
+        setFormData(prev => ({
+          ...prev,
+          [slotKey]: base64String
+        }));
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -359,7 +362,11 @@ export default function BloggerCabinetView({
                     {Object.entries(formData).map(([key, val]) => (
                       <div key={key} className="flex justify-between py-1 border-b border-neutral-50 last:border-0 font-mono">
                         <span className="text-neutral-400">{key}:</span>
-                        <span className="font-bold text-black truncate max-w-[180px]">{val}</span>
+                        <span className="font-bold text-black truncate max-w-[180px]">
+                          {val.startsWith('data:image/') 
+                            ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
+                            : val}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -407,7 +414,9 @@ export default function BloggerCabinetView({
                             </span>
                           </div>
                           <span className="font-mono text-black truncate max-w-[240px] select-all font-bold">
-                            {formData[slotKey] || '—'}
+                            {formData[slotKey]?.startsWith('data:image/') 
+                              ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
+                              : formData[slotKey] || '—'}
                           </span>
                         </div>
                       );
@@ -667,7 +676,22 @@ export default function BloggerCabinetView({
                               {Object.entries(sub.data).map(([key, val]) => (
                                 <div key={key} className="flex items-center gap-1.5 font-medium">
                                   <span className="font-mono text-neutral-400 uppercase text-[8px] bg-neutral-50 border border-neutral-200 px-1 py-0.2 rounded">{key}:</span>
-                                  {val.startsWith('http') ? (
+                                  {val.startsWith('data:image/') ? (
+                                    <div className="flex items-center gap-2">
+                                      <img 
+                                        src={val} 
+                                        alt="Screenshot" 
+                                        onClick={() => {
+                                          const w = window.open();
+                                          if (w) w.document.write(`<img src="${val}" style="max-width:100%; height:auto;" />`);
+                                        }}
+                                        className="w-8 h-8 object-cover rounded border border-neutral-250 cursor-pointer hover:border-black transition" 
+                                      />
+                                      <span className="text-[10px] text-neutral-500 font-bold">
+                                        {lang === 'ru' ? 'Скриншот' : lang === 'uz' ? 'Skrinshot' : 'Screenshot'}
+                                      </span>
+                                    </div>
+                                  ) : val.startsWith('http') ? (
                                     <a
                                       href={val}
                                       target="_blank"

@@ -56,6 +56,7 @@ class TelegramService
                 'prepaid_amount' => '💳 *Сумма предоплаты:*',
                 'comments' => '💬 *Комментарии:*',
                 'receipt_attached' => '📎 *Чек/Скриншот прикреплен к отчету.*',
+                'referral_link' => '🔗 *Реферальная ссылка:*',
                 'prepaid' => 'Предоплата (Prepaid)',
                 'full' => 'Полная оплата (Full)',
                 'other' => 'Прочие расходы (Other)',
@@ -74,6 +75,7 @@ class TelegramService
                 'prepaid_amount' => '💳 *Prepayment Amount:*',
                 'comments' => '💬 *Comments:*',
                 'receipt_attached' => '📎 *Receipt/Screenshot is attached to the report.*',
+                'referral_link' => '🔗 *Referral Link:*',
                 'prepaid' => 'Prepayment (Prepaid)',
                 'full' => 'Full Payment (Full)',
                 'other' => 'Other Expenses (Other)',
@@ -92,6 +94,7 @@ class TelegramService
                 'prepaid_amount' => '💳 *Oldindan to\'lov summasi:*',
                 'comments' => '💬 *Izohlar:*',
                 'receipt_attached' => '📎 *Chek/Skrinshot hisobotga biriktirilgan.*',
+                'referral_link' => '🔗 *Referral havolasi:*',
                 'prepaid' => 'Oldindan to\'lov (Prepaid)',
                 'full' => 'To\'liq to\'lov (Full)',
                 'other' => 'Boshqa xarajatlar (Other)',
@@ -109,15 +112,24 @@ class TelegramService
         }
         $projectName = $report->project?->name ?? '—';
 
+        // Calculate dynamic purpose description matching Google Sheets format
+        $destinationValue = $report->destination;
+        if ($report->payment_type !== 'other') {
+            $destinationValue = trim(($report->platform ?? '') . ' ' . ($report->channel_blogger ?? '') . ' интеграция');
+        }
+
         $text = "{$t['new_report']}\n\n";
         $text .= "{$t['date']} " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";
         $text .= "{$t['project']} {$projectName}\n";
         $text .= "{$t['payment_type']} {$paymentType}\n";
-        $text .= "{$t['destination']} {$report->destination}\n";
+        $text .= "{$t['destination']} {$destinationValue}\n";
 
         if ($report->payment_type !== 'other') {
             $text .= "{$t['blogger']} " . ($report->channel_blogger ?? '—') . "\n";
             $text .= "{$t['platform']} " . ($report->platform ?? '—') . "\n";
+            if ($report->destination) {
+                $text .= "{$t['referral_link']} {$report->destination}\n";
+            }
             $text .= "{$t['slots_count']} " . ($report->slots_count ?? '0') . "\n";
             $text .= "{$t['price_per_slot']} " . number_format($report->price_per_slot ?? 0, 0, '.', ' ') . " UZS\n";
         }

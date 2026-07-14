@@ -67,10 +67,15 @@ class GoogleSheetsService
             $index = $targetInfo['index'];
  
             // Row columns: №, Назначение, Канал, Платформа, Сумма, Дата, Комментарии
+            $destinationValue = $report->destination;
+            if ($report->payment_type !== 'other') {
+                $destinationValue = trim(($report->platform ?? '') . ' ' . ($report->channel_blogger ?? '') . ' интеграция');
+            }
+
             $values = [
                 [
                     $index,
-                    $report->destination,
+                    $destinationValue,
                     $report->channel_blogger ?? '—',
                     $report->platform ?? '—',
                     (float) ($report->total_amount ?? 0),

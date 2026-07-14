@@ -235,25 +235,39 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
                 </div>
               </div>
 
-              {/* Destination (Referral Link / Purpose) */}
+              {/* Destination/Purpose */}
               <div className="space-y-1 text-left">
                 <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                  {selectedReport.paymentType === 'other' ? t.purposeField : (lang === 'ru' ? 'Назначение / Реферальная ссылка' : lang === 'uz' ? 'Vazifasi / Havola' : 'Destination / Referral Link')}
+                  {t.purposeField}
                 </p>
-                <div className="flex items-center gap-2 bg-neutral-50 p-2.5 rounded-lg border border-neutral-100">
-                  <span className="font-mono text-black font-bold break-all flex-1 select-all">{selectedReport.destination}</span>
-                  {selectedReport.destination.startsWith('http') && (
-                    <a
-                      href={selectedReport.destination}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
+                <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-100 font-bold text-black">
+                  {selectedReport.paymentType === 'other' 
+                    ? selectedReport.destination 
+                    : `${selectedReport.platform} ${selectedReport.channelBlogger} интеграция`}
                 </div>
               </div>
+
+              {/* Referral Link (only for blogger integrations) */}
+              {selectedReport.paymentType !== 'other' && selectedReport.destination && (
+                <div className="space-y-1 text-left">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                    {lang === 'ru' ? 'Реферальная ссылка' : lang === 'uz' ? 'Referral havolasi' : 'Referral Link'}
+                  </p>
+                  <div className="flex items-center gap-2 bg-neutral-50 p-2.5 rounded-lg border border-neutral-100">
+                    <span className="font-mono text-black font-bold break-all flex-1 select-all">{selectedReport.destination}</span>
+                    {selectedReport.destination.startsWith('http') && (
+                      <a
+                        href={selectedReport.destination}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Comments */}
               {selectedReport.comments && (

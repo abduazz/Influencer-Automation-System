@@ -72,6 +72,18 @@ interface ReportsViewProps {
   isWebApp?: boolean;
 }
 
+const formatPrice = (val: number | ''): string => {
+  if (val === '' || val === undefined || val === null) return '';
+  return new Intl.NumberFormat('ru-RU').format(val);
+};
+
+const parsePrice = (str: string): number | '' => {
+  const clean = str.replace(/\s/g, '').replace(/ /g, ''); // strip regular spaces and non-breaking spaces
+  if (clean === '') return '';
+  const num = Number(clean);
+  return isNaN(num) ? '' : num;
+};
+
 export default function ReportsView({ projects, integrations, reports, onAddReport, lang, userRole, isWebApp }: ReportsViewProps) {
   const t = translations[lang];
 
@@ -545,13 +557,13 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                           {t.sumField} *
                         </label>
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
                           required
-                          min={0}
-                          value={otherAmount}
+                          value={formatPrice(otherAmount)}
                           onChange={(e) => {
-                            const val = e.target.value;
-                            setOtherAmount(val === '' ? '' : Math.max(0, Number(val)));
+                            const val = parsePrice(e.target.value);
+                            setOtherAmount(val);
                           }}
                           className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
                         />
@@ -685,13 +697,13 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                               {t.pricePerSlotField} *
                             </label>
                             <input
-                              type="number"
+                              type="text"
+                              inputMode="numeric"
                               required
-                              min={0}
-                              value={pricePerSlot}
+                              value={formatPrice(pricePerSlot)}
                               onChange={(e) => {
-                                const val = e.target.value;
-                                handlePricePerSlotChange(val === '' ? '' : Math.max(0, Number(val)));
+                                const val = parsePrice(e.target.value);
+                                handlePricePerSlotChange(val);
                               }}
                               className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
                             />
@@ -873,13 +885,13 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                               {t.totalSumField}
                             </label>
                             <input
-                              type="number"
+                              type="text"
+                              inputMode="numeric"
                               required
-                              min={0}
-                              value={totalAmount}
+                              value={formatPrice(totalAmount)}
                               onChange={(e) => {
-                                const val = e.target.value;
-                                handleTotalAmountChange(val === '' ? '' : Math.max(0, Number(val)));
+                                const val = parsePrice(e.target.value);
+                                handleTotalAmountChange(val);
                               }}
                               className="w-full px-2 py-1.5 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center focus:outline-none focus:border-black"
                             />

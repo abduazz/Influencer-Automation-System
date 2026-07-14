@@ -112,6 +112,9 @@ export default function App() {
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
         setIsInputFocused(true);
+        setTimeout(() => {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 200);
       }
     };
 

@@ -58,3 +58,19 @@ Route::get('/shorten-url', function (\Illuminate\Http\Request $request) {
 
     return response()->json(['short_url' => $url]);
 });
+
+Route::get('/clear-server-cache', function () {
+    try {
+        \Illuminate\Support\Facades\Artisan::call('optimize:clear');
+        \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Cache cleared and migrations run successfully!'
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage()
+        ], 500);
+    }
+});

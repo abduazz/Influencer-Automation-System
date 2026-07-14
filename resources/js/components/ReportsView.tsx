@@ -16,6 +16,49 @@ import {
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
+interface StepperInputProps {
+  value: number;
+  onChange: (val: number) => void;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+}
+
+function StepperInput({ value, onChange, min = 0, max, disabled }: StepperInputProps) {
+  return (
+    <div className={`flex items-center border border-neutral-200 rounded-md bg-white overflow-hidden h-7 ${disabled ? 'opacity-40' : ''}`}>
+      <button
+        type="button"
+        disabled={disabled || value <= min}
+        onClick={() => onChange(value - 1)}
+        className="w-7 h-full bg-neutral-50 hover:bg-neutral-100 active:bg-neutral-200 flex items-center justify-center font-bold text-xs text-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed select-none border-r border-neutral-200"
+      >
+        −
+      </button>
+      <input
+        type="number"
+        disabled={disabled}
+        value={value}
+        onChange={(e) => {
+          let val = Number(e.target.value);
+          if (isNaN(val)) return;
+          if (max !== undefined) val = Math.min(max, val);
+          onChange(Math.max(min, val));
+        }}
+        className="w-full h-full text-center text-[10px] font-bold text-black focus:outline-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      />
+      <button
+        type="button"
+        disabled={disabled || (max !== undefined && value >= max)}
+        onClick={() => onChange(value + 1)}
+        className="w-7 h-full bg-neutral-50 hover:bg-neutral-100 active:bg-neutral-200 flex items-center justify-center font-bold text-xs text-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed select-none border-l border-neutral-200"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 interface ReportsViewProps {
   projects: Project[];
   integrations: Integration[];
@@ -126,7 +169,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!destination.trim()) return;
-    if (paymentType !== 'other' && !channelBlogger.trim()) return;
+    if (paymentType !== 'other' && (!projectId || !channelBlogger.trim())) return;
 
     if (paymentType !== 'other' && customizeSlots) {
       const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
@@ -419,15 +462,19 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                     {/* Project Select */}
                     <div>
                       <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {t.targetProjectField}
+                        {t.targetProjectField} {paymentType !== 'other' ? '*' : ''}
                       </label>
                       <select
                         value={projectId}
+                        required={paymentType !== 'other'}
                         onChange={(e) => setProjectId(e.target.value)}
                         className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
                       >
-                        <option value="">
-                          {lang === 'ru' ? '(Необязательно) Выберите проект' : lang === 'uz' ? '(Ixtiyoriy) Loyihani tanlang' : '(Optional) Select Project'}
+                        <option value="" disabled={paymentType !== 'other'}>
+                          {paymentType === 'other'
+                            ? (lang === 'ru' ? '(Необязательно) Выберите проект' : lang === 'uz' ? '(Ixtiyoriy) Loyihani tanlang' : '(Optional) Select Project')
+                            : (lang === 'ru' ? 'Выберите проект *' : lang === 'uz' ? 'Loyihani tanlang *' : 'Select Project *')
+                          }
                         </option>
                         {projects.map(p => (
                           <option key={p.id} value={p.id}>{p.name}</option>
@@ -577,32 +624,22 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                               <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
                                 {t.slotsCountField} *
                               </label>
-                              <input
-                                type="number"
-                                required
-                                min={1}
+                              <StepperInput
                                 value={slotsCount}
-                                onChange={(e) => setSlotsCount(Math.max(1, Number(e.target.value)))}
-                                className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                                min={1}
+                                onChange={(val) => setSlotsCount(val)}
                               />
                             </div>
                             <div>
                               <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
                                 {t.paidSuffix} *
                               </label>
-                              <input
-                                type="number"
-                                required
+                              <StepperInput
+                                value={paidSlotsCount}
                                 min={0}
                                 max={slotsCount}
                                 disabled={paymentType === 'full'}
-                                value={paidSlotsCount}
-                                onChange={(e) => setPaidSlotsCount(Math.min(slotsCount, Math.max(0, Number(e.target.value))))}
-                                className={`w-full px-2.5 py-1 border rounded-md text-[11px] font-bold focus:outline-none ${
-                                  paymentType === 'full'
-                                    ? 'bg-neutral-100 border-neutral-200 text-neutral-400 cursor-not-allowed'
-                                    : 'bg-white border-neutral-200 text-black focus:border-black'
-                                }`}
+                                onChange={(val) => setPaidSlotsCount(val)}
                               />
                             </div>
                           </div>
@@ -646,10 +683,10 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                         {customizeSlots && (
                           <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-200 text-left space-y-2">
                             <div className="flex justify-between items-center border-b border-neutral-200 pb-1">
-                              <label className="block text-[9px] font-black text-neutral-500 uppercase tracking-wide">
+                              <label className="block text-[8px] font-black text-neutral-500 uppercase tracking-wider truncate">
                                 {t.configureSlotsTitle}
                               </label>
-                              <span className="text-[9px] font-bold text-neutral-400">
+                              <span className="text-[9px] font-bold text-neutral-400 shrink-0 ml-2">
                                 {slotGroups.reduce((acc, g) => acc + g.quantity, 0)} / {slotsCount}
                               </span>
                             </div>
@@ -657,15 +694,11 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                             <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
                               {slotGroups.map((group, index) => (
                                 <div key={index} className="flex items-center gap-1.5 p-1 bg-white border border-neutral-150 rounded text-[10px]">
-                                  {/* Quantity input */}
-                                  <input
-                                    type="number"
-                                    required
-                                    min={1}
-                                    max={slotsCount}
+                                  {/* Quantity select instead of typing */}
+                                  <select
                                     value={group.quantity}
                                     onChange={(e) => {
-                                      const val = Math.max(1, Number(e.target.value));
+                                      const val = Number(e.target.value);
                                       const otherSum = slotGroups.reduce((acc, g, idx) => idx === index ? acc : acc + g.quantity, 0);
                                       if (otherSum + val > slotsCount) {
                                         alert(lang === 'ru' 
@@ -680,9 +713,12 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                                       nextGroups[index].quantity = val;
                                       setSlotGroups(nextGroups);
                                     }}
-                                    className="w-12 bg-neutral-50 border border-neutral-200 rounded px-1 py-0.5 text-[9px] font-bold text-black focus:outline-none text-center"
-                                    title="Quantity"
-                                  />
+                                    className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none"
+                                  >
+                                    {Array.from({ length: slotsCount }, (_, i) => i + 1).map(num => (
+                                      <option key={num} value={num}>{num}</option>
+                                    ))}
+                                  </select>
 
                                   {/* Platform selector */}
                                   <select
@@ -697,11 +733,11 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                                       };
                                       setSlotGroups(nextGroups);
                                     }}
-                                    className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none"
+                                    className="bg-neutral-50 border border-neutral-200 rounded px-1 py-0.5 text-[9px] font-bold text-black focus:outline-none"
                                   >
-                                    <option value="Telegram">Telegram</option>
-                                    <option value="Instagram">Instagram</option>
-                                    <option value="YouTube">YouTube</option>
+                                    <option value="Telegram">TG</option>
+                                    <option value="Instagram">IG</option>
+                                    <option value="YouTube">YT</option>
                                     <option value="MAX">MAX</option>
                                   </select>
 
@@ -713,32 +749,32 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                                       nextGroups[index].format = e.target.value;
                                       setSlotGroups(nextGroups);
                                     }}
-                                    className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none flex-1"
+                                    className="bg-neutral-50 border border-neutral-200 rounded px-1 py-0.5 text-[9px] font-bold text-black focus:outline-none flex-1 min-w-[70px] truncate"
                                   >
                                     {group.platform === 'Instagram' && (
                                       <>
-                                        <option value="Reels">Instagram Reels</option>
-                                        <option value="Stories">Instagram Stories</option>
-                                        <option value="Post">Instagram Post</option>
+                                        <option value="Reels">Reels</option>
+                                        <option value="Stories">Stories</option>
+                                        <option value="Post">Post</option>
                                       </>
                                     )}
                                     {group.platform === 'Telegram' && (
                                       <>
-                                        <option value="Post">Telegram Post</option>
-                                        <option value="Stories">Telegram Stories</option>
+                                        <option value="Post">Post</option>
+                                        <option value="Stories">Stories</option>
                                       </>
                                     )}
                                     {group.platform === 'YouTube' && (
                                       <>
-                                        <option value="Release">YouTube Release</option>
-                                        <option value="Shorts">YouTube Shorts</option>
-                                        <option value="Integration">YouTube Integration</option>
+                                        <option value="Release">Release</option>
+                                        <option value="Shorts">Shorts</option>
+                                        <option value="Integration">Integration</option>
                                       </>
                                     )}
                                     {group.platform === 'MAX' && (
                                       <>
-                                        <option value="Post">MAX Post</option>
-                                        <option value="Integration">MAX Integration</option>
+                                        <option value="Post">Post</option>
+                                        <option value="Integration">Integration</option>
                                       </>
                                     )}
                                   </select>
@@ -749,7 +785,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                                     onClick={() => {
                                       setSlotGroups(slotGroups.filter((_, idx) => idx !== index));
                                     }}
-                                    className="text-red-500 hover:bg-neutral-100 p-0.5 rounded text-[9px] font-bold"
+                                    className="text-red-500 hover:bg-neutral-100 p-1 rounded text-[9px] font-bold shrink-0"
                                   >
                                     ✕
                                   </button>

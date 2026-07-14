@@ -36,10 +36,14 @@ class ReportController extends Controller
 
     public function store(Request $request)
     {
+        if ($request->input('projectId') === '') {
+            $request->merge(['projectId' => null]);
+        }
+
         $request->validate([
             'paymentType' => 'nullable|string|in:prepaid,full,other',
             'date' => 'required|date',
-            'projectId' => 'nullable|exists:projects,id',
+            'projectId' => 'required_unless:paymentType,other|nullable|exists:projects,id',
             'destination' => 'required|string|max:255',
             'channelBlogger' => 'required_unless:paymentType,other|nullable|string|max:255',
             'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX',
@@ -58,7 +62,7 @@ class ReportController extends Controller
         $reportData = [
             'payment_type' => $paymentType,
             'date' => $request->date,
-            'project_id' => $request->projectId,
+            'project_id' => $request->projectId ?: null,
             'destination' => $request->destination,
             'comments' => $request->comments,
         ];

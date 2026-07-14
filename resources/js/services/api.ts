@@ -12,11 +12,13 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    let errMsg = res.statusText;
+    let errMsg = '';
     try {
       const data = await res.json();
-      errMsg = data.message || data.error || res.statusText;
-    } catch {}
+      errMsg = data.message || data.error || res.statusText || 'Unknown Server Error';
+    } catch {
+      errMsg = res.statusText || `Server Error (Status ${res.status})`;
+    }
     throw new Error(errMsg);
   }
 

@@ -1030,9 +1030,23 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                     onClick={() => {
                       setChannelBlogger(name);
                       setIsBloggerModalOpen(false);
-                      const matchedInt = integrations.find(i => i.bloggerName === name);
+                      
+                      const matchedInt = integrations.find(i => i.bloggerName.toLowerCase() === name.toLowerCase());
                       if (matchedInt) {
                         setPlatform(matchedInt.platform);
+                      }
+
+                      // Look up the last referral link for this blogger
+                      let prevLink = matchedInt?.referralLink || '';
+                      if (!prevLink && reports) {
+                        const matchedRep = reports.slice().reverse().find(r => r.channelBlogger && r.channelBlogger.toLowerCase() === name.toLowerCase());
+                        if (matchedRep) {
+                          prevLink = matchedRep.destination || '';
+                        }
+                      }
+
+                      if (prevLink) {
+                        setDestination(prevLink);
                       }
                     }}
                     className="w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold text-neutral-800 hover:bg-neutral-50 transition flex items-center justify-between border border-transparent hover:border-neutral-200/50"

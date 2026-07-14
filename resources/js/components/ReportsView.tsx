@@ -435,7 +435,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                       </select>
                     </div>
 
-                    {/* Destination */}
+                     {/* Destination */}
                     <div>
                       <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
                         {paymentType === 'other' ? t.purposeField : t.referralLinkField} *
@@ -443,7 +443,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                       <input
                         type="text"
                         required
-                        placeholder={paymentType === 'other' ? "e.g. Production Expense" : "e.g. Stories Conversion Boost"}
+                        placeholder={paymentType === 'other' ? (lang === 'ru' ? 'например, Расходы на продакшн' : lang === 'uz' ? 'masalan, Ishlab chiqarish xarajatlari' : 'e.g. Production Expense') : 'Ссылка от bulink.io'}
                         value={destination}
                         onChange={(e) => setDestination(e.target.value)}
                         className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"

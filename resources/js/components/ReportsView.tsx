@@ -511,38 +511,41 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                       </select>
                     </div>
 
-                     {/* Destination */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {paymentType === 'other' ? t.purposeField : t.referralLinkField} *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder={paymentType === 'other' ? (lang === 'ru' ? 'например, Расходы на продакшн' : lang === 'uz' ? 'masalan, Ishlab chiqarish xarajatlari' : 'e.g. Production Expense') : 'Ссылка от bulink.io'}
-                        value={destination}
-                        onChange={(e) => setDestination(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                      />
-                    </div>
-
-                    {paymentType === 'other' ? (
+                     {paymentType === 'other' ? (
                       /* Fields for "Other" payment type */
-                      <div>
-                        <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                          {t.sumField} *
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          required
-                          value={formatPrice(otherAmount)}
-                          onChange={(e) => {
-                            const val = parsePrice(e.target.value);
-                            setOtherAmount(val);
-                          }}
-                          className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
-                        />
+                      <div className="space-y-4">
+                        {/* Destination / Purpose */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                            {t.purposeField} *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder={lang === 'ru' ? 'например, Расходы на продакшн' : lang === 'uz' ? 'masalan, Ishlab chiqarish xarajatlari' : 'e.g. Production Expense'}
+                            value={destination}
+                            onChange={(e) => setDestination(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                          />
+                        </div>
+
+                        {/* Sum / Amount */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                            {t.sumField} *
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            required
+                            value={formatPrice(otherAmount)}
+                            onChange={(e) => {
+                              const val = parsePrice(e.target.value);
+                              setOtherAmount(val);
+                            }}
+                            className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                          />
+                        </div>
                       </div>
                     ) : (
                       /* Fields for standard blogger campaign payment types */
@@ -618,6 +621,21 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                               />
                             )}
                           </div>
+                        </div>
+
+                        {/* Referral Link */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                            {t.referralLinkField} *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ссылка от bulink.io"
+                            value={destination}
+                            onChange={(e) => setDestination(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                          />
                         </div>
 
                         {/* Platform Selector */}

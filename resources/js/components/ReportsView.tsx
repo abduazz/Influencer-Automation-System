@@ -91,8 +91,8 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
   const [pricePerSlot, setPricePerSlot] = useState<number | ''>(0);
   const [otherAmount, setOtherAmount] = useState<number | ''>(0);
   const [comments, setComments] = useState<string>('');
-  const [totalAmount, setTotalAmount] = useState<number>(1000);
-  const [paidAmount, setPaidAmount] = useState<number>(600);
+  const [totalAmount, setTotalAmount] = useState<number | ''>(0);
+  const [paidAmount, setPaidAmount] = useState<number | ''>(0);
   const [slotsConfig, setSlotsConfig] = useState<SlotConfig[]>([]);
 
   const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
@@ -156,25 +156,56 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
     }
   }, [slotsCount, platform, customizeSlots]);
 
-  // Calculate total and paid amount "on the fly" mimicking ->live() and ->afterStateUpdated()
-  useEffect(() => {
-    const price = pricePerSlot === '' ? 0 : pricePerSlot;
-    setTotalAmount(slotsCount * price);
-  }, [slotsCount, pricePerSlot]);
+  const handlePricePerSlotChange = (newPrice: number | '') => {
+    setPricePerSlot(newPrice);
+    const p = newPrice === '' ? 0 : newPrice;
+    setTotalAmount(slotsCount * p);
+    setPaidAmount(paidSlotsCount * p);
+  };
 
-  useEffect(() => {
-    const price = pricePerSlot === '' ? 0 : pricePerSlot;
-    setPaidAmount(paidSlotsCount * price);
-  }, [paidSlotsCount, pricePerSlot]);
+  const handleTotalAmountChange = (newTotal: number | '') => {
+    setTotalAmount(newTotal);
+    const t = newTotal === '' ? 0 : newTotal;
+    const computedPrice = slotsCount > 0 ? (t / slotsCount) : 0;
+    const roundedPrice = Math.round(computedPrice * 100) / 100;
+    setPricePerSlot(roundedPrice);
+    setPaidAmount(Math.round(paidSlotsCount * roundedPrice * 100) / 100);
+  };
+
+  const handleSlotsCountChange = (newSlots: number) => {
+    setSlotsCount(newSlots);
+    const p = pricePerSlot === '' ? 0 : pricePerSlot;
+    setTotalAmount(newSlots * p);
+    
+    let nextPaidSlots = paidSlotsCount;
+    if (paymentType === 'full') {
+      nextPaidSlots = newSlots;
+      setPaidSlotsCount(newSlots);
+    } else if (paidSlotsCount > newSlots) {
+      nextPaidSlots = newSlots;
+      setPaidSlotsCount(newSlots);
+    }
+    setPaidAmount(nextPaidSlots * p);
+  };
+
+  const handlePaidSlotsCountChange = (newPaidSlots: number) => {
+    setPaidSlotsCount(newPaidSlots);
+    const p = pricePerSlot === '' ? 0 : pricePerSlot;
+    setPaidAmount(newPaidSlots * p);
+  };
 
   // Ensure paid slots match when full payment or don't exceed total slots
   useEffect(() => {
-    if (paymentType === 'full') {
+    if (paymentType === 'full' && paidSlotsCount !== slotsCount) {
       setPaidSlotsCount(slotsCount);
+      const p = pricePerSlot === '' ? 0 : pricePerSlot;
+      setPaidAmount(slotsCount * p);
     } else if (paidSlotsCount > slotsCount) {
       setPaidSlotsCount(slotsCount);
+      const p = pricePerSlot === '' ? 0 : pricePerSlot;
+      setPaidAmount(slotsCount * p);
     }
-  }, [paymentType, slotsCount, paidSlotsCount]);
+  }, [paymentType, slotsCount, paidSlotsCount, pricePerSlot]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -632,7 +663,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                               <StepperInput
                                 value={slotsCount}
                                 min={1}
-                                onChange={(val) => setSlotsCount(val)}
+                                onChange={(val) => handleSlotsCountChange(val)}
                               />
                             </div>
                             <div>
@@ -644,7 +675,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                                 min={0}
                                 max={slotsCount}
                                 disabled={paymentType === 'full'}
-                                onChange={(val) => setPaidSlotsCount(val)}
+                                onChange={(val) => handlePaidSlotsCountChange(val)}
                               />
                             </div>
                           </div>
@@ -660,7 +691,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                               value={pricePerSlot}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                setPricePerSlot(val === '' ? '' : Math.max(0, Number(val)));
+                                handlePricePerSlotChange(val === '' ? '' : Math.max(0, Number(val)));
                               }}
                               className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
                             />
@@ -833,7 +864,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                             <input
                               type="text"
                               disabled
-                              value={paidAmount.toLocaleString()}
+                              value={paidAmount === '' ? '0' : paidAmount.toLocaleString()}
                               className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
                             />
                           </div>
@@ -842,10 +873,15 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                               {t.totalSumField}
                             </label>
                             <input
-                              type="text"
-                              disabled
-                              value={totalAmount.toLocaleString()}
-                              className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
+                              type="number"
+                              required
+                              min={0}
+                              value={totalAmount}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleTotalAmountChange(val === '' ? '' : Math.max(0, Number(val)));
+                              }}
+                              className="w-full px-2 py-1.5 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center focus:outline-none focus:border-black"
                             />
                           </div>
                         </div>

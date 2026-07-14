@@ -32,6 +32,7 @@ import {
   deleteIntegration,
   fetchReports,
   createReport,
+  deleteReport,
   fetchSubmissions,
   createSubmission,
 } from './services/api';
@@ -247,6 +248,12 @@ export default function App() {
     const ints = await fetchIntegrations();
     setIntegrations(ints);
     return report;
+  };
+
+  const handleDeleteReport = async (id: string) => {
+    if (!window.confirm(lang === 'ru' ? 'Вы уверены, что хотите удалить этот отчет?' : lang === 'uz' ? 'Ushbu hisobotni o\'chirishni xohlaysizmi?' : 'Are you sure you want to delete this report?')) return;
+    await deleteReport(id);
+    setReports((prev) => prev.filter((r) => r.id !== id));
   };
 
   const handleAddSubmission = async (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => {
@@ -479,6 +486,8 @@ export default function App() {
                 projects={projects}
                 reports={reports}
                 lang={lang}
+                userRole={currentUserRole}
+                onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
               />
             )}
 

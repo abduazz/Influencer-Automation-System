@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Calendar, MessageSquare, Clock, Search } from 'lucide-react';
+import { Calendar, MessageSquare, Clock, Search, Trash2 } from 'lucide-react';
 import { Project, Report } from '../data/mockData';
 import { Language, translations } from '../translations';
 
@@ -12,9 +12,11 @@ interface ReportsFeedViewProps {
   projects: Project[];
   reports: Report[];
   lang: Language;
+  userRole?: string | null;
+  onDeleteReport?: (id: string) => void;
 }
 
-export default function ReportsFeedView({ projects, reports, lang }: ReportsFeedViewProps) {
+export default function ReportsFeedView({ projects, reports, lang, userRole, onDeleteReport }: ReportsFeedViewProps) {
   const t = translations[lang];
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -89,9 +91,20 @@ export default function ReportsFeedView({ projects, reports, lang }: ReportsFeed
                       </p>
                     )}
                   </div>
-                  <span className="text-[8px] bg-neutral-50 font-black px-1.5 py-0.5 rounded border border-neutral-200 text-neutral-500 flex items-center gap-1 shrink-0">
-                    <Calendar className="w-3 h-3 text-neutral-400" /> {rep.date}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[8px] bg-neutral-50 font-black px-1.5 py-0.5 rounded border border-neutral-200 text-neutral-500 flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-neutral-400" /> {rep.date}
+                    </span>
+                    {onDeleteReport && (
+                      <button
+                        onClick={() => onDeleteReport(rep.id)}
+                        title={lang === 'ru' ? 'Удалить отчет' : lang === 'uz' ? 'Hisobotni o\'chirish' : 'Delete report'}
+                        className="p-1 rounded text-neutral-300 hover:text-red-500 hover:bg-red-50 transition-colors duration-150"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {!isOther && (

@@ -180,4 +180,10 @@ class ReportController extends Controller
             'bloggerCabinetToken' => $cabinetToken,
         ], 201);
     }
+
+    public function destroy(Report $report)
+    {
+        $report->delete();
+        return response()->json(['success' => true], 200);
+    }
 }

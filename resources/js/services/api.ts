@@ -74,6 +74,9 @@ export function createReport(data: Omit<Report, 'id' | 'totalAmount' | 'paidAmou
     body: JSON.stringify(data),
   });
 }
+export function deleteReport(id: string): Promise<void> {
+  return request<void>(`/api/reports/${id}`, { method: 'DELETE' });
+}
 
 // Submissions API
 export function fetchSubmissions(): Promise<BloggerSubmission[]> {

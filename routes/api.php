@@ -23,6 +23,7 @@ Route::delete('/integrations/{integration}', [IntegrationController::class, 'des
 
 Route::get('/reports', [ReportController::class, 'index']);
 Route::post('/reports', [ReportController::class, 'store']);
+Route::delete('/reports/{report}', [ReportController::class, 'destroy']);
 
 Route::get('/blogger-submissions', [BloggerSubmissionController::class, 'index']);
 Route::post('/blogger-submissions', [BloggerSubmissionController::class, 'store']);

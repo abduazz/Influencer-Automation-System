@@ -85,8 +85,8 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
 
   const [slotsCount, setSlotsCount] = useState<number>(5);
   const [paidSlotsCount, setPaidSlotsCount] = useState<number>(3);
-  const [pricePerSlot, setPricePerSlot] = useState<number>(200);
-  const [otherAmount, setOtherAmount] = useState<number>(100);
+  const [pricePerSlot, setPricePerSlot] = useState<number | ''>(0);
+  const [otherAmount, setOtherAmount] = useState<number | ''>(0);
   const [comments, setComments] = useState<string>('');
   const [totalAmount, setTotalAmount] = useState<number>(1000);
   const [paidAmount, setPaidAmount] = useState<number>(600);
@@ -150,11 +150,13 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
 
   // Calculate total and paid amount "on the fly" mimicking ->live() and ->afterStateUpdated()
   useEffect(() => {
-    setTotalAmount(slotsCount * pricePerSlot);
+    const price = pricePerSlot === '' ? 0 : pricePerSlot;
+    setTotalAmount(slotsCount * price);
   }, [slotsCount, pricePerSlot]);
 
   useEffect(() => {
-    setPaidAmount(paidSlotsCount * pricePerSlot);
+    const price = pricePerSlot === '' ? 0 : pricePerSlot;
+    setPaidAmount(paidSlotsCount * price);
   }, [paidSlotsCount, pricePerSlot]);
 
   // Ensure paid slots match when full payment or don't exceed total slots
@@ -195,7 +197,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
 
     if (paymentType === 'other') {
       payload.projectId = projectId || null;
-      payload.amount = otherAmount;
+      payload.amount = otherAmount === '' ? 0 : otherAmount;
       payload.channelBlogger = null;
       payload.platform = null;
       payload.slotsCount = null;
@@ -208,7 +210,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
       payload.platform = platform;
       payload.slotsCount = slotsCount;
       payload.paidSlotsCount = paidSlotsCount;
-      payload.pricePerSlot = pricePerSlot;
+      payload.pricePerSlot = pricePerSlot === '' ? 0 : pricePerSlot;
       
       let finalSlotsConfig = slotsConfig;
       if (customizeSlots) {
@@ -249,8 +251,8 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
       setChannelBlogger('');
       setSlotsCount(5);
       setPaidSlotsCount(3);
-      setPricePerSlot(200);
-      setOtherAmount(100);
+      setPricePerSlot(0);
+      setOtherAmount(0);
       setComments('');
       setReceipt(null);
       setFileInputKey(prev => prev + 1);
@@ -506,9 +508,12 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                         <input
                           type="number"
                           required
-                          min={1}
+                          min={0}
                           value={otherAmount}
-                          onChange={(e) => setOtherAmount(Number(e.target.value))}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setOtherAmount(val === '' ? '' : Math.max(0, Number(val)));
+                          }}
                           className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
                         />
                       </div>
@@ -653,7 +658,10 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                               required
                               min={0}
                               value={pricePerSlot}
-                              onChange={(e) => setPricePerSlot(Number(e.target.value))}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setPricePerSlot(val === '' ? '' : Math.max(0, Number(val)));
+                              }}
                               className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
                             />
                           </div>

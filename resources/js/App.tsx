@@ -45,7 +45,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield, Terminal } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut } from 'lucide-react';
 
 export default function App() {
   // Language state (Russian by default)
@@ -339,8 +339,46 @@ export default function App() {
         />
       )}
 
+      {/* Mobile Top Header */}
+      {!isTelegramWebApp && !isBloggerCabinetRoute && (
+        <header className="fixed top-0 left-0 right-0 bg-white/90 border-b border-neutral-200/85 h-14 flex items-center justify-between px-4 z-50 md:hidden shadow-sm backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span className="font-black text-xs tracking-wider uppercase text-neutral-800">
+              FluenceFlow
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Language switcher */}
+            <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
+              {(['ru', 'uz', 'en'] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => handleSetLang(l)}
+                  className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${
+                    lang === l
+                      ? 'bg-white text-black shadow-sm'
+                      : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {/* Logout button */}
+            <button
+              onClick={handleLogout}
+              className="text-neutral-400 hover:text-red-500 transition-colors p-1"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </header>
+      )}
+
       {/* Main Core View Area */}
-      <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'p-4 pb-24 md:p-8 lg:p-12'}`}>
+      <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'pt-18 p-4 pb-24 md:p-8 lg:p-12 md:pt-8'}`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
         {simulatedUrlParams.platform && currentUserRole === 'super_admin' && (
           <div className="mb-6 p-4 bg-white border-2 border-black rounded-lg flex items-center justify-between text-left text-xs text-black shadow-sm">

@@ -69,7 +69,7 @@ class GoogleSheetsService
             // Row columns: №, Назначение, Канал, Платформа, Сумма, Дата, Комментарии
             $destinationValue = $report->destination;
             if ($report->payment_type !== 'other') {
-                $destinationValue = trim(($report->platform ?? '') . ' ' . ($report->channel_blogger ?? '') . ' интеграция');
+                $destinationValue = trim(($report->platform ?? '') . ' блогер интеграция');
             }
 
             $values = [

@@ -243,7 +243,7 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
                 <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-100 font-bold text-black">
                   {selectedReport.paymentType === 'other' 
                     ? selectedReport.destination 
-                    : `${selectedReport.platform} ${selectedReport.channelBlogger} интеграция`}
+                    : `${selectedReport.platform} блогер интеграция`}
                 </div>
               </div>
 

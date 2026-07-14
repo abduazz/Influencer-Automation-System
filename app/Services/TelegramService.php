@@ -115,7 +115,7 @@ class TelegramService
         // Calculate dynamic purpose description matching Google Sheets format
         $destinationValue = $report->destination;
         if ($report->payment_type !== 'other') {
-            $destinationValue = trim(($report->platform ?? '') . ' ' . ($report->channel_blogger ?? '') . ' интеграция');
+            $destinationValue = trim(($report->platform ?? '') . ' блогер интеграция');
         }
 
         $text = "{$t['new_report']}\n\n";

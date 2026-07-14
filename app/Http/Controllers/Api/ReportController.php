@@ -156,7 +156,7 @@ class ReportController extends Controller
             $lang = $request->input('lang', 'ru');
             \App\Services\TelegramService::sendReportNotification($report, $request->receipt, $lang);
             \App\Services\GoogleSheetsService::appendReport($report);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error("Failed to run post-report webhooks: " . $e->getMessage());
         }
 

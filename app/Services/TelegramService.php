@@ -28,7 +28,7 @@ class TelegramService
             }
 
             return true;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error("Telegram exception: " . $e->getMessage());
             return false;
         }
@@ -157,7 +157,7 @@ class TelegramService
                         return true;
                     }
                     Log::error("Telegram sendPhoto/Document API Error: " . $response->body());
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     Log::error("Telegram sendPhoto/Document Exception: " . $e->getMessage());
                 }
             }

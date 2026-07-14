@@ -45,7 +45,7 @@ class BloggerSubmissionController extends Controller
         try {
             $lang = $request->input('lang', 'ru');
             \App\Services\TelegramService::sendSubmissionNotification($integration, $request->data, $lang);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error("Failed to send submission webhook: " . $e->getMessage());
         }
 

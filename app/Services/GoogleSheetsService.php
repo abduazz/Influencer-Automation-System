@@ -86,7 +86,7 @@ class GoogleSheetsService
 
             Log::info("Successfully duplicated report ID {$report->id} to Google Sheet tab '{$sheetName}'.");
             return true;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error("Failed to append report to Google Sheets: " . $e->getMessage());
             return false;
         }

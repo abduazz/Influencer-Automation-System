@@ -204,14 +204,6 @@ export default function BloggerCabinetView({
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
-      {/* View Header */}
-      <div className="border-b border-neutral-200 pb-5 text-left">
-        <h2 className="text-xl font-black text-black tracking-tight">{t.bloggerCabinetTitle}</h2>
-        <p className="text-xs text-neutral-500">
-          {t.bloggerCabinetDesc}
-        </p>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT COLUMN: URL Parameters / Form Controller (Manager Tool) */}
         {userRole === 'super_admin' && (

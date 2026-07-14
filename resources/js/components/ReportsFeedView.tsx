@@ -1,10 +1,5 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState } from 'react';
-import { Calendar, MessageSquare, Clock, Search, Trash2 } from 'lucide-react';
+import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link } from 'lucide-react';
 import { Project, Report } from '../data/mockData';
 import { Language, translations } from '../translations';
 
@@ -19,6 +14,7 @@ interface ReportsFeedViewProps {
 export default function ReportsFeedView({ projects, reports, lang, userRole, onDeleteReport }: ReportsFeedViewProps) {
   const t = translations[lang];
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
 
   // Filtering reports based on search query
   const filteredReports = reports.filter(rep => {
@@ -44,9 +40,9 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
         <div>
           <h2 className="text-xl font-black text-black tracking-tight">{t.reportsListTab}</h2>
           <p className="text-xs text-neutral-500">
-            {lang === 'ru' ? 'Просматривайте и фильтруйте все ранее отправленные финансовые отчеты.' : 
-             lang === 'uz' ? 'Ilgari topshirilgan barcha moliyaviy hisobotlarni ko‘rish va filtrlash.' : 
-             'Browse and filter all previously submitted financial reports.'}
+            {lang === 'ru' ? 'Просматривайте все сохраненные финансовые отчеты. Нажмите на отчет для просмотра деталей.' : 
+             lang === 'uz' ? 'Barcha saqlangan moliyaviy hisobotlarni ko‘ring. Batafsil ma’lumot olish uchun hisobot ustiga bosing.' : 
+             'Browse all saved financial reports. Click on any report to view full details.'}
           </p>
         </div>
 
@@ -74,22 +70,18 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
           return (
             <div
               key={rep.id}
-              className="p-4 bg-white border border-neutral-200 rounded-xl shadow-3xs hover:border-black transition duration-150 flex flex-col justify-between"
+              onClick={() => setSelectedReport(rep)}
+              className="p-4 bg-white border border-neutral-200 rounded-xl shadow-3xs hover:border-black cursor-pointer transition duration-150 flex flex-col justify-between group"
             >
               <div>
                 <div className="flex justify-between items-start gap-2.5 mb-2.5 pb-2.5 border-b border-neutral-100">
                   <div className="text-left">
-                    <h4 className="font-extrabold text-xs text-black uppercase tracking-tight">
+                    <h4 className="font-extrabold text-xs text-black uppercase tracking-tight group-hover:text-neutral-600 transition">
                       {isOther ? t.paymentOther : rep.channelBlogger}
                     </h4>
                     <p className="text-[9px] text-neutral-400 font-medium mt-0.5">
                       {t.campaignTitleField}: <span className="text-neutral-700 font-bold">{resolvedProject?.name || '—'}</span>
                     </p>
-                    {isOther && (
-                      <p className="text-[9px] text-neutral-500 font-medium mt-0.5">
-                        {t.purposeField}: <span className="text-neutral-800 font-bold">{rep.destination}</span>
-                      </p>
-                    )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-[8px] bg-neutral-50 font-black px-1.5 py-0.5 rounded border border-neutral-200 text-neutral-500 flex items-center gap-1">
@@ -97,21 +89,18 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
                     </span>
                     {onDeleteReport && (
                       <button
-                        onClick={() => onDeleteReport(rep.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteReport(rep.id);
+                        }}
                         title={lang === 'ru' ? 'Удалить отчет' : lang === 'uz' ? 'Hisobotni o\'chirish' : 'Delete report'}
-                        className="p-1 rounded text-neutral-300 hover:text-red-500 hover:bg-red-50 transition-colors duration-150"
+                        className="p-1 rounded text-neutral-300 hover:text-red-500 hover:bg-red-50 transition-colors duration-150 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
                 </div>
-
-                {!isOther && (
-                  <p className="text-[9px] text-neutral-400 font-medium mb-2.5 text-left truncate max-w-[200px]" title={rep.destination}>
-                    {t.referralLinkField}: <span className="text-neutral-800 font-bold">{rep.destination}</span>
-                  </p>
-                )}
 
                 <div className="grid grid-cols-3 gap-1.5 py-1 text-[10px] text-left border border-neutral-100 rounded-lg p-2 bg-neutral-50/50">
                   <div>
@@ -125,38 +114,22 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
                       {isOther ? t.sumField : `${t.slotsColumn} x ${t.priceColumn}`}
                     </span>
                     <span className="font-bold text-neutral-800">
-                      {isOther ? `${rep.totalAmount}` : `${rep.slotsCount} x ${rep.pricePerSlot}`}
+                      {isOther ? `${Number(rep.totalAmount).toLocaleString('ru-RU')}` : `${rep.slotsCount} x ${Number(rep.pricePerSlot).toLocaleString('ru-RU')}`}
                     </span>
                   </div>
                   <div>
                     <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">{t.totalSumColumn}</span>
-                    <span className="font-bold text-black">{rep.totalAmount}</span>
+                    <span className="font-bold text-black">{Number(rep.totalAmount).toLocaleString('ru-RU')}</span>
                   </div>
                 </div>
 
-                {rep.comments && (
-                  <div className="text-[9px] text-neutral-600 bg-neutral-50 p-2 rounded-lg flex items-start gap-1.5 border border-neutral-150 mt-2.5 text-left">
-                    <MessageSquare className="w-3.5 h-3.5 text-neutral-400 mt-0.5 shrink-0" />
-                    <p className="italic">"{rep.comments}"</p>
+                {/* Compact screenshot indicator if present */}
+                {rep.receipt && (
+                  <div className="mt-2.5 text-[9px] text-neutral-400 font-bold flex items-center gap-1 uppercase">
+                    <span>🖼️ {lang === 'ru' ? 'Скриншот прикреплен' : lang === 'uz' ? 'Skrinshot biriktirilgan' : 'Screenshot Attached'}</span>
                   </div>
                 )}
               </div>
-
-              {rep.receipt && (
-                <div className="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between text-[10px]">
-                  <span className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">
-                    {lang === 'ru' ? 'Чек / Скриншот:' : lang === 'uz' ? 'Chek / Skrinshot:' : 'Receipt / Screenshot:'}
-                  </span>
-                  <a 
-                    href={rep.receipt} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="text-[9px] font-black text-blue-600 hover:text-blue-800 hover:underline uppercase flex items-center gap-1 cursor-pointer"
-                  >
-                    {lang === 'ru' ? 'Открыть ↗' : lang === 'uz' ? 'Ochish ↗' : 'Open ↗'}
-                  </a>
-                </div>
-              )}
             </div>
           );
         })}
@@ -171,6 +144,184 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
              lang === 'uz' ? 'Hisobotlar topilmadi. Qidiruv parametrlarini o‘zgartirib ko‘ring.' : 
              'No reports matching search query were found.'}
           </p>
+        </div>
+      )}
+
+      {/* Detailed Report Modal */}
+      {selectedReport && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 transition-all duration-200 animate-in fade-in">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh] text-left border border-neutral-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 bg-neutral-50/50">
+              <div>
+                <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block">
+                  {lang === 'ru' ? 'Детали отчета' : lang === 'uz' ? 'Hisobot tafsilotlari' : 'Report Details'}
+                </span>
+                <span className="font-extrabold text-[13px] text-black uppercase tracking-tight">
+                  {selectedReport.paymentType === 'other' ? t.paymentOther : selectedReport.channelBlogger}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedReport(null)}
+                className="p-1 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Content Scroll Area */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Main Fields Grid */}
+              <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200/50">
+                <div>
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.campaignTitleField}</p>
+                  <p className="font-bold text-neutral-800 mt-0.5">
+                    {projects.find(p => p.id === selectedReport.projectId)?.name || '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.reportDateField}</p>
+                  <p className="font-bold text-neutral-800 mt-0.5 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-neutral-400" /> {selectedReport.date}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.platformColumn}</p>
+                  <p className="font-bold text-neutral-800 mt-0.5">
+                    {selectedReport.paymentType === 'other' ? '—' : selectedReport.platform}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.paymentTypeLabel}</p>
+                  <p className="font-bold text-neutral-800 mt-0.5 uppercase text-[10px]">
+                    {selectedReport.paymentType === 'prepaid' ? t.paymentPrepaid : 
+                     selectedReport.paymentType === 'full' ? t.paymentFull : 
+                     t.paymentOther}
+                  </p>
+                </div>
+              </div>
+
+              {/* Financial calculations */}
+              <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
+                <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5">
+                  {lang === 'ru' ? 'Финансовые показатели' : lang === 'uz' ? 'Moliyaviy ko‘rsatkichlar' : 'Financials'}
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  {selectedReport.paymentType !== 'other' && (
+                    <>
+                      <div className="flex justify-between py-0.5">
+                        <span className="text-neutral-500">{lang === 'ru' ? 'Всего слотов' : lang === 'uz' ? 'Jami slotlar' : 'Total Slots'}:</span>
+                        <span className="font-bold text-neutral-800">{selectedReport.slotsCount}</span>
+                      </div>
+                      <div className="flex justify-between py-0.5">
+                        <span className="text-neutral-500">{lang === 'ru' ? 'Цена за слот' : lang === 'uz' ? 'Slot narxi' : 'Price per Slot'}:</span>
+                        <span className="font-bold text-neutral-800">{Number(selectedReport.pricePerSlot).toLocaleString('ru-RU')} UZS</span>
+                      </div>
+                      <div className="flex justify-between py-0.5 border-t border-neutral-50 pt-1.5">
+                        <span className="text-neutral-500">{t.prepaidLabel}:</span>
+                        <span className="font-bold text-neutral-800">{selectedReport.paidSlotsCount} slot(s)</span>
+                      </div>
+                      <div className="flex justify-between py-0.5">
+                        <span className="text-neutral-500">{lang === 'ru' ? 'Оплачено' : lang === 'uz' ? 'To‘langan' : 'Paid Amount'}:</span>
+                        <span className="font-extrabold text-emerald-600">{(Number(selectedReport.paidSlotsCount) * Number(selectedReport.pricePerSlot)).toLocaleString('ru-RU')} UZS</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between py-0.5 border-t border-neutral-50 pt-1.5 col-span-2 text-sm border-t border-neutral-150 pt-2">
+                    <span className="font-bold text-black">{t.totalSumColumn}:</span>
+                    <span className="font-black text-black">{Number(selectedReport.totalAmount).toLocaleString('ru-RU')} UZS</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Destination (Referral Link / Purpose) */}
+              <div className="space-y-1 text-left">
+                <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                  {selectedReport.paymentType === 'other' ? t.purposeField : (lang === 'ru' ? 'Назначение / Реферальная ссылка' : lang === 'uz' ? 'Vazifasi / Havola' : 'Destination / Referral Link')}
+                </p>
+                <div className="flex items-center gap-2 bg-neutral-50 p-2.5 rounded-lg border border-neutral-100">
+                  <span className="font-mono text-black font-bold break-all flex-1 select-all">{selectedReport.destination}</span>
+                  {selectedReport.destination.startsWith('http') && (
+                    <a
+                      href={selectedReport.destination}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Comments */}
+              {selectedReport.comments && (
+                <div className="space-y-1 text-left">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                    {lang === 'ru' ? 'Комментарии к отчету' : lang === 'uz' ? 'Hisobot izohlari' : 'Comments'}
+                  </p>
+                  <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-100 text-neutral-700 italic leading-relaxed">
+                    "{selectedReport.comments}"
+                  </div>
+                </div>
+              )}
+
+              {/* Screenshot/Receipt */}
+              {selectedReport.receipt && (
+                <div className="space-y-1.5 text-left border-t border-neutral-100 pt-3">
+                  <div className="flex justify-between items-center">
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                      {lang === 'ru' ? 'Чек / Скриншот' : lang === 'uz' ? 'Chek / Skrinshot' : 'Receipt / Screenshot'}
+                    </p>
+                    {selectedReport.receipt.startsWith('http') && (
+                      <a
+                        href={selectedReport.receipt}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-bold text-blue-600 hover:underline uppercase flex items-center gap-0.5"
+                      >
+                        {lang === 'ru' ? 'Открыть оригинал' : lang === 'uz' ? 'Originalini ochish' : 'Open Original'} ↗
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="border border-neutral-200 rounded-xl overflow-hidden bg-neutral-50 flex items-center justify-center p-2 max-h-64">
+                    {selectedReport.receipt.startsWith('data:image/') ? (
+                      <img 
+                        src={selectedReport.receipt} 
+                        alt="Receipt proof" 
+                        className="max-w-full max-h-60 object-contain rounded cursor-pointer hover:opacity-95" 
+                        onClick={() => {
+                          const w = window.open();
+                          if (w) w.document.write(`<img src="${selectedReport.receipt}" style="max-width:100%; height:auto;" />`);
+                        }}
+                      />
+                    ) : (
+                      <div className="py-6 text-center text-neutral-500 font-medium">
+                        <FileText className="w-8 h-8 text-neutral-300 mx-auto mb-1.5" />
+                        <p>{lang === 'ru' ? 'Прикрепленный документ (PDF/Файл)' : lang === 'uz' ? 'Biriktirilgan hujjat (PDF/Fayl)' : 'Attached Document (PDF/File)'}</p>
+                        <a href={selectedReport.receipt} target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline mt-1 block">
+                          Download/View File
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50/50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedReport(null)}
+                className="px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
+              >
+                {lang === 'ru' ? 'Закрыть' : lang === 'uz' ? 'Yopish' : 'Close'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

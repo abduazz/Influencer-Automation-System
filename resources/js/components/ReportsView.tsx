@@ -762,9 +762,9 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                                     }}
                                     className="bg-neutral-50 border border-neutral-200 rounded px-1 py-0.5 text-[9px] font-bold text-black focus:outline-none"
                                   >
-                                    <option value="Telegram">TG</option>
-                                    <option value="Instagram">IG</option>
-                                    <option value="YouTube">YT</option>
+                                    <option value="Telegram">Telegram</option>
+                                    <option value="Instagram">Instagram</option>
+                                    <option value="YouTube">YouTube</option>
                                     <option value="MAX">MAX</option>
                                   </select>
 

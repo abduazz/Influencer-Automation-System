@@ -107,7 +107,7 @@ class TelegramService
             $percentage = round(($report->paid_slots_count / $report->slots_count) * 100);
             $paymentType .= " - {$percentage}%";
         }
-        $projectName = $report->project->name ?? '—';
+        $projectName = $report->project?->name ?? '—';
 
         $text = "{$t['new_report']}\n\n";
         $text .= "{$t['date']} " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";

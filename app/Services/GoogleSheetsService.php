@@ -51,7 +51,7 @@ class GoogleSheetsService
             $accessToken = self::getAccessToken();
 
             // Determine sheet (tab) name by project name or fallback
-            $sheetName = $report->project->name ?? 'Без проекта';
+            $sheetName = $report->project?->name ?? 'Без проекта';
 
             // Ensure the sheet/tab exists
             self::ensureSheetExists($accessToken, $spreadsheetId, $sheetName);

@@ -79,6 +79,18 @@ export default function BloggerCabinetView({
     }
   }, [urlParams, integrations]);
 
+  // Auto-select first integration on load if default 'int-2' is not found
+  useEffect(() => {
+    if (integrations.length > 0) {
+      const exists = integrations.some(i => i.id === selectedIntegrationId);
+      if (!exists && !urlParams?.integrationId) {
+        setSelectedIntegrationId(integrations[0].id);
+        setActivePlatform(integrations[0].platform);
+        setActiveSlotsCount(integrations[0].slotsCount);
+      }
+    }
+  }, [integrations, selectedIntegrationId, urlParams]);
+
   // Form Field States
   // Dynamic state object mapping slot keys (e.g. "slot_1") to text link or mock file name
   const [formData, setFormData] = useState<Record<string, string>>({});
@@ -363,7 +375,7 @@ export default function BloggerCabinetView({
                       <div key={key} className="flex justify-between py-1 border-b border-neutral-50 last:border-0 font-mono">
                         <span className="text-neutral-400">{key}:</span>
                         <span className="font-bold text-black truncate max-w-[180px]">
-                          {val.startsWith('data:image/') 
+                          {typeof val === 'string' && val.startsWith('data:image/') 
                             ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
                             : val}
                         </span>
@@ -535,7 +547,7 @@ export default function BloggerCabinetView({
                               {isSlotSubmitted ? (
                                 <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl opacity-90 select-none text-left">
                                   <div className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 flex items-center justify-center">
-                                    {formData[slotKey].startsWith('mock') || !filePreviews[slotKey] ? (
+                                    {formData[slotKey]?.startsWith('mock') || !filePreviews[slotKey] ? (
                                       <CheckCircle className="w-5 h-5 text-emerald-600" />
                                     ) : (
                                       <img src={filePreviews[slotKey]} alt="Screenshot" className="w-full h-full object-cover" />
@@ -676,7 +688,7 @@ export default function BloggerCabinetView({
                               {Object.entries(sub.data).map(([key, val]) => (
                                 <div key={key} className="flex items-center gap-1.5 font-medium">
                                   <span className="font-mono text-neutral-400 uppercase text-[8px] bg-neutral-50 border border-neutral-200 px-1 py-0.2 rounded">{key}:</span>
-                                  {val.startsWith('data:image/') ? (
+                                  {typeof val === 'string' && val.startsWith('data:image/') ? (
                                     <div className="flex items-center gap-2">
                                       <img 
                                         src={val} 
@@ -691,7 +703,7 @@ export default function BloggerCabinetView({
                                         {lang === 'ru' ? 'Скриншот' : lang === 'uz' ? 'Skrinshot' : 'Screenshot'}
                                       </span>
                                     </div>
-                                  ) : val.startsWith('http') ? (
+                                  ) : typeof val === 'string' && val.startsWith('http') ? (
                                     <a
                                       href={val}
                                       target="_blank"
@@ -704,7 +716,7 @@ export default function BloggerCabinetView({
                                   ) : (
                                     <div className="text-[11px] text-neutral-700 flex items-center gap-1 truncate max-w-[200px]">
                                       <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                                      <span className="truncate">{val}</span>
+                                      <span className="truncate">{val || ''}</span>
                                     </div>
                                   )}
                                 </div>

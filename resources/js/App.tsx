@@ -105,6 +105,36 @@ export default function App() {
     localStorage.removeItem('ff_user_role');
   };
 
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        setIsInputFocused(true);
+      }
+    };
+
+    const handleFocusOut = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        setTimeout(() => {
+          const activeEl = document.activeElement;
+          if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA' && activeEl.tagName !== 'SELECT')) {
+            setIsInputFocused(false);
+          }
+        }, 100);
+      }
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+    };
+  }, []);
+
   // Mapped URL simulated routing parameters state
   const [simulatedUrlParams, setSimulatedUrlParams] = useState<{
     platform?: string;
@@ -479,7 +509,7 @@ export default function App() {
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
-      {!isTelegramWebApp && !isBloggerCabinetRoute && (
+      {!isTelegramWebApp && !isBloggerCabinetRoute && !isInputFocused && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200/80 h-16 flex items-center justify-around px-2 z-50 md:hidden shadow-lg backdrop-blur-md">
           {/* Projects Tab */}
           <button

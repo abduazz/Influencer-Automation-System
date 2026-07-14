@@ -563,40 +563,39 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                             {t.bloggerColumn} *
                           </label>
                           <div className="relative">
-                            <input
-                              type="text"
-                              required
-                              placeholder={bloggerType === 'existing' ? (lang === 'ru' ? 'Выберите блогера...' : lang === 'uz' ? 'Bloggeri tanlang...' : 'Select blogger...') : 'e.g. @tech_geek_tg'}
-                              value={channelBlogger}
-                              onChange={(e) => {
-                                setChannelBlogger(e.target.value);
-                                setShowSuggestions(true);
-                              }}
-                              onFocus={() => setShowSuggestions(true)}
-                              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                              className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                            />
-                            {bloggerType === 'existing' && showSuggestions && suggestions.length > 0 && (
-                              <div className="absolute left-0 right-0 z-50 mt-1 max-h-32 overflow-y-auto bg-white border border-neutral-200 rounded-md shadow-lg text-left">
-                                {suggestions.map((name) => (
-                                  <button
-                                    key={name}
-                                    type="button"
-                                    onClick={() => {
-                                      setChannelBlogger(name);
-                                      setShowSuggestions(false);
-                                      // Auto-detect and pre-fill platform
-                                      const matchedInt = integrations.find(i => i.bloggerName === name);
-                                      if (matchedInt) {
-                                        setPlatform(matchedInt.platform);
-                                      }
-                                    }}
-                                    className="w-full text-left px-3 py-1.5 text-[11px] text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100 last:border-0 font-bold"
-                                  >
+                            {bloggerType === 'existing' ? (
+                              <select
+                                required
+                                value={channelBlogger}
+                                onChange={(e) => {
+                                  const name = e.target.value;
+                                  setChannelBlogger(name);
+                                  // Auto-detect and pre-fill platform
+                                  const matchedInt = integrations.find(i => i.bloggerName === name);
+                                  if (matchedInt) {
+                                    setPlatform(matchedInt.platform);
+                                  }
+                                }}
+                                className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black cursor-pointer appearance-none"
+                              >
+                                <option value="" disabled>
+                                  {lang === 'ru' ? 'Выберите блогера...' : lang === 'uz' ? 'Bloggeri tanlang...' : 'Select blogger...'}
+                                </option>
+                                {existingBloggers.map((name) => (
+                                  <option key={name} value={name}>
                                     {name}
-                                  </button>
+                                  </option>
                                 ))}
-                              </div>
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                required
+                                placeholder="e.g. @tech_geek_tg"
+                                value={channelBlogger}
+                                onChange={(e) => setChannelBlogger(e.target.value)}
+                                className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                              />
                             )}
                           </div>
                         </div>

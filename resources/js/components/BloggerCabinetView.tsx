@@ -523,8 +523,8 @@ export default function BloggerCabinetView({
                             </span>
                           </div>
 
-                          {slotPlatform === 'Instagram' ? (
-                            /* SCREENSHOT FILE UPLOAD COMPONENT FOR INSTAGRAM STORIES/REELS */
+                          {(slotPlatform === 'Instagram' && slotFormat === 'Stories') ? (
+                            /* SCREENSHOT FILE UPLOAD COMPONENT FOR INSTAGRAM STORIES ONLY */
                             <div className="space-y-2">
                               {isSlotSubmitted ? (
                                 <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl opacity-90 select-none text-left">
@@ -576,7 +576,7 @@ export default function BloggerCabinetView({
                               )}
                             </div>
                           ) : (
-                            /* URL TEXT INPUT FIELD FOR TELEGRAM AND YOUTUBE POSTS/RELEASES */
+                            /* URL TEXT INPUT FIELD FOR ALL POSTS/REELS/RELEASES (INCLUDING INSTAGRAM REELS/POSTS) */
                             <div className="relative">
                               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <Link className="w-3.5 h-3.5 text-neutral-400" />
@@ -586,7 +586,9 @@ export default function BloggerCabinetView({
                                 required={isPaid}
                                 disabled={isSlotSubmitted}
                                 placeholder={
-                                  slotPlatform === 'Telegram' 
+                                  slotPlatform === 'Instagram'
+                                    ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
+                                    : slotPlatform === 'Telegram' 
                                     ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
                                     : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
                                 }

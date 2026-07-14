@@ -27,6 +27,7 @@ interface BloggerCabinetViewProps {
   urlParams?: { platform?: string; slotsCount?: string; integrationId?: string };
   lang: Language;
   userRole?: string | null;
+  setLang?: (lang: Language) => void;
 }
 
 export default function BloggerCabinetView({
@@ -35,7 +36,8 @@ export default function BloggerCabinetView({
   onAddSubmission,
   urlParams,
   lang,
-  userRole
+  userRole,
+  setLang
 }: BloggerCabinetViewProps) {
   const t = translations[lang];
 
@@ -148,15 +150,23 @@ export default function BloggerCabinetView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Check if only paid/prepaid slots are filled
     const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
-    const unfilledPaid = Array.from({ length: maxPaid }).some((_, idx) => {
+    const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
+    const submittedData = existingSub?.data || {};
+
+    // Check if at least one new slot is being filled in this turn
+    const hasNewInput = Array.from({ length: maxPaid }).some((_, idx) => {
       const key = `slot_${idx + 1}`;
-      return !formData[key];
+      return !submittedData[key] && !!formData[key];
     });
 
-    if (unfilledPaid) {
-      alert(t.unfilledSlotsError);
+    if (!hasNewInput) {
+      alert(lang === 'ru' 
+        ? "Пожалуйста, заполните хотя бы один новый слот перед отправкой!" 
+        : lang === 'uz' 
+        ? "Iltimos, yuborishdan oldin kamida bitta yangi slotni to‘ldiring!" 
+        : "Please fill at least one new slot before submitting!"
+      );
       return;
     }
 
@@ -164,6 +174,16 @@ export default function BloggerCabinetView({
   };
 
   const handleFinalSubmit = () => {
+    const confirmText = lang === 'ru' 
+      ? "Вы уверены, что хотите отправить материалы? Отправленные материалы будут заблокированы и их нельзя будет изменить!" 
+      : lang === 'uz' 
+      ? "Materiallarni yuborishga ishonchingiz komilmi? Yuborilgan materiallar bloklanadi va ularni o‘zgartirib bo‘lmaydi!" 
+      : "Are you sure you want to submit? Submitted materials will be locked and cannot be edited!";
+   
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
     const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
     const submittedPayload: Record<string, string> = {};
     for (let i = 1; i <= maxPaid; i++) {
@@ -425,12 +445,33 @@ export default function BloggerCabinetView({
               ) : (
                 /* Interactive Submission Form */
                 <form onSubmit={handleSubmit} className="space-y-4 max-w-xl mx-auto w-full">
-                  <div className="text-center">
-                    <h2 className="text-base font-black text-black tracking-tight">{t.bloggerCabinetTitle}</h2>
-                    <p className="text-xs text-neutral-500 mt-0.5">
-                      {t.platformColumn}: <span className="font-bold text-black uppercase">{activePlatform}</span> | 
-                      {t.slotsColumn}: <span className="font-bold text-black">{activeSlotsCount}</span>
-                    </p>
+                  <div className="flex justify-between items-center border-b border-neutral-100 pb-3 mb-4">
+                    <div className="text-left">
+                      <h2 className="text-base font-black text-black tracking-tight">{t.bloggerCabinetTitle}</h2>
+                      <p className="text-[10px] text-neutral-500 mt-0.5">
+                        {t.platformColumn}: <span className="font-bold text-black uppercase">{activePlatform}</span> | 
+                        {t.slotsColumn}: <span className="font-bold text-black">{activeSlotsCount}</span>
+                      </p>
+                    </div>
+                    {/* Compact Language Switcher */}
+                    {setLang && (
+                      <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-200 shrink-0">
+                        {(['ru', 'uz', 'en'] as const).map((l) => (
+                          <button
+                            key={l}
+                            type="button"
+                            onClick={() => setLang(l)}
+                            className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${
+                              lang === l
+                                ? 'bg-white text-black shadow-sm'
+                                : 'text-neutral-400 hover:text-neutral-600'
+                            }`}
+                          >
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3 pt-4 border-t border-neutral-200">
@@ -589,88 +630,90 @@ export default function BloggerCabinetView({
             </div>
           </div>
 
-          {/* ACTIVE SUBMISSIONS LOG TABLE */}
-          <div className="space-y-3 text-left">
-            <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
-              {t.viewSubmissionTitle} ({visibleSubmissions.length})
-            </h3>
+          {/* ACTIVE SUBMISSIONS LOG TABLE - ONLY FOR MANAGERS */}
+          {userRole === 'super_admin' && (
+            <div className="space-y-3 text-left">
+              <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
+                {t.viewSubmissionTitle} ({visibleSubmissions.length})
+              </h3>
 
-            <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-neutral-200 bg-neutral-50 text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
-                      <th className="py-2.5 px-5">{t.bloggerColumn}</th>
-                      <th className="py-2.5 px-4">{t.startDateColumn}</th>
-                      <th className="py-2.5 px-4">Status</th>
-                      <th className="py-2.5 px-5">Assets</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
-                    {visibleSubmissions.map((sub) => {
-                      const matchingInt = integrations.find(i => i.id === sub.integrationId);
+              <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-neutral-200 bg-neutral-50 text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
+                        <th className="py-2.5 px-5">{t.bloggerColumn}</th>
+                        <th className="py-2.5 px-4">{t.startDateColumn}</th>
+                        <th className="py-2.5 px-4">Status</th>
+                        <th className="py-2.5 px-5">Assets</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
+                      {visibleSubmissions.map((sub) => {
+                        const matchingInt = integrations.find(i => i.id === sub.integrationId);
 
-                      return (
-                        <tr key={sub.id}>
-                          <td className="py-3 px-5 font-bold text-black">
-                            {matchingInt?.bloggerName || 'Simulated Influencer'}
-                            <span className="text-[9px] text-neutral-400 font-normal block mt-0.5">
-                              Platform: {matchingInt?.platform || 'Unknown'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-semibold text-neutral-500 text-[11px]">
-                            {new Date(sub.submittedAt).toLocaleDateString()} {new Date(sub.submittedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded font-bold text-[9px] border uppercase ${
-                              sub.status === 'approved'
-                                ? 'bg-black text-white border-black'
-                                : 'bg-white text-neutral-600 border-neutral-200'
-                            }`}>
-                              {sub.status === 'approved' ? t.statusApproved : t.statusPending}
-                            </span>
-                          </td>
-                          <td className="py-3 px-5 space-y-1">
-                            {Object.entries(sub.data).map(([key, val]) => (
-                              <div key={key} className="flex items-center gap-1.5 font-medium">
-                                <span className="font-mono text-neutral-400 uppercase text-[8px] bg-neutral-50 border border-neutral-200 px-1 py-0.2 rounded">{key}:</span>
-                                {val.startsWith('http') ? (
-                                  <a
-                                    href={val}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[11px] text-black hover:underline font-bold flex items-center gap-0.5 truncate max-w-[200px]"
-                                  >
-                                    <span className="truncate">{val}</span>
-                                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                                  </a>
-                                ) : (
-                                  <div className="text-[11px] text-neutral-700 flex items-center gap-1 truncate max-w-[200px]">
-                                    <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                                    <span className="truncate">{val}</span>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                        return (
+                          <tr key={sub.id}>
+                            <td className="py-3 px-5 font-bold text-black">
+                              {matchingInt?.bloggerName || 'Simulated Influencer'}
+                              <span className="text-[9px] text-neutral-400 font-normal block mt-0.5">
+                                Platform: {matchingInt?.platform || 'Unknown'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-neutral-500 text-[11px]">
+                              {new Date(sub.submittedAt).toLocaleDateString()} {new Date(sub.submittedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-0.5 rounded font-bold text-[9px] border uppercase ${
+                                sub.status === 'approved'
+                                  ? 'bg-black text-white border-black'
+                                  : 'bg-white text-neutral-600 border-neutral-200'
+                              }`}>
+                                {sub.status === 'approved' ? t.statusApproved : t.statusPending}
+                              </span>
+                            </td>
+                            <td className="py-3 px-5 space-y-1">
+                              {Object.entries(sub.data).map(([key, val]) => (
+                                <div key={key} className="flex items-center gap-1.5 font-medium">
+                                  <span className="font-mono text-neutral-400 uppercase text-[8px] bg-neutral-50 border border-neutral-200 px-1 py-0.2 rounded">{key}:</span>
+                                  {val.startsWith('http') ? (
+                                    <a
+                                      href={val}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[11px] text-black hover:underline font-bold flex items-center gap-0.5 truncate max-w-[200px]"
+                                    >
+                                      <span className="truncate">{val}</span>
+                                      <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                    </a>
+                                  ) : (
+                                    <div className="text-[11px] text-neutral-700 flex items-center gap-1 truncate max-w-[200px]">
+                                      <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                                      <span className="truncate">{val}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {visibleSubmissions.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="py-8 px-5 text-center text-neutral-400">
+                            <AlertCircle className="w-5 h-5 text-neutral-300 mx-auto mb-1" />
+                            <p className="font-bold text-xs text-neutral-500">No Submissions Recorded</p>
+                            <p className="text-[10px] text-neutral-400 mt-0.5">Submit integration coordinates above to log them.</p>
                           </td>
                         </tr>
-                      );
-                    })}
-
-                    {visibleSubmissions.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="py-8 px-5 text-center text-neutral-400">
-                          <AlertCircle className="w-5 h-5 text-neutral-300 mx-auto mb-1" />
-                          <p className="font-bold text-xs text-neutral-500">No Submissions Recorded</p>
-                          <p className="text-[10px] text-neutral-400 mt-0.5">Submit integration coordinates above to log them.</p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

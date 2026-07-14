@@ -442,6 +442,7 @@ export default function App() {
             urlParams={simulatedUrlParams}
             lang={lang}
             userRole={currentUserRole}
+            setLang={handleSetLang}
           />
         ) : (
           <>
@@ -489,6 +490,7 @@ export default function App() {
                 urlParams={simulatedUrlParams}
                 lang={lang}
                 userRole={currentUserRole}
+                setLang={handleSetLang}
               />
             )}
 

@@ -179,38 +179,48 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
       payload.slotsConfig = finalSlotsConfig;
     }
 
-    const createdReport = await onAddReport(payload);
+    try {
+      const createdReport = await onAddReport(payload);
 
-    if (createdReport) {
-      setCreatedReportResult(createdReport);
+      if (createdReport) {
+        setCreatedReportResult(createdReport);
+      }
+
+      // Flash Toast
+      const toastSubject = paymentType === 'other' ? destination : channelBlogger;
+      let cabinetLink: string | null = null;
+      if (createdReport?.bloggerCabinetToken) {
+        cabinetLink = `${window.location.origin}/?cabinet=true&id=${createdReport.bloggerCabinetToken}`;
+      }
+
+      setSuccessToast({
+        message: `${t.reportCreatedMsg} ${toastSubject}!`,
+        link: cabinetLink
+      });
+      setTimeout(() => {
+        setSuccessToast(null);
+      }, 10000);
+
+      // Reset inputs but preserve some logical constants
+      setDestination('');
+      setChannelBlogger('');
+      setSlotsCount(5);
+      setPaidSlotsCount(3);
+      setPricePerSlot(200);
+      setOtherAmount(100);
+      setComments('');
+      setReceipt(null);
+      setFileInputKey(prev => prev + 1);
+      setPaymentType('prepaid');
+    } catch (err: any) {
+      console.error(err);
+      alert(lang === 'ru' 
+        ? `Ошибка при сохранении отчета: ${err.message || err}` 
+        : lang === 'uz' 
+        ? `Hisobotni saqlashda xatolik: ${err.message || err}` 
+        : `Error saving report: ${err.message || err}`
+      );
     }
-
-    // Flash Toast
-    const toastSubject = paymentType === 'other' ? destination : channelBlogger;
-    let cabinetLink: string | null = null;
-    if (createdReport?.bloggerCabinetToken) {
-      cabinetLink = `${window.location.origin}/?cabinet=true&id=${createdReport.bloggerCabinetToken}`;
-    }
-
-    setSuccessToast({
-      message: `${t.reportCreatedMsg} ${toastSubject}!`,
-      link: cabinetLink
-    });
-    setTimeout(() => {
-      setSuccessToast(null);
-    }, 10000);
-
-    // Reset inputs but preserve some logical constants
-    setDestination('');
-    setChannelBlogger('');
-    setSlotsCount(5);
-    setPaidSlotsCount(3);
-    setPricePerSlot(200);
-    setOtherAmount(100);
-    setComments('');
-    setReceipt(null);
-    setFileInputKey(prev => prev + 1);
-    setPaymentType('prepaid');
   };
 
   return (
@@ -843,7 +853,13 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                       className="w-full mt-2 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition"
                     >
                       <Send className="w-3 h-3 text-white" />
-                      <span>{t.addIntegrationBtn}</span>
+                      <span>
+                        {paymentType === 'other'
+                          ? t.submitReportBtn
+                          : bloggerType === 'new'
+                          ? t.addIntegrationBtn
+                          : t.submitReportBtn}
+                      </span>
                     </button>
                   </form>
                 </div>

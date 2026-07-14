@@ -659,47 +659,28 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                           </select>
                         </div>
 
-                        {/* Reactive Grid: Price & Slots */}
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                                {t.slotsCountField} *
-                              </label>
-                              <StepperInput
-                                value={slotsCount}
-                                min={1}
-                                onChange={(val) => handleSlotsCountChange(val)}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                                {t.paidSuffix} *
-                              </label>
-                              <StepperInput
-                                value={paidSlotsCount}
-                                min={0}
-                                max={slotsCount}
-                                disabled={paymentType === 'full'}
-                                onChange={(val) => handlePaidSlotsCountChange(val)}
-                              />
-                            </div>
-                          </div>
-
+                        {/* Reactive Grid: Slots */}
+                        <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                              {t.pricePerSlotField} *
+                              {t.slotsCountField} *
                             </label>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              required
-                              value={formatPrice(pricePerSlot)}
-                              onChange={(e) => {
-                                const val = parsePrice(e.target.value);
-                                handlePricePerSlotChange(val);
-                              }}
-                              className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                            <StepperInput
+                              value={slotsCount}
+                              min={1}
+                              onChange={(val) => handleSlotsCountChange(val)}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.paidSuffix} *
+                            </label>
+                            <StepperInput
+                              value={paidSlotsCount}
+                              min={0}
+                              max={slotsCount}
+                              disabled={paymentType === 'full'}
+                              onChange={(val) => handlePaidSlotsCountChange(val)}
                             />
                           </div>
                         </div>
@@ -860,6 +841,24 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                             </button>
                           </div>
                         )}
+
+                        {/* Price per slot */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                            {t.pricePerSlotField} *
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            required
+                            value={formatPrice(pricePerSlot)}
+                            onChange={(e) => {
+                              const val = parsePrice(e.target.value);
+                              handlePricePerSlotChange(val);
+                            }}
+                            className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                          />
+                        </div>
 
                         {/* Calculated Sums Grid */}
                         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-100">

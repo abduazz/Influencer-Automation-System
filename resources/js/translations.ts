@@ -152,7 +152,7 @@ export const translations = {
     paymentTypeLabel: 'Payment Type',
     paymentPrepaid: 'Prepayment',
     paymentFull: 'Full Payment',
-    paymentOther: 'Other / Miscellaneous',
+    paymentOther: 'Other',
     purposeField: 'Purpose',
     sumField: 'Amount',
     configureSlotsTitle: 'Configure Individual Slots',

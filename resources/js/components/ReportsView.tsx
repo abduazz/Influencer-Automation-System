@@ -331,54 +331,30 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
         </div>
       )}
 
-      <div className="w-full md:max-w-[380px] mx-auto p-0 md:p-4 flex justify-center">
-        {/* LEFT COLUMN: Physical phone simulator containing the Mini App */}
+      <div className="w-full">
+        {/* Browser chrome wrapper */}
         <div className="w-full">
-          <div className={isWebApp ? 'w-full' : 'w-full md:relative md:mx-auto md:max-w-[340px] bg-neutral-50 md:bg-white p-0 md:p-3 md:rounded-[36px] md:shadow-xs md:border md:border-neutral-200'}>
-            {/* Camera notch */}
+          <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
+            {/* Browser top bar */}
             {!isWebApp && (
-              <div className="hidden md:flex absolute top-4 left-1/2 transform -translate-x-1/2 w-28 h-3.5 bg-neutral-100 rounded-full z-20 justify-center items-center border border-neutral-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-neutral-300 mr-1.5"></span>
-                <span className="w-1 h-1 rounded-full bg-neutral-200"></span>
+              <div className="bg-neutral-50 px-4 py-2 border-b border-neutral-200 flex items-center gap-2">
+                <div className="flex gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
+                  <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
+                  <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
+                </div>
+                <div className="flex-1 max-w-xl mx-auto bg-white border border-neutral-200 rounded px-2.5 py-0.5 text-center text-[10px] text-neutral-400 truncate font-mono">
+                  <span>fluenceflow.net/reports</span>
+                </div>
               </div>
             )}
 
-            {/* Inner Phone Screen */}
-            <div className={isWebApp ? 'w-full bg-white border border-neutral-250 rounded-xl p-4 shadow-sm' : 'w-full bg-white border border-neutral-200 rounded-xl p-4 shadow-xs md:bg-neutral-50 md:rounded-[28px] md:overflow-hidden md:border-neutral-200 text-left md:min-h-[580px] flex flex-col justify-between'}>
-              {/* Phone Status Bar */}
-              {!isWebApp && (
-                <div className="hidden md:flex bg-neutral-50 text-neutral-400 text-[9px] px-5 pt-3 pb-1.5 justify-between items-center font-bold font-mono">
-                  <span>03:18 AM</span>
-                  <div className="flex items-center gap-1">
-                    <span>LTE</span>
-                    <span className="w-3.5 h-2 bg-neutral-300 rounded-xs"></span>
-                  </div>
-                </div>
-              )}
-
-              {/* Telegram App Bar Header */}
-              {!isWebApp && (
-                <div className="hidden md:flex bg-white px-4 py-2.5 text-black justify-between items-center border-b border-neutral-100">
-                  <div className="flex items-center gap-2">
-                    <ChevronLeft className="w-4 h-4 text-black cursor-pointer" />
-                    <div>
-                      <h4 className="font-bold text-[11px] tracking-tight text-black">FluenceFlow Bot</h4>
-                      <p className="text-[8px] text-neutral-400">Telegram Mini App</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] border border-neutral-200 text-neutral-600 font-bold px-1.5 py-0.2 rounded-md">
-                      close
-                    </span>
-                    <MoreVertical className="w-3.5 h-3.5 text-neutral-400" />
-                  </div>
-                </div>
-              )}
-
-              {/* Mini App Canvas Scroll */}
-              <div className={isWebApp ? 'space-y-3' : 'p-0 md:p-3.5 flex-1 overflow-y-auto md:max-h-[440px] space-y-3'}>
+            {/* Inner content area */}
+            <div className={isWebApp ? 'w-full bg-white p-4' : 'p-6 text-left bg-neutral-50 min-h-[420px] flex flex-col justify-between'}>
+              {/* Form Content */}
+              <div className="space-y-3 w-full max-w-xl mx-auto">
                 {createdReportResult ? (
-                  <div className={isWebApp ? 'bg-white border border-neutral-250 rounded-xl p-6 shadow-sm text-center space-y-4' : 'bg-white border border-neutral-200 rounded-xl p-5 shadow-2xs text-center space-y-4'}>
+                  <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-2xs text-center space-y-4">
                     <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center mx-auto shadow-sm">
                       <CheckCircle2 className="w-5 h-5 text-white" />
                     </div>
@@ -440,7 +416,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                     </button>
                   </div>
                 ) : (
-                  <div className={isWebApp ? '' : 'w-full md:bg-white md:border md:border-neutral-200 md:rounded-xl md:p-3.5 md:shadow-2xs'}>
+                  <div className="w-full bg-white border border-neutral-200 rounded-xl p-3.5 shadow-2xs">
                   <div className="flex items-center gap-2 mb-2.5 border-b border-neutral-100 pb-2">
                     <span className="text-[9px] uppercase font-bold text-black tracking-wider">
                       {t.reportForm}
@@ -957,15 +933,6 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                 </div>
                 )}
               </div>
-
-              {/* Bot menu bar bottom */}
-              {!isWebApp && (
-                <div className="bg-white border-t border-neutral-100 p-2.5 flex justify-around items-center text-[9px] text-neutral-400 font-bold">
-                  <span className="text-black">{t.reportForm}</span>
-                  <span className="w-1 h-1 rounded-full bg-neutral-300"></span>
-                  <span>{t.integrationsTitle}</span>
-                </div>
-              )}
             </div>
           </div>
         </div>

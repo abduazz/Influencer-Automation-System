@@ -231,7 +231,28 @@ export default function BloggerCabinetView({
     const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
     const submittedData = existingSub?.data || {};
 
-    // Check if at least one new slot is being filled in this turn
+    // 1. Custom validation for required (paid) slots
+    for (let i = 1; i <= activeSlotsCount; i++) {
+      const slotKey = `slot_${i}`;
+      const isPaid = selectedIntegration 
+        ? (i - 1 < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
+        : true;
+
+      if (isPaid) {
+        const currentValue = formData[slotKey] || submittedData[slotKey];
+        if (!currentValue || currentValue.trim() === '') {
+          alert(lang === 'ru'
+            ? `Пожалуйста, заполните Слот #${i} (обязательное поле)!`
+            : lang === 'uz'
+            ? `Iltimos, Slot #${i} ni to‘ldiring (majburiy maydon)!`
+            : `Please fill Slot #${i} (required field)!`
+          );
+          return;
+        }
+      }
+    }
+
+    // 2. Check if at least one new slot is being filled in this turn
     const hasNewInput = Array.from({ length: activeSlotsCount }).some((_, idx) => {
       const key = `slot_${idx + 1}`;
       return !submittedData[key] && !!formData[key];
@@ -553,7 +574,6 @@ export default function BloggerCabinetView({
                                     <input
                                       type="file"
                                       accept="image/*"
-                                      required={isPaid}
                                       onChange={(e) => handleFileChangeSim(slotKey, e)}
                                       className="hidden"
                                     />
@@ -567,7 +587,6 @@ export default function BloggerCabinetView({
                                   <input
                                     type="file"
                                     accept="image/*"
-                                    required={isPaid}
                                     onChange={(e) => handleFileChangeSim(slotKey, e)}
                                     className="absolute inset-0 opacity-0 cursor-pointer"
                                   />
@@ -581,8 +600,7 @@ export default function BloggerCabinetView({
                                 <Link className="w-3.5 h-3.5 text-neutral-400" />
                               </div>
                               <input
-                                type="url"
-                                required={isPaid}
+                                type="text"
                                 disabled={isSlotSubmitted}
                                 placeholder={
                                   slotPlatform === 'Instagram'

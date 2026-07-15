@@ -21,18 +21,33 @@ class TelegramService
         }
 
         try {
+            // First attempt: try with HTML parse mode
             $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", [
                 'chat_id' => $chatId,
                 'text' => $text,
                 'parse_mode' => 'HTML',
             ]);
 
-            if (!$response->successful()) {
-                Log::error("Telegram API Error: " . $response->body());
-                return false;
+            if ($response->successful()) {
+                return true;
             }
 
-            return true;
+            $body = $response->body();
+            Log::warning("Telegram HTML sendMessage failed, retrying as plain text. Error: " . $body);
+
+            // Second attempt: strip HTML tags and send as plain text (no parse_mode)
+            $plainText = strip_tags($text);
+            $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", [
+                'chat_id' => $chatId,
+                'text' => $plainText,
+            ]);
+
+            if ($response2->successful()) {
+                return true;
+            }
+
+            Log::error("Telegram API Error (both HTML and plain): " . $response2->body());
+            return false;
         } catch (\Throwable $e) {
             Log::error("Telegram exception: " . $e->getMessage());
             return false;
@@ -162,18 +177,29 @@ class TelegramService
                     $endpoint = $isPdf ? 'sendDocument' : 'sendPhoto';
                     $field = $isPdf ? 'document' : 'photo';
                     $filename = $isPdf ? 'receipt.pdf' : 'receipt.jpg';
+                    $safeCaption = strlen($text) > 1024 ? substr(strip_tags($text), 0, 1021) . '...' : $text;
 
                     $response = Http::attach($field, $binaryData, $filename)
                         ->post("https://api.telegram.org/bot{$token}/{$endpoint}", [
                             'chat_id' => $chatId,
-                            'caption' => $text,
+                            'caption' => $safeCaption,
                             'parse_mode' => 'HTML',
                         ]);
 
                     if ($response->successful()) {
                         return true;
                     }
-                    Log::error("Telegram sendPhoto/Document API Error: " . $response->body());
+
+                    Log::warning("Telegram sendPhoto/Document HTML failed, retrying plain: " . $response->body());
+
+                    // Fallback: send text first, then file without caption
+                    self::sendMessage($chatId, $text);
+                    Http::attach($field, $binaryData, $filename)
+                        ->post("https://api.telegram.org/bot{$token}/{$endpoint}", [
+                            'chat_id' => $chatId,
+                            'caption' => '📎 Чек/Скриншот оплаты',
+                        ]);
+                    return true;
                 } catch (\Throwable $e) {
                     Log::error("Telegram sendPhoto/Document Exception: " . $e->getMessage());
                 }

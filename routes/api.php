@@ -14,6 +14,7 @@ Route::delete('/allowed-users/{user}', [UserController::class, 'destroy']);
 
 Route::get('/projects', [ProjectController::class, 'index']);
 Route::post('/projects', [ProjectController::class, 'store']);
+Route::put('/projects/{project}', [ProjectController::class, 'update']);
 Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
 
 Route::get('/integrations', [IntegrationController::class, 'index']);
@@ -66,9 +67,25 @@ Route::get('/clear-server-cache', function () {
     try {
         \Illuminate\Support\Facades\Artisan::call('optimize:clear');
         \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+        
+        $projects = [
+            'Tezda' => '4',
+            'tanga' => '5',
+            'Yubor' => '3',
+            'TezPay' => '6',
+            'TezAvia' => '2'
+        ];
+
+        foreach ($projects as $name => $threadId) {
+            $project = \App\Models\Project::whereRaw('LOWER(name) = ?', [strtolower($name)])->first();
+            if ($project) {
+                $project->update(['telegram_thread_id' => $threadId]);
+            }
+        }
+        
         return response()->json([
             'success' => true,
-            'message' => 'Cache cleared and migrations run successfully!'
+            'message' => 'Cache cleared, migrations run, and thread IDs seeded successfully!'
         ]);
     } catch (\Throwable $e) {
         return response()->json([

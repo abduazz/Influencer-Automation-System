@@ -25,6 +25,7 @@ import {
   deleteAllowedUser,
   fetchProjects,
   createProject,
+  updateProject,
   deleteProject,
   fetchIntegrations,
   createIntegration,
@@ -218,6 +219,11 @@ export default function App() {
   const handleAddProject = async (newProj: Omit<Project, 'id' | 'createdAt'>) => {
     const project = await createProject(newProj.name, newProj.description, newProj.telegramThreadId);
     setProjects((prev) => [...prev, project]);
+  };
+
+  const handleEditProject = async (id: string, name: string, description: string, telegramThreadId?: string) => {
+    const updated = await updateProject(id, name, description, telegramThreadId, currentUserEmail || undefined);
+    setProjects((prev) => prev.map(p => p.id === id ? updated : p));
   };
 
   const handleDeleteProject = async (projectId: string) => {
@@ -461,6 +467,7 @@ export default function App() {
                 integrations={integrations}
                 submissions={submissions}
                 onAddProject={handleAddProject}
+                onEditProject={handleEditProject}
                 onDeleteProject={handleDeleteProject}
                 onAddIntegration={handleAddIntegration}
                 onEditIntegration={handleEditIntegration}

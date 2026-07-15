@@ -44,6 +44,44 @@ class ProjectController extends Controller
         ], 201);
     }
 
+    public function update(Request $request, Project $project)
+    {
+        $user = auth()->user();
+
+        if (!$user) {
+            $email = $request->header('X-User-Email');
+            if ($email) {
+                $user = \App\Models\User::where('email', strtolower($email))->first();
+            }
+        }
+
+        if (!$user || $user->role !== \App\Enums\UserRole::SuperAdmin) {
+            return response()->json([
+                'error' => 'Forbidden. Only Super Admin can edit projects.'
+            ], 403);
+        }
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'telegramThreadId' => 'nullable|string',
+        ]);
+
+        $project->update([
+            'name' => $request->name,
+            'description' => $request->description,
+            'telegram_thread_id' => $request->telegramThreadId,
+        ]);
+
+        return response()->json([
+            'id' => (string) $project->id,
+            'name' => $project->name,
+            'description' => $project->description ?? '',
+            'telegramThreadId' => $project->telegram_thread_id ?? '',
+            'createdAt' => $project->created_at->format('Y-m-d'),
+        ]);
+    }
+
     public function destroy(Request $request, Project $project)
     {
         $user = auth()->user();

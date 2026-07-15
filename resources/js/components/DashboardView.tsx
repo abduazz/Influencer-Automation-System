@@ -32,6 +32,7 @@ interface DashboardViewProps {
   integrations: Integration[];
   submissions: BloggerSubmission[];
   onAddProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
+  onEditProject?: (id: string, name: string, description: string, telegramThreadId?: string) => void;
   onDeleteProject: (id: string) => void;
   onAddIntegration: (integration: Omit<Integration, 'id' | 'totalAmount'>) => void;
   onEditIntegration: (id: string, integration: Partial<Integration>) => void;
@@ -46,6 +47,7 @@ export default function DashboardView({
   integrations,
   submissions,
   onAddProject,
+  onEditProject,
   onDeleteProject,
   onAddIntegration,
   onEditIntegration,
@@ -68,6 +70,12 @@ export default function DashboardView({
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [newProjectThreadId, setNewProjectThreadId] = useState('');
+
+  // Edit Project Form state
+  const [showEditProjectModal, setShowEditProjectModal] = useState(false);
+  const [editProjectName, setEditProjectName] = useState('');
+  const [editProjectDesc, setEditProjectDesc] = useState('');
+  const [editProjectThreadId, setEditProjectThreadId] = useState('');
 
   // New / Editing Integration Form state
   const [bloggerName, setBloggerName] = useState('');
@@ -160,6 +168,15 @@ export default function DashboardView({
     setNewProjectDesc('');
     setNewProjectThreadId('');
     setShowAddProjectModal(false);
+  };
+
+  const handleSubmitEditProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProject || !editProjectName.trim()) return;
+    if (onEditProject) {
+      onEditProject(selectedProject.id, editProjectName, editProjectDesc, editProjectThreadId);
+    }
+    setShowEditProjectModal(false);
   };
 
   const handleSubmitIntegration = (e: React.FormEvent) => {
@@ -335,25 +352,39 @@ export default function DashboardView({
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.selectedCampaignDetails}</span>
                     {userRole === 'super_admin' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(t.confirmDeleteProject)) {
-                            onDeleteProject(selectedProject.id);
-                            if (projects.length > 1) {
-                              const remaining = projects.filter(p => p.id !== selectedProject.id);
-                              setSelectedProjectId(remaining[0].id);
-                            } else {
-                              setSelectedProjectId('');
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditProjectName(selectedProject.name);
+                            setEditProjectDesc(selectedProject.description || '');
+                            setEditProjectThreadId(selectedProject.telegramThreadId || '');
+                            setShowEditProjectModal(true);
+                          }}
+                          className="text-neutral-400 hover:text-black p-1 rounded transition duration-150 cursor-pointer"
+                          title={lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(t.confirmDeleteProject)) {
+                              onDeleteProject(selectedProject.id);
+                              if (projects.length > 1) {
+                                const remaining = projects.filter(p => p.id !== selectedProject.id);
+                                setSelectedProjectId(remaining[0].id);
+                              } else {
+                                setSelectedProjectId('');
+                              }
                             }
-                          }
-                        }}
-                        id={`delete-project-${selectedProject.id}`}
-                        className="text-neutral-400 hover:text-red-600 p-1 rounded transition duration-150 cursor-pointer"
-                        title={t.deleteProjectTooltip}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                          }}
+                          id={`delete-project-${selectedProject.id}`}
+                          className="text-neutral-400 hover:text-red-600 p-1 rounded transition duration-150 cursor-pointer"
+                          title={t.deleteProjectTooltip}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
                   <h3 className="text-sm font-black text-black">{selectedProject.name}</h3>
@@ -666,6 +697,83 @@ export default function DashboardView({
                   className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
                 >
                   {t.createBtn}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 1B: EDIT PROJECT --- */}
+      {showEditProjectModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-100">
+            <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
+              <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-black" /> {lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
+              </h3>
+              <button 
+                onClick={() => setShowEditProjectModal(false)}
+                className="text-neutral-400 hover:text-black font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitEditProject} className="p-6 space-y-4 text-left">
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {t.projectNameLabel}
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder={t.projectNamePlaceholder}
+                  value={editProjectName}
+                  onChange={(e) => setEditProjectName(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {t.projectDescLabel}
+                </label>
+                <textarea
+                  placeholder={t.projectDescPlaceholder}
+                  value={editProjectDesc}
+                  onChange={(e) => setEditProjectDesc(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {lang === 'ru' ? 'Telegram ID Темы (Thread ID)' : lang === 'uz' ? 'Telegram Mavzu ID (Thread ID)' : 'Telegram Thread ID'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 12345"
+                  value={editProjectThreadId}
+                  onChange={(e) => setEditProjectThreadId(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowEditProjectModal(false)}
+                  className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
+                >
+                  {t.cancelBtn}
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
+                >
+                  {lang === 'ru' ? 'Сохранить' : lang === 'uz' ? 'Saqlash' : 'Save'}
                 </button>
               </div>
             </form>

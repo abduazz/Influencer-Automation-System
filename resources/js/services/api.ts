@@ -39,6 +39,14 @@ export function createProject(name: string, description: string, telegramThreadI
     body: JSON.stringify({ name, description, telegramThreadId }),
   });
 }
+export function updateProject(id: string, name: string, description: string, telegramThreadId?: string, userEmail?: string): Promise<Project> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
+  return request<Project>(`/api/projects/${id}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ name, description, telegramThreadId }),
+  });
+}
 export function deleteProject(id: string, userEmail?: string): Promise<void> {
   const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
   return request<void>(`/api/projects/${id}`, { method: 'DELETE', headers });

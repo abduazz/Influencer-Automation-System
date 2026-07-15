@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link } from 'lucide-react';
-import { Project, Report } from '../data/mockData';
+import { Project, Report, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
 
 interface ReportsFeedViewProps {
   projects: Project[];
+  integrations: Integration[];
   reports: Report[];
   lang: Language;
   userRole?: string | null;
   onDeleteReport?: (id: string) => void;
 }
 
-export default function ReportsFeedView({ projects, reports, lang, userRole, onDeleteReport }: ReportsFeedViewProps) {
+export default function ReportsFeedView({ projects, integrations, reports, lang, userRole, onDeleteReport }: ReportsFeedViewProps) {
   const t = translations[lang];
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
@@ -66,6 +67,20 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
         {filteredReports.map((rep) => {
           const resolvedProject = projects.find(p => p.id === rep.projectId);
           const isOther = rep.paymentType === 'other';
+
+          // Match report to integration for blogger link lookup
+          const matchingInt = isOther ? null : (
+            integrations.find(i => 
+              i.projectId === rep.projectId &&
+              i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase() &&
+              i.platform.toLowerCase() === rep.platform?.toLowerCase()
+            ) || integrations.find(i => 
+              i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase()
+            )
+          );
+
+          const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
+          const cabinetUrl = token ? `${window.location.origin}/c/${token}` : '';
 
           return (
             <div
@@ -127,6 +142,27 @@ export default function ReportsFeedView({ projects, reports, lang, userRole, onD
                 {rep.receipt && (
                   <div className="mt-2.5 text-[9px] text-neutral-400 font-bold flex items-center gap-1 uppercase">
                     <span>🖼️ {lang === 'ru' ? 'Скриншот прикреплен' : lang === 'uz' ? 'Skrinshot biriktirilgan' : 'Screenshot Attached'}</span>
+                  </div>
+                )}
+
+                {/* Blogger Cabinet Link Section */}
+                {cabinetUrl && (
+                  <div className="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
+                    <span className="text-[9px] text-neutral-400 font-extrabold uppercase tracking-wide">
+                      {lang === 'ru' ? 'Линк блогера:' : lang === 'uz' ? 'Blogger havolasi:' : 'Cabinet Link:'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(cabinetUrl);
+                        alert(lang === 'ru' ? 'Ссылка кабинета скопирована!' : lang === 'uz' ? 'Kabinet havolasi nusxalandi!' : 'Cabinet link copied!');
+                      }}
+                      className="text-[9px] font-black text-black hover:underline flex items-center gap-1 cursor-pointer bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded px-2 py-1 transition"
+                    >
+                      <Link className="w-2.5 h-2.5 text-black" />
+                      <span>{lang === 'ru' ? 'Копировать' : lang === 'uz' ? 'Nusxalash' : 'Copy'}</span>
+                    </button>
                   </div>
                 )}
               </div>

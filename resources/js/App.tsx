@@ -485,6 +485,7 @@ export default function App() {
             {activeTab === 'reports_feed' && currentUserRole !== 'product_manager' && (
               <ReportsFeedView
                 projects={projects}
+                integrations={integrations}
                 reports={reports}
                 lang={lang}
                 userRole={currentUserRole}

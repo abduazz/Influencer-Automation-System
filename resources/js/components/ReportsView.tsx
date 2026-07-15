@@ -388,20 +388,6 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
         {/* Browser chrome wrapper */}
         <div className="w-full">
           <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
-            {/* Browser top bar */}
-            {!isWebApp && (
-              <div className="bg-neutral-50 px-4 py-2 border-b border-neutral-200 flex items-center gap-2">
-                <div className="flex gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-                  <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-                  <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-                </div>
-                <div className="flex-1 max-w-xl mx-auto bg-white border border-neutral-200 rounded px-2.5 py-0.5 text-center text-[10px] text-neutral-400 truncate font-mono">
-                  <span>fluenceflow.net/reports</span>
-                </div>
-              </div>
-            )}
-
             {/* Inner content area */}
             <div className={isWebApp ? 'w-full bg-white p-4' : 'p-6 text-left bg-neutral-50 min-h-[420px] flex flex-col justify-between'}>
               {/* Form Content */}

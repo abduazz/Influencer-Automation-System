@@ -90,6 +90,37 @@ Route::get('/debug-telegram', function () {
     ]);
 });
 
+Route::get('/update-telegram-chat', function () {
+    try {
+        $envPath = base_path('.env');
+        if (!file_exists($envPath)) {
+            throw new \Exception(".env file not found at $envPath");
+        }
+        $content = file_get_contents($envPath);
+        
+        if (str_contains($content, 'TELEGRAM_REPORTS_CHAT_ID=')) {
+            $content = preg_replace('/TELEGRAM_REPORTS_CHAT_ID=[^\r\n]*/', 'TELEGRAM_REPORTS_CHAT_ID=-5222511452', $content);
+        } else {
+            $content .= "\nTELEGRAM_REPORTS_CHAT_ID=-5222511452\n";
+        }
+        
+        file_put_contents($envPath, $content);
+        
+        \Illuminate\Support\Facades\Artisan::call('config:clear');
+        \Illuminate\Support\Facades\Artisan::call('optimize:clear');
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'TELEGRAM_REPORTS_CHAT_ID updated to -5222511452 on server successfully!'
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage()
+        ], 500);
+    }
+});
+
 Route::get('/reset-database-prod-secure', function () {
     try {
         // Drop all tables

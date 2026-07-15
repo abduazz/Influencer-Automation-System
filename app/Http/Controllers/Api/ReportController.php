@@ -152,19 +152,21 @@ class ReportController extends Controller
             }
         }
 
-        // Trigger Telegram & Google Sheets notifications independently
-        try {
-            $lang = $request->input('lang', 'ru');
-            \App\Services\TelegramService::sendReportNotification($report, $request->receipt, $lang);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error("Failed to send Telegram report notification: " . $e->getMessage());
-        }
+        // Trigger Telegram & Google Sheets notifications independently after response to speed up submission
+        $receipt = $request->receipt;
+        dispatch(function () use ($report, $receipt, $lang) {
+            try {
+                \App\Services\TelegramService::sendReportNotification($report, $receipt, $lang);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error("Failed to send Telegram report notification: " . $e->getMessage());
+            }
 
-        try {
-            \App\Services\GoogleSheetsService::appendReport($report);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error("Failed to append report to Google Sheets: " . $e->getMessage());
-        }
+            try {
+                \App\Services\GoogleSheetsService::appendReport($report);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error("Failed to append report to Google Sheets: " . $e->getMessage());
+            }
+        })->afterResponse();
 
         return response()->json([
             'id' => (string) $report->id,

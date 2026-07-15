@@ -65,15 +65,18 @@ class BloggerSubmissionController extends Controller
 
         Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
 
-        // Trigger Telegram submission notification
-        try {
-            $lang = $request->input('lang', 'ru');
-            Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
-            $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $request->data, $lang);
-            Log::info('Telegram sendSubmissionNotification result: ' . ($result ? 'true' : 'false'));
-        } catch (\Throwable $e) {
-            Log::error("Failed to send submission webhook: " . $e->getMessage());
-        }
+        // Trigger Telegram submission notification after response to speed up submission
+        $lang = $request->input('lang', 'ru');
+        $data = $request->data;
+        dispatch(function () use ($integration, $data, $lang) {
+            try {
+                Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
+                $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $data, $lang);
+                Log::info('Telegram sendSubmissionNotification result: ' . ($result ? 'true' : 'false'));
+            } catch (\Throwable $e) {
+                Log::error("Failed to send submission webhook: " . $e->getMessage());
+            }
+        })->afterResponse();
 
         return response()->json([
             'id' => (string) $sub->id,

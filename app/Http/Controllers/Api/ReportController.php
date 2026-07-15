@@ -152,13 +152,18 @@ class ReportController extends Controller
             }
         }
 
-        // Trigger Telegram & Google Sheets notifications
+        // Trigger Telegram & Google Sheets notifications independently
         try {
             $lang = $request->input('lang', 'ru');
             \App\Services\TelegramService::sendReportNotification($report, $request->receipt, $lang);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Failed to send Telegram report notification: " . $e->getMessage());
+        }
+
+        try {
             \App\Services\GoogleSheetsService::appendReport($report);
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error("Failed to run post-report webhooks: " . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error("Failed to append report to Google Sheets: " . $e->getMessage());
         }
 
         return response()->json([

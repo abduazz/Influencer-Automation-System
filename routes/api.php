@@ -77,3 +77,16 @@ Route::get('/clear-server-cache', function () {
         ], 500);
     }
 });
+
+Route::get('/debug-telegram', function () {
+    $chatId = config('services.telegram.chat_id');
+    $subChatId = config('services.telegram.submissions_chat_id');
+    $token = config('services.telegram.bot_token');
+    return response()->json([
+        'chat_id' => $chatId,
+        'submissions_chat_id' => $subChatId ?: '(not set, using chat_id fallback)',
+        'has_token' => !empty($token),
+        'token_prefix' => $token ? substr($token, 0, 8) . '...' : 'MISSING',
+    ]);
+});
+

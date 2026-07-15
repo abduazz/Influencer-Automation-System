@@ -142,14 +142,10 @@ class TelegramService
         $text .= "{$t['date']} " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";
         $text .= "{$t['project']} " . self::escape($projectName) . "\n";
         $text .= "{$t['payment_type']} " . self::escape($paymentType) . "\n";
-        $text .= "{$t['destination']} " . self::escape($destinationValue) . "\n";
 
         if ($report->payment_type !== 'other') {
             $text .= "{$t['blogger']} " . self::escape($report->channel_blogger ?? '—') . "\n";
             $text .= "{$t['platform']} " . self::escape($report->platform ?? '—') . "\n";
-            if ($report->destination) {
-                $text .= "{$t['referral_link']} " . self::escape($report->destination) . "\n";
-            }
             $text .= "{$t['slots_count']} " . ($report->slots_count ?? '0') . "\n";
             $text .= "{$t['price_per_slot']} " . number_format($report->price_per_slot ?? 0, 0, '.', ' ') . " UZS\n";
         }
@@ -159,10 +155,6 @@ class TelegramService
         }
 
         $text .= "{$t['total_amount']} " . number_format($report->total_amount ?? 0, 0, '.', ' ') . " UZS\n";
-
-        if ($report->comments) {
-            $text .= "{$t['comments']} <i>" . self::escape($report->comments) . "</i>\n";
-        }
 
         // If a Base64 receipt is provided, send it as photo or document directly
         if ($receiptBase64 && preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $receiptBase64, $matches)) {

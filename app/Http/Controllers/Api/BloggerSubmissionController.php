@@ -83,4 +83,11 @@ class BloggerSubmissionController extends Controller
             'data' => $sub->data ?? [],
         ], 201);
     }
+
+    public function destroy($id)
+    {
+        $sub = BloggerSubmission::findOrFail($id);
+        $sub->delete();
+        return response()->json(null, 204);
+    }
 }

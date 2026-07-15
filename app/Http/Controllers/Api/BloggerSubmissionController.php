@@ -53,6 +53,7 @@ class BloggerSubmissionController extends Controller
         }
 
         Log::info('BloggerSubmission resolved integration: id=' . $integration->id . ' blogger=' . $integration->blogger_name);
+        $integration->load('project');
 
         $sub = BloggerSubmission::updateOrCreate(
             ['integration_id' => $integration->id],

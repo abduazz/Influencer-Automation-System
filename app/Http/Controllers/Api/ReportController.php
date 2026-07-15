@@ -139,6 +139,7 @@ class ReportController extends Controller
 
         // Reload to get calculated values
         $report->refresh();
+        $report->load('project');
 
         $cabinetToken = null;
         if ($paymentType !== 'other' && $report->project_id !== null) {

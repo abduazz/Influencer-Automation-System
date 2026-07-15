@@ -153,6 +153,7 @@ class ReportController extends Controller
         }
 
         // Trigger Telegram & Google Sheets notifications independently after response to speed up submission
+        $lang = $request->input('lang', 'ru');
         $receipt = $request->receipt;
         dispatch(function () use ($report, $receipt, $lang) {
             try {

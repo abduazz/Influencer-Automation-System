@@ -220,8 +220,6 @@ class TelegramService
             'ru' => [
                 'submission_title' => '📢 <b>Выполнение работы блогером!</b>',
                 'blogger' => '👤 <b>Блогер:</b>',
-                'platform' => '📱 <b>Платформа:</b>',
-                'completed_slots' => '📝 <b>Выполненные слоты:</b>',
                 'slot_number' => 'Слот',
                 'total_purchased' => '📊 <b>Количество купленных слотов:</b>',
                 'remaining_slots' => '⏳ <b>Оставшиеся слоты:</b>',
@@ -229,8 +227,6 @@ class TelegramService
             'en' => [
                 'submission_title' => '📢 <b>Work Performed by Blogger!</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
-                'platform' => '📱 <b>Platform:</b>',
-                'completed_slots' => '📝 <b>Completed Slots:</b>',
                 'slot_number' => 'Slot',
                 'total_purchased' => '📊 <b>Total Purchased Slots:</b>',
                 'remaining_slots' => '⏳ <b>Remaining Slots:</b>',
@@ -238,8 +234,6 @@ class TelegramService
             'uz' => [
                 'submission_title' => '📢 <b>Blogger ishni bajardi!</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
-                'platform' => '📱 <b>Platforma:</b>',
-                'completed_slots' => '📝 <b>Bajarilgan slotlar:</b>',
                 'slot_number' => 'Slot',
                 'total_purchased' => '📊 <b>Sotib olingan slotlar soni:</b>',
                 'remaining_slots' => '⏳ <b>Qolgan slotlar:</b>',
@@ -260,79 +254,67 @@ class TelegramService
 
         $filledCount = $filledSlots->count();
         $remaining = max(0, $totalSlots - $filledCount);
+        $token = config('services.telegram.bot_token');
 
-        $text = "{$t['submission_title']}\n\n";
-        $text .= "{$t['blogger']} " . self::escape($blogger) . "\n";
-        $text .= "{$t['platform']} " . self::escape($platform) . "\n\n";
-        $text .= "{$t['completed_slots']} \n";
-
-        $screenshots = [];
-
-        foreach ($filledSlots as $key => $link) {
-            $slotNumber = str_replace('slot_', '', $key);
-            if (preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $link, $matches)) {
-                $screenshots[$slotNumber] = [
-                    'mime' => $matches[1],
-                    'data' => base64_decode($matches[2])
-                ];
-                $text .= "  • <b>{$t['slot_number']} #{$slotNumber}:</b> [Screenshot Proof] 🖼️\n";
-            } else {
-                $text .= "  • <b>{$t['slot_number']} #{$slotNumber}:</b> " . self::escape($link) . "\n";
-            }
+        if (!$token || !$chatId) {
+            Log::info("Telegram Bot Token or Chat ID not set for submissions.");
+            return false;
         }
 
-        $text .= "\n{$t['total_purchased']} " . self::escape($totalSlots) . "\n";
-        $text .= "{$t['remaining_slots']} " . self::escape($remaining) . "\n";
+        // Loop over each slot and send it as a separate message
+        foreach ($filledSlots as $key => $link) {
+            $slotNumber = str_replace('slot_', '', $key);
 
-        // Handle sending photos if screenshots exist
-        $token = config('services.telegram.bot_token');
-        if ($token && $chatId && !empty($screenshots)) {
-            try {
-                // If exactly 1 screenshot, send it with the full text as caption
-                if (count($screenshots) === 1) {
-                    $slotNum = array_key_first($screenshots);
-                    $screen = $screenshots[$slotNum];
-                    $safeCaption = strlen($text) > 1024 ? substr($text, 0, 1021) . '...' : $text;
-                    $response = Http::attach('photo', $screen['data'], "screenshot_{$slotNum}.jpg")
+            // Resolve slot config for platform name
+            $slotConfig = $integration->slots_config[$slotNumber - 1] ?? null;
+            $slotPlatform = $slotConfig['platform'] ?? $platform;
+
+            $isScreenshot = preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $link, $matches);
+
+            $text = "{$t['submission_title']}\n\n";
+            $text .= "{$t['blogger']} " . self::escape($blogger) . "\n";
+
+            if ($isScreenshot) {
+                $text .= "  • <b>{$t['slot_number']} #{$slotNumber} ({$slotPlatform}):</b> [Screenshot Proof] 🖼️\n\n";
+            } else {
+                $text .= "  • <b>{$t['slot_number']} #{$slotNumber} ({$slotPlatform}):</b> " . self::escape($link) . "\n\n";
+            }
+
+            $text .= "{$t['total_purchased']} {$totalSlots}\n";
+            $text .= "{$t['remaining_slots']} {$remaining}\n";
+
+            if ($isScreenshot) {
+                try {
+                    $base64Data = $matches[2];
+                    $binaryData = base64_decode($base64Data);
+                    $safeCaption = strlen($text) > 1024 ? substr(strip_tags($text), 0, 1021) . '...' : $text;
+
+                    $response = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
                         ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
                             'chat_id' => $chatId,
                             'caption' => $safeCaption,
                             'parse_mode' => 'HTML',
                         ]);
-                    if ($response->successful()) {
-                        return true;
-                    }
-                    Log::error("Telegram sendPhoto API Error (Single Submission): " . $response->body());
-                    
-                    // Fallback to sending text first, then the photo separately
-                    self::sendMessage($chatId, $text);
-                    Http::attach('photo', $screen['data'], "screenshot_{$slotNum}.jpg")
-                        ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
-                            'chat_id' => $chatId,
-                            'caption' => "🖼️ Screenshot Proof for Slot #{$slotNum} (Blogger: " . self::escape($blogger) . ")",
-                            'parse_mode' => 'HTML',
-                        ]);
-                    return true;
-                } else {
-                    // Send text message first
-                    self::sendMessage($chatId, $text);
-                    
-                    // Send each screenshot as a separate photo
-                    foreach ($screenshots as $slotNum => $screen) {
-                        Http::attach('photo', $screen['data'], "screenshot_{$slotNum}.jpg")
+
+                    if (!$response->successful()) {
+                        Log::error("Telegram sendPhoto failed, retrying plain text: " . $response->body());
+                        // Fallback: send text message first, then photo separately
+                        self::sendMessage($chatId, $text);
+                        Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
                             ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
                                 'chat_id' => $chatId,
-                                'caption' => "🖼️ Screenshot Proof for Slot #{$slotNum} (Blogger: " . self::escape($blogger) . ")",
-                                'parse_mode' => 'HTML',
+                                'caption' => "🖼️ Screenshot Proof for Slot #{$slotNumber}",
                             ]);
                     }
-                    return true;
+                } catch (\Throwable $e) {
+                    Log::error("Telegram sendPhoto exception: " . $e->getMessage());
+                    self::sendMessage($chatId, $text);
                 }
-            } catch (\Throwable $e) {
-                Log::error("Telegram sendSubmissionNotification screenshots exception: " . $e->getMessage());
+            } else {
+                self::sendMessage($chatId, $text);
             }
         }
 
-        return self::sendMessage($chatId, $text);
+        return true;
     }
 }

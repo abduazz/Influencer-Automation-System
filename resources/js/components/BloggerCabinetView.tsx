@@ -249,31 +249,10 @@ export default function BloggerCabinetView({
     const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
     const submittedData = existingSub?.data || {};
 
-    // 1. Custom validation for required (paid) slots
-    for (let i = 1; i <= activeSlotsCount; i++) {
-      const slotKey = `slot_${i}`;
-      const isPaid = selectedIntegration 
-        ? (i - 1 < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
-        : true;
-
-      if (isPaid) {
-        const currentValue = formData[slotKey] || submittedData[slotKey];
-        if (!currentValue || currentValue.trim() === '') {
-          alert(lang === 'ru'
-            ? `Пожалуйста, заполните Слот #${i} (обязательное поле)!`
-            : lang === 'uz'
-            ? `Iltimos, Slot #${i} ni to‘ldiring (majburiy maydon)!`
-            : `Please fill Slot #${i} (required field)!`
-          );
-          return;
-        }
-      }
-    }
-
-    // 2. Check if at least one new slot is being filled in this turn
+    // Check if at least one new slot is being filled in this turn
     const hasNewInput = Array.from({ length: activeSlotsCount }).some((_, idx) => {
       const key = `slot_${idx + 1}`;
-      return !submittedData[key] && !!formData[key];
+      return !submittedData[key] && !!formData[key] && formData[key].trim() !== '';
     });
 
     if (!hasNewInput) {
@@ -435,7 +414,8 @@ export default function BloggerCabinetView({
                         ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
                         : true;
 
-                      if (!isPaid) return null;
+                      const value = formData[slotKey];
+                      if (!value && !isPaid) return null;
 
                       return (
                         <div key={slotKey} className="flex justify-between items-center py-1.5 border-b border-neutral-100 last:border-0 last:pb-0 text-xs">

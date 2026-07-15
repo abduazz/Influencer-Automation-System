@@ -55,6 +55,9 @@ class BloggerSubmissionController extends Controller
         Log::info('BloggerSubmission resolved integration: id=' . $integration->id . ' blogger=' . $integration->blogger_name);
         $integration->load('project');
 
+        $existingSub = BloggerSubmission::where('integration_id', $integration->id)->first();
+        $oldData = $existingSub ? ($existingSub->data ?? []) : [];
+
         $sub = BloggerSubmission::updateOrCreate(
             ['integration_id' => $integration->id],
             [
@@ -66,13 +69,29 @@ class BloggerSubmissionController extends Controller
 
         Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
 
+        // Find newly filled slot keys
+        $newData = $request->data ?? [];
+        $newlyFilledKeys = [];
+        foreach ($newData as $key => $value) {
+            $oldValue = $oldData[$key] ?? null;
+            if (!empty($value) && empty($oldValue)) {
+                $newlyFilledKeys[] = $key;
+            }
+        }
+
+        Log::info('BloggerSubmission diff:', [
+            'oldData' => $oldData,
+            'newData' => $newData,
+            'newlyFilledKeys' => $newlyFilledKeys,
+        ]);
+
         // Trigger Telegram submission notification after response to speed up submission
         $lang = $request->input('lang', 'ru');
         $data = $request->data;
-        dispatch(function () use ($integration, $data, $lang) {
+        dispatch(function () use ($integration, $data, $lang, $newlyFilledKeys) {
             try {
                 Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
-                $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $data, $lang);
+                $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $data, $lang, $newlyFilledKeys);
                 Log::info('Telegram sendSubmissionNotification result: ' . ($result ? 'true' : 'false'));
             } catch (\Throwable $e) {
                 Log::error("Failed to send submission webhook: " . $e->getMessage());

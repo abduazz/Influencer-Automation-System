@@ -205,7 +205,7 @@ class TelegramService
         return self::sendMessage($chatId, $text, $threadId);
     }
 
-    public static function sendSubmissionNotification($integration, $data, $lang = 'ru')
+    public static function sendSubmissionNotification($integration, $data, $lang = 'ru', $newlyFilledKeys = null)
     {
         $chatId = config('services.telegram.submissions_chat_id');
         if (!$chatId) {
@@ -261,6 +261,9 @@ class TelegramService
 
         // Loop over each slot and send it as a separate message
         foreach ($filledSlots as $key => $link) {
+            if ($newlyFilledKeys !== null && !in_array($key, $newlyFilledKeys)) {
+                continue;
+            }
             $slotNumber = str_replace('slot_', '', $key);
 
             // Resolve slot config for platform name

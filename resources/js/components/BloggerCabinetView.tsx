@@ -100,6 +100,20 @@ export default function BloggerCabinetView({
 
   const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId);
 
+  const getSlotSummaryString = () => {
+    if (selectedIntegration?.slotsConfig && selectedIntegration.slotsConfig.length > 0) {
+      const counts: Record<string, number> = {};
+      selectedIntegration.slotsConfig.forEach((cfg) => {
+        const plat = cfg.platform || selectedIntegration.platform || activePlatform;
+        counts[plat] = (counts[plat] || 0) + 1;
+      });
+      return Object.entries(counts)
+        .map(([plat, count]) => `${count} ${plat}`)
+        .join(' | ');
+    }
+    return `${activeSlotsCount} ${activePlatform}`;
+  };
+
   const visibleSubmissions = userRole === 'super_admin'
     ? submissions
     : submissions.filter(sub => sub.integrationId === selectedIntegrationId);
@@ -461,8 +475,8 @@ export default function BloggerCabinetView({
                     <div className="text-left">
                       <h2 className="text-base font-black text-black tracking-tight">{t.bloggerCabinetTitle}</h2>
                       <p className="text-[10px] text-neutral-500 mt-0.5">
-                        {t.platformColumn}: <span className="font-bold text-black uppercase">{activePlatform}</span> | 
-                        {t.slotsColumn}: <span className="font-bold text-black">{activeSlotsCount}</span>
+                        {lang === 'ru' ? 'Слоты по платформам' : lang === 'uz' ? 'Platformalar bo‘yicha slotlar' : 'Slots by Platform'}:{' '}
+                        <span className="font-bold text-black">{getSlotSummaryString()}</span>
                       </p>
                     </div>
                     {/* Compact Language Switcher */}

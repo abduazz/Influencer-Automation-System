@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BloggerSubmission, Integration } from '../data/mockData';
+import { BloggerSubmission, Integration, Project } from '../data/mockData';
 import { 
   Upload, 
   Link, 
@@ -21,6 +21,7 @@ import { Language, translations } from '../translations';
 import { shortenUrl } from '../services/api';
 
 interface BloggerCabinetViewProps {
+  projects: Project[];
   integrations: Integration[];
   submissions: BloggerSubmission[];
   onAddSubmission: (submission: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => void;
@@ -82,6 +83,7 @@ const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 
   });
 };
 export default function BloggerCabinetView({
+  projects,
   integrations,
   submissions,
   onAddSubmission,
@@ -99,6 +101,8 @@ export default function BloggerCabinetView({
   const [isShortening, setIsShortening] = useState(false);
 
   const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId);
+  const resolvedProject = projects.find(p => p.id === selectedIntegration?.projectId);
+  const projectName = resolvedProject?.name || '';
 
   const getSlotSummaryString = () => {
     if (selectedIntegration?.slotsConfig && selectedIntegration.slotsConfig.length > 0) {
@@ -473,7 +477,9 @@ export default function BloggerCabinetView({
                 <form onSubmit={handleSubmit} className="space-y-4 max-w-xl mx-auto w-full">
                   <div className="flex justify-between items-center border-b border-neutral-100 pb-3 mb-4">
                     <div className="text-left">
-                      <h2 className="text-base font-black text-black tracking-tight">{t.bloggerCabinetTitle}</h2>
+                      <h2 className="text-base font-black text-black tracking-tight">
+                        {t.bloggerCabinetTitle} {projectName ? `— ${projectName}` : ''}
+                      </h2>
                       <p className="text-[10px] text-neutral-500 mt-0.5">
                         {lang === 'ru' ? 'Слоты по платформам' : lang === 'uz' ? 'Platformalar bo‘yicha slotlar' : 'Slots by Platform'}:{' '}
                         <span className="font-bold text-black">{getSlotSummaryString()}</span>

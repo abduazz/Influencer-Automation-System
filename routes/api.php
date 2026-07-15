@@ -90,3 +90,25 @@ Route::get('/debug-telegram', function () {
     ]);
 });
 
+Route::get('/reset-database-prod-secure', function () {
+    try {
+        // Drop all tables
+        \Illuminate\Support\Facades\Artisan::call('db:wipe', ['--force' => true]);
+        // Run all migrations fresh
+        \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+        // Seed default users (the two super admins)
+        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Database wiped, migrated and seeded successfully!'
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage()
+        ], 500);
+    }
+});
+
+

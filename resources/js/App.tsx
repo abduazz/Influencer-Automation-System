@@ -444,6 +444,7 @@ export default function App() {
         {/* Active Tab Router / Guest Blogger Route Gate */}
         {isBloggerCabinetRoute ? (
           <BloggerCabinetView
+            projects={projects}
             integrations={integrations}
             submissions={submissions}
             onAddSubmission={handleAddSubmission}
@@ -495,6 +496,7 @@ export default function App() {
 
             {activeTab === 'blogger' && (
               <BloggerCabinetView
+                projects={projects}
                 integrations={integrations}
                 submissions={submissions}
                 onAddSubmission={handleAddSubmission}

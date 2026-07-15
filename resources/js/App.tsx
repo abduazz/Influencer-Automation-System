@@ -260,9 +260,9 @@ export default function App() {
   const handleAddSubmission = async (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => {
     const submission = await createSubmission(newSub.integrationId, newSub.data, newSub.lang);
     setSubmissions((prev) => {
-      const exists = prev.some(s => s.integrationId === newSub.integrationId);
+      const exists = prev.some(s => String(s.integrationId) === String(newSub.integrationId));
       if (exists) {
-        return prev.map(s => s.integrationId === newSub.integrationId ? submission : s);
+        return prev.map(s => String(s.integrationId) === String(newSub.integrationId) ? submission : s);
       }
       return [submission, ...prev];
     });

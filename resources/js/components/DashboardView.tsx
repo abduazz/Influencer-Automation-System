@@ -229,7 +229,7 @@ export default function DashboardView({
   const totalSpend = activeProjectIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
   const totalSlotsCount = activeProjectIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
   const totalPublishedSlots = activeProjectIntegrations.reduce((sum, item) => {
-    const sub = submissions.find(s => s.integrationId === item.id);
+    const sub = submissions.find(s => String(s.integrationId) === String(item.id));
     const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
     return sum + slotsSubmitted;
   }, 0);
@@ -506,7 +506,7 @@ export default function DashboardView({
                           <td className="py-3.5 px-4 text-center bg-neutral-50/30 whitespace-nowrap">
                             <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[11px] border border-emerald-100/80 whitespace-nowrap">
                               {(() => {
-                                const sub = submissions.find(s => s.integrationId === item.id);
+                                const sub = submissions.find(s => String(s.integrationId) === String(item.id));
                                 const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
                                 return `${slotsSubmitted} / ${item.slotsCount}`;
                               })()}
@@ -519,7 +519,7 @@ export default function DashboardView({
                           <td className="py-3.5 px-4 text-center bg-neutral-50/30 whitespace-nowrap">
                             <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-extrabold text-[11px] border border-amber-100/80 whitespace-nowrap">
                               {(() => {
-                                const sub = submissions.find(s => s.integrationId === item.id);
+                                const sub = submissions.find(s => String(s.integrationId) === String(item.id));
                                 const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
                                 const slotsRemaining = Math.max(0, item.slotsCount - slotsSubmitted);
                                 return slotsRemaining;

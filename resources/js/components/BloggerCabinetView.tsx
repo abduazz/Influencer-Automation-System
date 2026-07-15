@@ -120,12 +120,12 @@ export default function BloggerCabinetView({
 
   const visibleSubmissions = userRole === 'super_admin'
     ? submissions
-    : submissions.filter(sub => sub.integrationId === selectedIntegrationId);
+    : submissions.filter(sub => String(sub.integrationId) === String(selectedIntegrationId));
 
   // Load state from URL parameters if present
   useEffect(() => {
     if (urlParams?.integrationId) {
-      const matched = integrations.find(i => i.id === urlParams.integrationId || i.bloggerCabinetToken === urlParams.integrationId);
+      const matched = integrations.find(i => String(i.id) === String(urlParams.integrationId) || i.bloggerCabinetToken === urlParams.integrationId);
       if (matched) {
         setSelectedIntegrationId(matched.id);
         setActivePlatform(matched.platform);
@@ -173,7 +173,7 @@ export default function BloggerCabinetView({
     const initialData: Record<string, string> = {};
     const initialPreviews: Record<string, string> = {};
 
-    const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
+    const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
     const submittedData = existingSub?.data || {};
 
     for (let i = 1; i <= activeSlotsCount; i++) {
@@ -246,7 +246,7 @@ export default function BloggerCabinetView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
+    const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
     const submittedData = existingSub?.data || {};
 
     // 1. Custom validation for required (paid) slots
@@ -512,7 +512,7 @@ export default function BloggerCabinetView({
                       const slotNum = index + 1;
                       const slotKey = `slot_${slotNum}`;
 
-                      const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
+                      const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
                       const submittedData = existingSub?.data || {};
                       const isSlotSubmitted = !!(submittedData[slotKey]);
 
@@ -681,7 +681,7 @@ export default function BloggerCabinetView({
                     </thead>
                     <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
                       {visibleSubmissions.map((sub) => {
-                        const matchingInt = integrations.find(i => i.id === sub.integrationId);
+                        const matchingInt = integrations.find(i => String(i.id) === String(sub.integrationId));
 
                         return (
                           <tr key={sub.id}>

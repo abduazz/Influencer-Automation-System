@@ -216,7 +216,7 @@ export default function App() {
 
   // State manipulation handlers
   const handleAddProject = async (newProj: Omit<Project, 'id' | 'createdAt'>) => {
-    const project = await createProject(newProj.name, newProj.description);
+    const project = await createProject(newProj.name, newProj.description, newProj.telegramThreadId);
     setProjects((prev) => [...prev, project]);
   };
 

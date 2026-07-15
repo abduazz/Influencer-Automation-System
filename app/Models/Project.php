@@ -13,6 +13,7 @@ class Project extends Model
     protected $fillable = [
         'name',
         'description',
+        'telegram_thread_id',
     ];
 
     public function integrations(): HasMany

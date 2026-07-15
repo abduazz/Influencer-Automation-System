@@ -15,6 +15,7 @@ class ProjectController extends Controller
                 'id' => (string) $project->id,
                 'name' => $project->name,
                 'description' => $project->description ?? '',
+                'telegramThreadId' => $project->telegram_thread_id ?? '',
                 'createdAt' => $project->created_at->format('Y-m-d'),
             ];
         }));
@@ -25,17 +26,20 @@ class ProjectController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'telegramThreadId' => 'nullable|string',
         ]);
 
         $project = Project::create([
             'name' => $request->name,
             'description' => $request->description,
+            'telegram_thread_id' => $request->telegramThreadId,
         ]);
 
         return response()->json([
             'id' => (string) $project->id,
             'name' => $project->name,
             'description' => $project->description ?? '',
+            'telegramThreadId' => $project->telegram_thread_id ?? '',
             'createdAt' => $project->created_at->format('Y-m-d'),
         ], 201);
     }

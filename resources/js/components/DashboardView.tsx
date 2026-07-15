@@ -67,6 +67,7 @@ export default function DashboardView({
   // New Project Form state
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
+  const [newProjectThreadId, setNewProjectThreadId] = useState('');
 
   // New / Editing Integration Form state
   const [bloggerName, setBloggerName] = useState('');
@@ -153,9 +154,11 @@ export default function DashboardView({
     onAddProject({
       name: newProjectName,
       description: newProjectDesc,
+      telegramThreadId: newProjectThreadId,
     });
     setNewProjectName('');
     setNewProjectDesc('');
+    setNewProjectThreadId('');
     setShowAddProjectModal(false);
   };
 
@@ -633,6 +636,19 @@ export default function DashboardView({
                   value={newProjectDesc}
                   onChange={(e) => setNewProjectDesc(e.target.value)}
                   rows={3}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {lang === 'ru' ? 'Telegram ID Темы (Thread ID)' : lang === 'uz' ? 'Telegram Mavzu ID (Thread ID)' : 'Telegram Thread ID'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 12345"
+                  value={newProjectThreadId}
+                  onChange={(e) => setNewProjectThreadId(e.target.value)}
                   className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
                 />
               </div>

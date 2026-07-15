@@ -12,7 +12,7 @@ class TelegramService
         return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8');
     }
 
-    public static function sendMessage($chatId, $text)
+    public static function sendMessage($chatId, $text, $threadId = null)
     {
         $token = config('services.telegram.bot_token');
         if (!$token || !$chatId) {
@@ -21,12 +21,17 @@ class TelegramService
         }
 
         try {
-            // First attempt: try with HTML parse mode
-            $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", [
+            $params = [
                 'chat_id' => $chatId,
                 'text' => $text,
                 'parse_mode' => 'HTML',
-            ]);
+            ];
+            if ($threadId) {
+                $params['message_thread_id'] = $threadId;
+            }
+
+            // First attempt: try with HTML parse mode
+            $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $params);
 
             if ($response->successful()) {
                 return true;
@@ -37,10 +42,15 @@ class TelegramService
 
             // Second attempt: strip HTML tags and send as plain text (no parse_mode)
             $plainText = strip_tags($text);
-            $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", [
+            $plainParams = [
                 'chat_id' => $chatId,
                 'text' => $plainText,
-            ]);
+            ];
+            if ($threadId) {
+                $plainParams['message_thread_id'] = $threadId;
+            }
+
+            $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
 
             if ($response2->successful()) {
                 return true;
@@ -67,16 +77,12 @@ class TelegramService
                 'date' => '📅 <b>Дата:</b>',
                 'project' => '📂 <b>Проект:</b>',
                 'payment_type' => '💳 <b>Тип оплаты:</b>',
-                'destination' => '🎯 <b>Назначение:</b>',
                 'blogger' => '👤 <b>Блогер:</b>',
                 'platform' => '📱 <b>Платформа:</b>',
                 'slots_count' => '🔢 <b>Количество слотов:</b>',
                 'price_per_slot' => '💵 <b>Цена за слот:</b>',
                 'total_amount' => '💰 <b>Итоговая сумма:</b>',
                 'prepaid_amount' => '💳 <b>Сумма предоплаты:</b>',
-                'comments' => '💬 <b>Комментарии:</b>',
-                'receipt_attached' => '📎 <b>Чек/Скриншот прикреплен к отчету.</b>',
-                'referral_link' => '🔗 <b>Реферальная ссылка:</b>',
                 'prepaid' => 'Предоплата (Prepaid)',
                 'full' => 'Полная оплата (Full)',
                 'other' => 'Прочие расходы (Other)',
@@ -86,16 +92,12 @@ class TelegramService
                 'date' => '📅 <b>Date:</b>',
                 'project' => '📂 <b>Project:</b>',
                 'payment_type' => '💳 <b>Payment Type:</b>',
-                'destination' => '🎯 <b>Purpose:</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
                 'platform' => '📱 <b>Platform:</b>',
                 'slots_count' => '🔢 <b>Slots Count:</b>',
                 'price_per_slot' => '💵 <b>Price per Slot:</b>',
                 'total_amount' => '💰 <b>Total Amount:</b>',
                 'prepaid_amount' => '💳 <b>Prepayment Amount:</b>',
-                'comments' => '💬 <b>Comments:</b>',
-                'receipt_attached' => '📎 <b>Receipt/Screenshot is attached to the report.</b>',
-                'referral_link' => '🔗 <b>Referral Link:</b>',
                 'prepaid' => 'Prepayment (Prepaid)',
                 'full' => 'Full Payment (Full)',
                 'other' => 'Other Expenses (Other)',
@@ -105,16 +107,12 @@ class TelegramService
                 'date' => '📅 <b>Sana:</b>',
                 'project' => '📂 <b>Loyiha:</b>',
                 'payment_type' => '💳 <b>To\'lov turi:</b>',
-                'destination' => '🎯 <b>Maqsad:</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
                 'platform' => '📱 <b>Platforma:</b>',
                 'slots_count' => '🔢 <b>Slotlar soni:</b>',
                 'price_per_slot' => '💵 <b>Slot narxi:</b>',
                 'total_amount' => '💰 <b>Jami summa:</b>',
                 'prepaid_amount' => '💳 <b>Oldindan to\'lov summasi:</b>',
-                'comments' => '💬 <b>Izohlar:</b>',
-                'receipt_attached' => '📎 <b>Chek/Skrinshot hisobotga biriktirilgan.</b>',
-                'referral_link' => '🔗 <b>Referral havolasi:</b>',
                 'prepaid' => 'Oldindan to\'lov (Prepaid)',
                 'full' => 'To\'liq to\'lov (Full)',
                 'other' => 'Boshqa xarajatlar (Other)',
@@ -131,12 +129,7 @@ class TelegramService
             $paymentType .= " - {$percentage}%";
         }
         $projectName = $report->project?->name ?? '—';
-
-        // Calculate dynamic purpose description matching Google Sheets format
-        $destinationValue = $report->destination;
-        if ($report->payment_type !== 'other') {
-            $destinationValue = trim(($report->platform ?? '') . ' блогер интеграция');
-        }
+        $threadId = $report->project?->telegram_thread_id ?? null;
 
         $text = "{$t['new_report']}\n\n";
         $text .= "{$t['date']} " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";
@@ -171,12 +164,17 @@ class TelegramService
                     $filename = $isPdf ? 'receipt.pdf' : 'receipt.jpg';
                     $safeCaption = strlen($text) > 1024 ? substr(strip_tags($text), 0, 1021) . '...' : $text;
 
+                    $photoParams = [
+                        'chat_id' => $chatId,
+                        'caption' => $safeCaption,
+                        'parse_mode' => 'HTML',
+                    ];
+                    if ($threadId) {
+                        $photoParams['message_thread_id'] = $threadId;
+                    }
+
                     $response = Http::attach($field, $binaryData, $filename)
-                        ->post("https://api.telegram.org/bot{$token}/{$endpoint}", [
-                            'chat_id' => $chatId,
-                            'caption' => $safeCaption,
-                            'parse_mode' => 'HTML',
-                        ]);
+                        ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $photoParams);
 
                     if ($response->successful()) {
                         return true;
@@ -185,12 +183,18 @@ class TelegramService
                     Log::warning("Telegram sendPhoto/Document HTML failed, retrying plain: " . $response->body());
 
                     // Fallback: send text first, then file without caption
-                    self::sendMessage($chatId, $text);
+                    self::sendMessage($chatId, $text, $threadId);
+
+                    $fallbackPhotoParams = [
+                        'chat_id' => $chatId,
+                        'caption' => '📎 Чек/Скриншот оплаты',
+                    ];
+                    if ($threadId) {
+                        $fallbackPhotoParams['message_thread_id'] = $threadId;
+                    }
+
                     Http::attach($field, $binaryData, $filename)
-                        ->post("https://api.telegram.org/bot{$token}/{$endpoint}", [
-                            'chat_id' => $chatId,
-                            'caption' => '📎 Чек/Скриншот оплаты',
-                        ]);
+                        ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $fallbackPhotoParams);
                     return true;
                 } catch (\Throwable $e) {
                     Log::error("Telegram sendPhoto/Document Exception: " . $e->getMessage());
@@ -198,7 +202,7 @@ class TelegramService
             }
         }
 
-        return self::sendMessage($chatId, $text);
+        return self::sendMessage($chatId, $text, $threadId);
     }
 
     public static function sendSubmissionNotification($integration, $data, $lang = 'ru')
@@ -253,6 +257,8 @@ class TelegramService
             return false;
         }
 
+        $threadId = $integration->project?->telegram_thread_id ?? null;
+
         // Loop over each slot and send it as a separate message
         foreach ($filledSlots as $key => $link) {
             $slotNumber = str_replace('slot_', '', $key);
@@ -281,29 +287,40 @@ class TelegramService
                     $binaryData = base64_decode($base64Data);
                     $safeCaption = strlen($text) > 1024 ? substr(strip_tags($text), 0, 1021) . '...' : $text;
 
+                    $photoParams = [
+                        'chat_id' => $chatId,
+                        'caption' => $safeCaption,
+                        'parse_mode' => 'HTML',
+                    ];
+                    if ($threadId) {
+                        $photoParams['message_thread_id'] = $threadId;
+                    }
+
                     $response = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
-                        ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
-                            'chat_id' => $chatId,
-                            'caption' => $safeCaption,
-                            'parse_mode' => 'HTML',
-                        ]);
+                        ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
 
                     if (!$response->successful()) {
                         Log::error("Telegram sendPhoto failed, retrying plain text: " . $response->body());
                         // Fallback: send text message first, then photo separately
-                        self::sendMessage($chatId, $text);
+                        self::sendMessage($chatId, $text, $threadId);
+
+                        $fallbackPhotoParams = [
+                            'chat_id' => $chatId,
+                            'caption' => "🖼️ Screenshot Proof for Slot #{$slotNumber}",
+                        ];
+                        if ($threadId) {
+                            $fallbackPhotoParams['message_thread_id'] = $threadId;
+                        }
+
                         Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
-                            ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
-                                'chat_id' => $chatId,
-                                'caption' => "🖼️ Screenshot Proof for Slot #{$slotNumber}",
-                            ]);
+                            ->post("https://api.telegram.org/bot{$token}/sendPhoto", $fallbackPhotoParams);
                     }
                 } catch (\Throwable $e) {
                     Log::error("Telegram sendPhoto exception: " . $e->getMessage());
-                    self::sendMessage($chatId, $text);
+                    self::sendMessage($chatId, $text, $threadId);
                 }
             } else {
-                self::sendMessage($chatId, $text);
+                self::sendMessage($chatId, $text, $threadId);
             }
         }
 

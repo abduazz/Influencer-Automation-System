@@ -33,10 +33,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export function fetchProjects(): Promise<Project[]> {
   return request<Project[]>('/api/projects');
 }
-export function createProject(name: string, description: string): Promise<Project> {
+export function createProject(name: string, description: string, telegramThreadId?: string): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, description, telegramThreadId }),
   });
 }
 export function deleteProject(id: string, userEmail?: string): Promise<void> {

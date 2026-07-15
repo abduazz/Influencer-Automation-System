@@ -7,6 +7,7 @@ export interface Project {
   id: string;
   name: string;
   description: string;
+  telegramThreadId?: string;
   createdAt: string;
 }
 

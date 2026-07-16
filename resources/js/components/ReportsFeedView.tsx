@@ -10,9 +10,11 @@ interface ReportsFeedViewProps {
   lang: Language;
   userRole?: string | null;
   onDeleteReport?: (id: string) => void;
+  title?: string;
+  description?: string;
 }
 
-export default function ReportsFeedView({ projects, integrations, reports, lang, userRole, onDeleteReport }: ReportsFeedViewProps) {
+export default function ReportsFeedView({ projects, integrations, reports, lang, userRole, onDeleteReport, title, description }: ReportsFeedViewProps) {
   const t = translations[lang];
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
@@ -39,11 +41,13 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
       {/* Page Header */}
       <div className="border-b border-neutral-200 pb-5 text-left flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h2 className="text-xl font-black text-black tracking-tight">{t.reportsListTab}</h2>
+          <h2 className="text-xl font-black text-black tracking-tight">{title || t.reportsListTab}</h2>
           <p className="text-xs text-neutral-500">
-            {lang === 'ru' ? 'Просматривайте все сохраненные финансовые отчеты. Нажмите на отчет для просмотра деталей.' : 
+            {description || (
+             lang === 'ru' ? 'Просматривайте все сохраненные финансовые отчеты. Нажмите на отчет для просмотра деталей.' : 
              lang === 'uz' ? 'Barcha saqlangan moliyaviy hisobotlarni ko‘ring. Batafsil ma’lumot olish uchun hisobot ustiga bosing.' : 
-             'Browse all saved financial reports. Click on any report to view full details.'}
+             'Browse all saved financial reports. Click on any report to view full details.'
+            )}
           </p>
         </div>
 

@@ -18,6 +18,7 @@ class UserControllerTest extends TestCase
             'email' => 'alice@company.com',
             'role' => 'pr_manager',
             'allowedMetrics' => ['deals', 'spend'],
+            'allowedPages' => ['projects', 'reports'],
         ];
 
         $response = $this->postJson('/api/allowed-users', $payload);
@@ -27,6 +28,7 @@ class UserControllerTest extends TestCase
                 'name' => 'Alice Smith',
                 'email' => 'alice@company.com',
                 'role' => 'pr_manager',
+                'allowedPages' => ['projects', 'reports'],
             ]);
 
         $this->assertDatabaseHas('users', [
@@ -44,6 +46,7 @@ class UserControllerTest extends TestCase
             'email' => 'bob@company.com',
             'role' => 'product_manager',
             'password' => bcrypt('password'),
+            'allowed_pages' => ['projects', 'reports_feed'],
         ]);
 
         $response = $this->getJson('/api/allowed-users');
@@ -53,6 +56,7 @@ class UserControllerTest extends TestCase
                 'name' => 'Bob Johnson',
                 'email' => 'bob@company.com',
                 'role' => 'product_manager',
+                'allowedPages' => ['projects', 'reports_feed'],
             ]);
     }
 
@@ -64,12 +68,14 @@ class UserControllerTest extends TestCase
             'role' => 'product_manager',
             'password' => bcrypt('password'),
             'allowed_metrics' => ['deals'],
+            'allowed_pages' => ['projects'],
         ]);
 
         $payload = [
             'name' => 'Bob Updated',
             'role' => 'super_admin',
             'allowedMetrics' => ['deals', 'spend'],
+            'allowedPages' => ['projects', 'other_expenses'],
         ];
 
         $response = $this->putJson("/api/allowed-users/{$user->id}", $payload);
@@ -80,6 +86,7 @@ class UserControllerTest extends TestCase
                 'email' => 'bob@company.com',
                 'role' => 'super_admin',
                 'allowedMetrics' => ['deals', 'spend'],
+                'allowedPages' => ['projects', 'other_expenses'],
             ]);
 
         $this->assertDatabaseHas('users', [

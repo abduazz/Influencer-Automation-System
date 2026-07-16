@@ -18,7 +18,7 @@ import AccessManagementView from './components/AccessManagementView';
 import LogsView from './components/LogsView';
 import LoginView from './components/LoginView';
 import CodeViewer from './components/CodeViewer';
-import { Language } from './translations';
+import { Language, translations } from './translations';
 import {
   fetchAllowedUsers,
   createAllowedUser,
@@ -51,10 +51,10 @@ import {
 import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut } from 'lucide-react';
 
 export default function App() {
-  // Language state (Russian by default)
+  // Language state (Uzbek by default)
   const [lang, setLang] = useState<Language>(() => {
     const cached = localStorage.getItem('ff_lang');
-    return (cached as Language) || 'ru';
+    return (cached as Language) || 'uz';
   });
 
   const handleSetLang = (newLang: Language) => {
@@ -79,17 +79,17 @@ export default function App() {
   });
 
   // Navigation Tabs State
-  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access' | 'logs'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs'>('projects');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
 
-  const handleAddUser = async (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => {
-    const newUser = await createAllowedUser(name, email, role, allowedMetrics);
+  const handleAddUser = async (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => {
+    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages);
     setAllowedUsers((prev) => [...prev, newUser]);
   };
 
-  const handleEditUser = async (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => {
-    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics);
+  const handleEditUser = async (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => {
+    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics, allowedPages);
     setAllowedUsers((prev) => prev.map((u) => u.id === id ? updatedUser : u));
   };
 
@@ -320,7 +320,7 @@ export default function App() {
           integrationId: integrationId
         });
         setActiveTab('blogger');
-      } else if (page && ['projects', 'reports', 'reports_feed', 'blogger', 'code', 'access'].includes(page)) {
+      } else if (page && ['projects', 'reports', 'reports_feed', 'other_expenses', 'blogger', 'code', 'access', 'logs'].includes(page)) {
         setActiveTab(page as any);
       } else if (!isTg) {
         setActiveTab('projects');
@@ -359,6 +359,24 @@ export default function App() {
     }
   }, [activeTab, isBloggerCabinetRoute]);
 
+  // Resolve allowed pages for the active user
+  const activeUser = allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase());
+  const allowedPages = activeUser?.allowedPages || ['projects', 'reports', 'reports_feed', 'other_expenses'];
+
+  // Enforce page-level access control: redirect user to their first allowed page if active tab is forbidden
+  useEffect(() => {
+    if (isBloggerCabinetRoute) return;
+    if (!currentUserRole || currentUserRole === 'super_admin') return;
+
+    const isAllowedTab = allowedPages.includes(activeTab);
+    const isSystemTab = ['access', 'logs', 'blogger'].includes(activeTab);
+
+    if (!isAllowedTab && !isSystemTab) {
+      if (allowedPages.length > 0) {
+        setActiveTab(allowedPages[0] as any);
+      }
+    }
+  }, [activeTab, allowedPages, currentUserRole, isBloggerCabinetRoute]);
 
   // White-list Gate (bypass if it's the guest blogger cabinet page)
   if (!isBloggerCabinetRoute && (!currentUserEmail || !currentUserRole)) {
@@ -386,9 +404,10 @@ export default function App() {
           integrationsCount={integrations.length}
           lang={lang}
           setLang={handleSetLang}
-          userEmail={currentUserEmail}
+          userEmail={currentUserEmail || ''}
           userRole={currentUserRole}
           onLogout={handleLogout}
+          allowedPages={allowedPages}
         />
       )}
 
@@ -504,6 +523,23 @@ export default function App() {
                 lang={lang}
                 userRole={currentUserRole}
                 onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
+              />
+            )}
+
+            {activeTab === 'other_expenses' && currentUserRole !== 'product_manager' && (
+              <ReportsFeedView
+                projects={projects}
+                integrations={integrations}
+                reports={reports.filter((r) => r.paymentType === 'other')}
+                lang={lang}
+                userRole={currentUserRole}
+                onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
+                title={translations[lang].otherExpensesTab}
+                description={
+                  lang === 'ru' ? 'Просматривайте все созданные прочие расходы.' : 
+                  lang === 'uz' ? 'Barcha yaratilgan boshqa xarajatlarni ko‘ring.' : 
+                  'View all created other expenses.'
+                }
               />
             )}
 

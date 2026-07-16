@@ -103,19 +103,19 @@ export function createSubmission(integrationId: string, data: Record<string, str
 export function fetchAllowedUsers(): Promise<AllowedUser[]> {
   return request<AllowedUser[]>('/api/allowed-users');
 }
-export function createAllowedUser(name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[]): Promise<AllowedUser> {
+export function createAllowedUser(name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[]): Promise<AllowedUser> {
   return request<AllowedUser>('/api/allowed-users', {
     method: 'POST',
-    body: JSON.stringify({ name, email, role, allowedMetrics }),
+    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages }),
   });
 }
 export function deleteAllowedUser(id: string): Promise<void> {
   return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
 }
-export function updateAllowedUser(id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[]): Promise<AllowedUser> {
+export function updateAllowedUser(id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[]): Promise<AllowedUser> {
   return request<AllowedUser>(`/api/allowed-users/${id}`, {
     method: 'PUT',
-    body: JSON.stringify({ name, role, allowedMetrics }),
+    body: JSON.stringify({ name, role, allowedMetrics, allowedPages }),
   });
 }
 

@@ -47,7 +47,7 @@ class GoogleSheetsService
             return false;
         }
 
-        if (!$report->project_id) {
+        if ($report->payment_type !== 'other' && !$report->project_id) {
             Log::info("Skipping Google Sheets append: Report ID {$report->id} has no project.");
             return true;
         }
@@ -56,7 +56,7 @@ class GoogleSheetsService
             $accessToken = self::getAccessToken();
 
             // Determine sheet (tab) name by project name or fallback
-            $sheetName = $report->project?->name ?? 'Без проекта';
+            $sheetName = ($report->payment_type === 'other') ? 'Прочие' : ($report->project?->name ?? 'Без проекта');
 
             // Ensure the sheet/tab exists
             self::ensureSheetExists($accessToken, $spreadsheetId, $sheetName);

@@ -86,7 +86,7 @@ class BloggerSubmissionController extends Controller
         ]);
 
         // Trigger Telegram submission notification after response to speed up submission
-        $lang = $request->input('lang', 'ru');
+        $lang = $request->input('lang', 'uz');
         $data = $request->data;
         dispatch(function () use ($integration, $data, $lang, $newlyFilledKeys) {
             try {

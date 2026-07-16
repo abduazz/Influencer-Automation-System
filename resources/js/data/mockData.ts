@@ -73,6 +73,7 @@ export interface AllowedUser {
   role: 'super_admin' | 'pr_manager' | 'product_manager';
   createdAt: string;
   allowedMetrics?: string[];
+  allowedPages?: string[];
 }
 
 export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
@@ -82,6 +83,8 @@ export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
     email: 'abduazizmurodqosimov@gmail.com',
     role: 'super_admin',
     createdAt: '2026-07-10',
+    allowedMetrics: ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
+    allowedPages: ['projects', 'reports', 'reports_feed', 'other_expenses'],
   },
   {
     id: 'user-4',
@@ -89,6 +92,8 @@ export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
     email: 'khalilovdev@gmail.com',
     role: 'super_admin',
     createdAt: '2026-07-10',
+    allowedMetrics: ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
+    allowedPages: ['projects', 'reports', 'reports_feed', 'other_expenses'],
   },
 ];
 

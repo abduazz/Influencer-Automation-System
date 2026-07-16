@@ -64,7 +64,7 @@ class TelegramService
         }
     }
 
-    public static function sendReportNotification($report, $receiptBase64 = null, $lang = 'ru', $createdByName = null)
+    public static function sendReportNotification($report, $receiptBase64 = null, $lang = 'uz', $createdByName = null)
     {
         $chatId = config('services.telegram.reports_chat_id');
         if (!$chatId) {
@@ -123,7 +123,7 @@ class TelegramService
         ];
 
         // Safe fallback for language key
-        $l = isset($locales[$lang]) ? $lang : 'ru';
+        $l = isset($locales[$lang]) ? $lang : 'uz';
         $t = $locales[$l];
 
         $paymentType = $t[$report->payment_type] ?? $report->payment_type;
@@ -135,6 +135,9 @@ class TelegramService
         $threadId = $report->project?->telegram_thread_id ?? null;
 
         $text = "{$t['new_report']}\n\n";
+        if ($createdByName) {
+            $text .= "{$t['created_by']} " . self::escape($createdByName) . "\n";
+        }
         $text .= "{$t['date']} " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";
         $text .= "{$t['project']} " . self::escape($projectName) . "\n";
         $text .= "{$t['payment_type']} " . self::escape($paymentType) . "\n";
@@ -151,10 +154,6 @@ class TelegramService
         }
 
         $text .= "{$t['total_amount']} " . number_format($report->total_amount ?? 0, 0, '.', ' ') . " UZS\n";
-
-        if ($createdByName) {
-            $text .= "{$t['created_by']} " . self::escape($createdByName) . "\n";
-        }
 
         // If a Base64 receipt is provided, send it as photo or document directly
         if ($receiptBase64 && preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $receiptBase64, $matches)) {
@@ -212,7 +211,7 @@ class TelegramService
         return self::sendMessage($chatId, $text, $threadId);
     }
 
-    public static function sendSubmissionNotification($integration, $data, $lang = 'ru', $newlyFilledKeys = null)
+    public static function sendSubmissionNotification($integration, $data, $lang = 'uz', $newlyFilledKeys = null)
     {
         $chatId = config('services.telegram.submissions_chat_id');
         if (!$chatId) {
@@ -243,7 +242,7 @@ class TelegramService
             ]
         ];
 
-        $l = isset($locales[$lang]) ? $lang : 'ru';
+        $l = isset($locales[$lang]) ? $lang : 'uz';
         $t = $locales[$l];
 
         $blogger = $integration->blogger_name;

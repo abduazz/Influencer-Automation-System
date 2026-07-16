@@ -10,8 +10,8 @@ import { Users, UserPlus, Shield, Mail, Trash2, Key, Info, Pencil } from 'lucide
 
 interface AccessManagementViewProps {
   allowedUsers: AllowedUser[];
-  onAddUser: (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => Promise<void>;
-  onEditUser: (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => Promise<void>;
+  onAddUser: (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => Promise<void>;
+  onEditUser: (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => Promise<void>;
   onRemoveUser: (id: string) => Promise<void>;
   currentUserEmail: string;
   lang: Language;
@@ -31,7 +31,6 @@ export default function AccessManagementView({
   const [editingUser, setEditingUser] = useState<AllowedUser | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'super_admin' | 'pr_manager' | 'product_manager'>('pr_manager');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -43,6 +42,15 @@ export default function AccessManagementView({
     slots_published: true,
     slots_remaining: true,
     financial_metrics: true
+  });
+
+  // Allowed Pages state
+  const [pagesPermissions, setPagesPermissions] = useState<Record<string, boolean>>({
+    super_admin: false,
+    projects: true,
+    reports: true,
+    reports_feed: true,
+    other_expenses: true
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,9 +87,15 @@ export default function AccessManagementView({
       .filter(([_, allowed]) => allowed)
       .map(([name]) => name);
 
+    const allowedPages = Object.entries(pagesPermissions)
+      .filter(([_, allowed]) => allowed)
+      .map(([name]) => name);
+
+    const determinedRole = pagesPermissions.super_admin ? 'super_admin' : 'pr_manager';
+
     try {
       if (editingUser) {
-        await onEditUser(editingUser.id, cleanName, role, allowedMetrics);
+        await onEditUser(editingUser.id, cleanName, determinedRole, allowedMetrics, allowedPages);
         setSuccessMsg(
           lang === 'ru'
             ? 'Доступ успешно обновлен!'
@@ -91,7 +105,7 @@ export default function AccessManagementView({
         );
         setEditingUser(null);
       } else {
-        await onAddUser(cleanName, cleanEmail, role, allowedMetrics);
+        await onAddUser(cleanName, cleanEmail, determinedRole, allowedMetrics, allowedPages);
         setSuccessMsg(t.addSuccessToast.replace('{email}', cleanEmail));
       }
 
@@ -104,6 +118,13 @@ export default function AccessManagementView({
         slots_published: true,
         slots_remaining: true,
         financial_metrics: true
+      });
+      setPagesPermissions({
+        super_admin: false,
+        projects: true,
+        reports: true,
+        reports_feed: true,
+        other_expenses: true
       });
 
       setTimeout(() => {
@@ -269,22 +290,6 @@ export default function AccessManagementView({
               </div>
             </div>
 
-            {/* Role Picker Field */}
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
-                {t.userRoleLabel}
-              </label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as any)}
-                className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-lg px-3 py-2 text-xs font-bold text-black focus:outline-hidden transition duration-150"
-              >
-                <option value="pr_manager">{t.rolePRManager}</option>
-                <option value="product_manager">{t.roleProductManager}</option>
-                <option value="super_admin">{t.roleSuperAdmin}</option>
-              </select>
-            </div>
-
             {/* Allowed Dashboard Metrics Checklist */}
             <div className="space-y-2 border-t border-neutral-100 pt-3">
               <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
@@ -330,6 +335,49 @@ export default function AccessManagementView({
               </div>
             </div>
 
+            {/* Allowed Dashboard Pages Checklist */}
+            <div className="space-y-2 border-t border-neutral-100 pt-3">
+              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                {t.allowedPagesLabel}
+              </label>
+              
+              <div className="space-y-2">
+                {[
+                  { key: 'super_admin', label: t.pageSuperAdmin },
+                  { key: 'projects', label: t.pageProjects },
+                  { key: 'reports', label: t.pageReports },
+                  { key: 'reports_feed', label: t.pageReportsFeed },
+                  { key: 'other_expenses', label: t.pageOtherExpenses },
+                ].map((p) => {
+                  const isChecked = pagesPermissions[p.key];
+                  
+                  return (
+                    <div key={p.key} className="flex items-center justify-between p-2 rounded-lg border border-neutral-200 bg-neutral-50/50 hover:bg-neutral-50 transition duration-100">
+                      <span className="text-[11px] font-semibold text-neutral-850">{p.label}</span>
+                      
+                      {/* Toggle Switch */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPagesPermissions(prev => ({
+                            ...prev,
+                            [p.key]: !prev[p.key]
+                          }));
+                        }}
+                        className={`w-8 h-4 rounded-full transition duration-200 relative ${
+                          isChecked ? 'bg-black' : 'bg-neutral-250'
+                        }`}
+                      >
+                        <span className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
+                          isChecked ? 'right-0.5' : 'left-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Quick Helper Explaining Roles */}
             <div className="p-3 bg-neutral-50 rounded-lg text-[11px] text-neutral-500 space-y-1 border border-neutral-100">
               <div className="flex items-center gap-1 font-bold text-neutral-700">
@@ -356,7 +404,6 @@ export default function AccessManagementView({
                     setEditingUser(null);
                     setName('');
                     setEmail('');
-                    setRole('pr_manager');
                     setMetricsPermissions({
                       deals: true,
                       spend: true,
@@ -364,6 +411,13 @@ export default function AccessManagementView({
                       slots_published: true,
                       slots_remaining: true,
                       financial_metrics: true
+                    });
+                    setPagesPermissions({
+                      super_admin: false,
+                      projects: true,
+                      reports: true,
+                      reports_feed: true,
+                      other_expenses: true
                     });
                   }}
                   className="w-1/2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-extrabold text-xs py-2.5 rounded-lg transition duration-150 flex items-center justify-center gap-2 cursor-pointer"
@@ -400,7 +454,6 @@ export default function AccessManagementView({
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50/50 text-[9px] font-bold text-neutral-500 uppercase tracking-widest">
                   <th className="py-2.5 px-4">{lang === 'ru' ? 'Сотрудник' : lang === 'uz' ? 'Xodim' : 'Member'}</th>
-                  <th className="py-2.5 px-4">{t.userRoleLabel.replace('*', '')}</th>
                   <th className="py-2.5 px-4">{lang === 'ru' ? 'Дата добавления' : lang === 'uz' ? 'Qo‘shilgan sana' : 'Date Authorized'}</th>
                   <th className="py-2.5 px-4 text-right">{t.actionsColumn}</th>
                 </tr>
@@ -421,12 +474,22 @@ export default function AccessManagementView({
                             )}
                           </div>
                           <span className="text-[10px] text-neutral-400 font-semibold">{user.email}</span>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {(user.allowedPages || ['projects', 'reports', 'reports_feed', 'other_expenses']).map((pageKey) => {
+                              let pageLabel = pageKey;
+                              if (pageKey === 'super_admin') pageLabel = t.pageSuperAdmin;
+                              else if (pageKey === 'projects') pageLabel = t.pageProjects;
+                              else if (pageKey === 'reports') pageLabel = t.pageReports;
+                              else if (pageKey === 'reports_feed') pageLabel = t.pageReportsFeed;
+                              else if (pageKey === 'other_expenses') pageLabel = t.pageOtherExpenses;
+                              return (
+                                <span key={pageKey} className="text-[8px] font-bold bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">
+                                  {pageLabel}
+                                </span>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded border text-[10px] font-bold ${getRoleBadgeColor(user.role)}`}>
-                          {getRoleLabel(user.role)}
-                        </span>
                       </td>
                       <td className="py-3 px-4 text-neutral-500 text-[11px]">
                         {user.createdAt}
@@ -438,7 +501,6 @@ export default function AccessManagementView({
                               setEditingUser(user);
                               setName(user.name || '');
                               setEmail(user.email);
-                              setRole(user.role);
                               
                               // Load metrics
                               const defaultMetrics = ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'];
@@ -450,6 +512,17 @@ export default function AccessManagementView({
                                 slots_published: userMetrics.includes('slots_published'),
                                 slots_remaining: userMetrics.includes('slots_remaining'),
                                 financial_metrics: userMetrics.includes('financial_metrics'),
+                              });
+
+                              // Load pages
+                              const defaultPages = ['projects', 'reports', 'reports_feed', 'other_expenses'];
+                              const userPages = user.allowedPages || defaultPages;
+                              setPagesPermissions({
+                                super_admin: user.role === 'super_admin' || userPages.includes('super_admin'),
+                                projects: userPages.includes('projects'),
+                                reports: userPages.includes('reports'),
+                                reports_feed: userPages.includes('reports_feed'),
+                                other_expenses: userPages.includes('other_expenses'),
                               });
                             }}
                             className="p-1.5 rounded text-neutral-400 hover:text-black hover:bg-neutral-100 transition duration-150 cursor-pointer"

@@ -49,6 +49,7 @@ class ReportControllerTest extends TestCase
             'slotsCount' => 5,
             'paidSlotsCount' => 2,
             'pricePerSlot' => 100.00,
+            'lang' => 'ru',
         ];
 
         $response = $this->withHeaders([
@@ -92,6 +93,7 @@ class ReportControllerTest extends TestCase
             'slotsCount' => 10,
             'paidSlotsCount' => 10,
             'pricePerSlot' => 500.00,
+            'lang' => 'ru',
         ];
 
         $response = $this->withHeaders([
@@ -112,5 +114,49 @@ class ReportControllerTest extends TestCase
         $body = json_decode($req->body(), true);
         $this->assertTrue(str_contains($body['text'] ?? '', 'Создан кем:'));
         $this->assertTrue(str_contains($body['text'] ?? '', 'notfound@company.com'));
+    }
+
+    public function test_creating_other_payment_type_report_goes_to_prochie_sheet(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+            'https://sheets.googleapis.com/v4/spreadsheets/*' => Http::response([
+                'sheets' => [
+                    ['properties' => ['title' => 'Прочие']]
+                ]
+            ], 200),
+        ]);
+
+        $payload = [
+            'paymentType' => 'other',
+            'date' => '2026-07-16',
+            'destination' => 'Office Rent',
+            'amount' => 600000.00,
+            'lang' => 'ru',
+        ];
+
+        $response = $this->withHeaders([
+            'X-User-Email' => 'john@company.com',
+        ])->postJson('/api/reports', $payload);
+
+        $response->assertStatus(201);
+
+        $recorded = Http::recorded();
+        foreach ($recorded as $i => $rec) {
+            $req = is_array($rec) ? ($rec['request'] ?? $rec[0]) : $rec;
+            \Illuminate\Support\Facades\Log::info("TEST SHEET REQ #{$i} URL: " . $req->url());
+        }
+
+        $recordedSheets = Http::recorded(function ($request) {
+            return str_contains($request->url(), 'sheets.googleapis.com');
+        })->values();
+
+        // There should be Google Sheets API calls
+        $this->assertNotEmpty($recordedSheets);
+
+        $firstReq = is_array($recordedSheets[0]) ? ($recordedSheets[0]['request'] ?? $recordedSheets[0][0]) : $recordedSheets[0];
+
+        // One of the sheets request URLs should reference the spreadsheetId
+        $this->assertTrue(str_contains($firstReq->url(), '1_TBYmmaWZPIG5_Kz2Sr706w6Km_VS-l7Q2UtKADrrus'));
     }
 }

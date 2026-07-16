@@ -23,7 +23,9 @@ import {
   FileCode,
   Check,
   AlertCircle,
-  Sparkles
+  Sparkles,
+  X,
+  Link
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
@@ -59,12 +61,15 @@ export default function DashboardView({
   // Current active project selection
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
   
-  const t = translations[lang];
+  const t = translations[lang] || translations['ru'] || {};
   
   // Modals / forms state
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [showAddIntegrationModal, setShowAddIntegrationModal] = useState(false);
   const [editingIntegration, setEditingIntegration] = useState<Integration | null>(null);
+  const [selectedIntegrationForDetails, setSelectedIntegrationForDetails] = useState<Integration | null>(null);
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
 
   // New Project Form state
   const [newProjectName, setNewProjectName] = useState('');
@@ -245,12 +250,20 @@ export default function DashboardView({
     ? integrations.filter(i => i.projectId === selectedProject.id)
     : [];
 
-  // Selected Project Statistics Calculators
-  const totalSpend = activeProjectIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
-  const totalSlotsCount = activeProjectIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
-  const totalPublishedSlots = activeProjectIntegrations.reduce((sum, item) => {
-    const sub = submissions.find(s => String(s.integrationId) === String(item.id));
-    const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
+  // Filter integrations by Start Date range
+  const filteredIntegrations = activeProjectIntegrations.filter((item) => {
+    if (filterStartDate && item.startDate < filterStartDate) return false;
+    if (filterEndDate && item.startDate > filterEndDate) return false;
+    return true;
+  });
+
+  // Selected Project Statistics Calculators (filtered by date)
+  const totalSpend = filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
+  const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
+  const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
+  const totalPublishedSlots = filteredIntegrations.reduce((sum, item) => {
+    const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+    const slotsSubmitted = (sub && sub.data) ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
     return sum + slotsSubmitted;
   }, 0);
   const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
@@ -306,18 +319,68 @@ export default function DashboardView({
         )}
       </div>
 
+      {/* Date Filter Bar */}
+      {selectedProject && (
+        <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs text-neutral-700">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-black shrink-0" />
+            <span className="font-bold text-black text-[11px] uppercase tracking-wider">
+              {lang === 'ru' ? 'Фильтр по дате начала' : lang === 'uz' ? 'Boshlanish sanasi bo‘yicha filtr' : 'Filter by Start Date'}
+            </span>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-neutral-400 font-bold uppercase text-[9px]">{lang === 'ru' ? 'С' : lang === 'uz' ? 'Dan' : 'From'}</span>
+              <input
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-black transition duration-150 font-medium"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-neutral-400 font-bold uppercase text-[9px]">{lang === 'ru' ? 'По' : lang === 'uz' ? 'Gacha' : 'To'}</span>
+              <input
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-black transition duration-150 font-medium"
+              />
+            </div>
+            {(filterStartDate || filterEndDate) && (
+              <button
+                onClick={() => {
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                }}
+                className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs rounded-lg transition border border-neutral-200 cursor-pointer"
+              >
+                {lang === 'ru' ? 'Сбросить' : lang === 'uz' ? 'Tozalash' : 'Reset'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Analytics Mini Bar */}
       <div className="flex flex-wrap items-center gap-4 md:gap-8 border border-neutral-200 bg-white p-4 rounded-xl shadow-xs">
         {allowedMetrics.includes('deals') && (
           <div className="text-left min-w-[100px]">
             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.bloggerDeals}</p>
-            <p className="text-xl font-black text-black">{activeProjectIntegrations.length}</p>
+            <p className="text-xl font-black text-black">{filteredIntegrations.length}</p>
           </div>
         )}
         {allowedMetrics.includes('spend') && (
           <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.allocatedSpend}</p>
             <p className="text-xl font-black text-black">{totalSpend.toLocaleString()}</p>
+          </div>
+        )}
+        {allowedMetrics.includes('financial_metrics') && (
+          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricRemainingToPay}</p>
+            <p className="text-xl font-black text-rose-600">{totalRemainingToPay.toLocaleString()}</p>
           </div>
         )}
         {allowedMetrics.includes('total_slots') && (
@@ -427,185 +490,92 @@ export default function DashboardView({
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-neutral-200 bg-neutral-50 text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                    <tr className="border-b border-neutral-200 bg-neutral-50 text-[10px] font-bold text-neutral-500 uppercase tracking-wider select-none">
                       <th className="py-3 px-6 whitespace-nowrap">{t.bloggerColumn}</th>
-                      <th className="py-3 px-4 whitespace-nowrap">{t.platformColumn}</th>
-                      <th className="py-3 px-4 whitespace-nowrap">{t.priceColumn}</th>
-                      <th className="py-3 px-4 text-center whitespace-nowrap">{t.slotsColumn}</th>
-                      <th className="py-3 px-4 whitespace-nowrap">{t.totalSumColumn}</th>
                       <th className="py-3 px-4 whitespace-nowrap">{t.startDateColumn}</th>
-                      <th className="py-3 px-4 whitespace-nowrap">{t.endDateColumn}</th>
-                      {allowedMetrics.includes('financial_metrics') && (
-                        <>
-                          <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold whitespace-nowrap">{t.metricPaidToBlogger}</th>
-                          <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold whitespace-nowrap">{t.metricRemainingToPay}</th>
-                        </>
-                      )}
-                      {allowedMetrics.includes('slots_published') && (
-                        <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold text-center whitespace-nowrap">{t.metricSlotsPublished}</th>
-                      )}
-                      {allowedMetrics.includes('slots_remaining') && (
-                        <th className="py-3 px-4 text-neutral-600 bg-neutral-100/40 font-extrabold text-center whitespace-nowrap">{t.metricSlotsRemaining}</th>
-                      )}
-                      <th className="py-3 px-6 text-right whitespace-nowrap">{t.actionsColumn}</th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.priceColumn}</th>
+                      <th className="py-3 px-4 text-center whitespace-nowrap">
+                        {lang === 'ru' ? 'Купленные слоты' : lang === 'uz' ? 'Sotib olingan slotlar' : 'Bought Slots'}
+                      </th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.totalSumColumn}</th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.metricPaidToBlogger}</th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.metricRemainingToPay}</th>
+                      <th className="py-3 px-4 text-center whitespace-nowrap">{t.metricSlotsPublished}</th>
+                      <th className="py-3 px-4 text-center whitespace-nowrap">{t.metricSlotsRemaining}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
-                    {activeProjectIntegrations.map((item) => (
-                      <tr key={item.id} className="hover:bg-neutral-50/30 transition duration-150">
-                        {/* Blogger Name & Link */}
-                        <td className="py-3.5 px-6">
-                          <div>
-                            <p className="font-bold text-black">{item.bloggerName}</p>
-                            {item.referralLink ? (
-                              <a
-                                href={item.referralLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[10px] text-neutral-500 hover:text-black hover:underline inline-flex items-center gap-1 mt-0.5 max-w-[150px] truncate"
-                              >
-                                <span>UTM Link</span>
-                                <ExternalLink className="w-3 h-3 text-neutral-400" />
-                              </a>
-                            ) : (
-                              <span className="text-[10px] text-neutral-400 italic">No referral UTM</span>
-                            )}
-                          </div>
-                        </td>
+                    {filteredIntegrations.map((item) => {
+                      const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+                      const slotsSubmitted = (sub && sub.data) ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
+                      const slotsRemaining = Math.max(0, item.slotsCount - slotsSubmitted);
 
-                        {/* Platform Badge */}
-                        <td className="py-3.5 px-4">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded border border-neutral-300 bg-white text-[10px] font-bold text-neutral-700">
-                            {item.platform}
-                          </span>
-                        </td>
-
-                        {/* Price Per Slot */}
-                        <td className="py-3.5 px-4 font-semibold text-neutral-600">
-                          {item.pricePerSlot.toLocaleString('ru-RU')}
-                        </td>
-
-                        {/* Slots */}
-                        <td className="py-3.5 px-4 text-center">
-                          <span className="font-bold text-black block">{item.slotsCount} {t.totalSuffix.toLowerCase()}</span>
-                          {item.paidSlotsCount !== undefined && (
-                            <span className="text-[10px] text-neutral-500 font-bold block">
-                              {item.paidSlotsCount} {t.paidSuffix.toLowerCase()}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Total Sum */}
-                        <td className="py-3.5 px-4">
-                          <span className="font-extrabold text-black block">
-                            {item.totalAmount.toLocaleString('ru-RU')}
-                          </span>
-                          {allowedMetrics.includes('financial_metrics') && item.paidAmount !== undefined && (
-                            <span className="text-[10px] text-neutral-500 font-bold block">
-                              {t.paidSuffix}: {item.paidAmount.toLocaleString('ru-RU')}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Start Date */}
-                        <td className="py-3.5 px-4 text-[11px] text-neutral-600 font-medium whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" /> {item.startDate}
-                          </span>
-                        </td>
-
-                        {/* End Date */}
-                        <td className="py-3.5 px-4 text-[11px] text-neutral-600 font-medium whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" /> {item.endDate}
-                          </span>
-                        </td>
-
-                        {/* Metric 1: Paid to Blogger */}
-                        {allowedMetrics.includes('financial_metrics') && (
-                          <td className="py-3.5 px-4 font-black text-black bg-neutral-50/30 whitespace-nowrap">
-                            {item.paidAmount?.toLocaleString('ru-RU') || 0}
+                      return (
+                        <tr 
+                          key={item.id} 
+                          onClick={() => {
+                            console.log("Clicked integration row:", item);
+                            setSelectedIntegrationForDetails(item);
+                          }}
+                          className="hover:bg-neutral-50/60 transition duration-150 cursor-pointer"
+                        >
+                          {/* Blogger Name */}
+                          <td className="py-3.5 px-6 font-bold text-black whitespace-nowrap">
+                            {item.bloggerName}
                           </td>
-                        )}
 
-                        {/* Metric 2: Remaining to Pay */}
-                        {allowedMetrics.includes('financial_metrics') && (
-                          <td className="py-3.5 px-4 font-black text-neutral-800 bg-neutral-50/30 whitespace-nowrap">
+                          {/* Start Date */}
+                          <td className="py-3.5 px-4 text-[11px] text-neutral-600 font-medium whitespace-nowrap">
+                            <span className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" /> {item.startDate}
+                            </span>
+                          </td>
+
+                          {/* Price Per Slot */}
+                          <td className="py-3.5 px-4 font-semibold text-neutral-600 whitespace-nowrap">
+                            {item.pricePerSlot.toLocaleString('ru-RU')}
+                          </td>
+
+                          {/* Bought Slots */}
+                          <td className="py-3.5 px-4 text-center font-bold text-black whitespace-nowrap">
+                            {item.slotsCount}
+                          </td>
+
+                          {/* Total Sum */}
+                          <td className="py-3.5 px-4 font-extrabold text-black whitespace-nowrap">
+                            {item.totalAmount.toLocaleString('ru-RU')}
+                          </td>
+
+                          {/* Paid to Blogger */}
+                          <td className="py-3.5 px-4 font-bold text-emerald-600 whitespace-nowrap">
+                            {(item.paidAmount || 0).toLocaleString('ru-RU')}
+                          </td>
+
+                          {/* Remaining to Pay */}
+                          <td className="py-3.5 px-4 font-bold text-rose-600 whitespace-nowrap">
                             {Math.max(0, item.totalAmount - (item.paidAmount || 0)).toLocaleString('ru-RU')}
                           </td>
-                        )}
 
-                        {/* Metric 3: Slots Published */}
-                        {allowedMetrics.includes('slots_published') && (
-                          <td className="py-3.5 px-4 text-center bg-neutral-50/30 whitespace-nowrap">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[11px] border border-emerald-100/80 whitespace-nowrap">
-                              {(() => {
-                                const sub = submissions.find(s => String(s.integrationId) === String(item.id));
-                                const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
-                                return `${slotsSubmitted} / ${item.slotsCount}`;
-                              })()}
+                          {/* Slots Published */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-extrabold text-[10px] border border-emerald-100/50">
+                              {slotsSubmitted}
                             </span>
                           </td>
-                        )}
 
-                        {/* Metric 4: Slots Remaining */}
-                        {allowedMetrics.includes('slots_remaining') && (
-                          <td className="py-3.5 px-4 text-center bg-neutral-50/30 whitespace-nowrap">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-extrabold text-[11px] border border-amber-100/80 whitespace-nowrap">
-                              {(() => {
-                                const sub = submissions.find(s => String(s.integrationId) === String(item.id));
-                                const slotsSubmitted = sub ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
-                                const slotsRemaining = Math.max(0, item.slotsCount - slotsSubmitted);
-                                return slotsRemaining;
-                              })()}
+                          {/* Slots Remaining */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 font-extrabold text-[10px] border border-amber-100/50">
+                              {slotsRemaining}
                             </span>
                           </td>
-                        )}
+                        </tr>
+                      );
+                    })}
 
-                        {/* Actions */}
-                        <td className="py-3.5 px-6 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Pre-filled copyable Blogger URL input */}
-                            <input
-                              type="text"
-                              readOnly
-                              value={`${window.location.origin}/?cabinet=true&id=${item.bloggerCabinetToken || item.id}`}
-                              onClick={(e) => {
-                                const target = e.target as HTMLInputElement;
-                                target.select();
-                                navigator.clipboard.writeText(target.value);
-                              }}
-                              className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-600 rounded px-2 py-1 text-[9px] font-mono focus:outline-none focus:border-black cursor-pointer text-left w-48 truncate transition duration-150"
-                              title="Click to copy link"
-                            />
-
-                            <button
-                              onClick={() => openEditIntegration(item)}
-                              className="text-neutral-400 hover:text-black hover:bg-neutral-100 p-1 rounded transition duration-150"
-                              title={t.editTooltip}
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                if (confirm(t.confirmDeleteIntegration)) {
-                                  onDeleteIntegration(item.id);
-                                }
-                              }}
-                              className="text-neutral-400 hover:text-black hover:bg-neutral-100 p-1 rounded transition duration-150"
-                              title={t.deleteTooltip}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-
-                    {activeProjectIntegrations.length === 0 && (
+                    {filteredIntegrations.length === 0 && (
                       <tr>
-                        <td colSpan={12} className="py-12 px-6 text-center">
+                        <td colSpan={9} className="py-12 px-6 text-center">
                           <AlertCircle className="w-6 h-6 text-neutral-300 mx-auto mb-2" />
                           <p className="text-xs font-bold text-neutral-600">{t.noIntegrationsYet}</p>
                           <p className="text-[11px] text-neutral-400 mt-1">
@@ -1093,6 +1063,226 @@ export default function DashboardView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Detailed Integration Info Modal */}
+      {selectedIntegrationForDetails && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 transition-all duration-200 animate-in fade-in">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh] text-left border border-neutral-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 bg-neutral-50/50">
+              <div>
+                <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block">
+                  {t.integrationDetailsTitle || 'Integration Details'}
+                </span>
+                <span className="font-extrabold text-[13px] text-black uppercase tracking-tight">
+                  {selectedIntegrationForDetails.bloggerName || ''}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedIntegrationForDetails(null)}
+                className="p-1 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Content Scroll Area */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Main Fields Grid */}
+              <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200/50">
+                <div>
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.platformColumn || 'Platform'}</p>
+                  <p className="font-bold text-neutral-800 mt-0.5">
+                    {selectedIntegrationForDetails.platform || ''}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                    {(t.startDateColumn || 'Start Date') + ' / ' + (t.endDateColumn || 'End Date')}
+                  </p>
+                  <p className="font-bold text-neutral-800 mt-0.5 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+                    {(selectedIntegrationForDetails.startDate || '') + ' — ' + (selectedIntegrationForDetails.endDate || '')}
+                  </p>
+                </div>
+              </div>
+
+              {/* Financial Metrics */}
+              <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
+                <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5">
+                  Финансы / Financials
+                </h4>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between py-0.5">
+                    <span className="text-neutral-500">{t.priceColumn || 'Price'}:</span>
+                    <span className="font-bold text-neutral-800">
+                      {Number(selectedIntegrationForDetails.pricePerSlot || 0).toLocaleString('ru-RU')} UZS
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-0.5">
+                    <span className="text-neutral-500">{t.slotsColumn || 'Slots'}:</span>
+                    <span className="font-bold text-neutral-800">
+                      {Number(selectedIntegrationForDetails.slotsCount || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-0.5 border-t border-neutral-50 pt-1.5">
+                    <span className="text-neutral-500">{t.totalSumColumn || 'Total Sum'}:</span>
+                    <span className="font-black text-black">
+                      {Number(selectedIntegrationForDetails.totalAmount || 0).toLocaleString('ru-RU')} UZS
+                    </span>
+                  </div>
+                  {(allowedMetrics || []).includes('financial_metrics') && (
+                    <>
+                      <div className="flex justify-between py-0.5">
+                        <span className="text-neutral-500">{t.metricPaidToBlogger || 'Paid'}:</span>
+                        <span className="font-extrabold text-emerald-600">
+                          {Number(selectedIntegrationForDetails.paidAmount || 0).toLocaleString('ru-RU')} UZS
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-0.5 border-t border-neutral-50 pt-1.5">
+                        <span className="text-neutral-500 font-bold">{t.metricRemainingToPay || 'Remaining'}:</span>
+                        <span className="font-black text-rose-600">
+                          {Math.max(0, Number(selectedIntegrationForDetails.totalAmount || 0) - Number(selectedIntegrationForDetails.paidAmount || 0)).toLocaleString('ru-RU')} UZS
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Links */}
+              <div className="space-y-3">
+                {selectedIntegrationForDetails.referralLink && (
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.referralLinkField || 'UTM Link'}</p>
+                    <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
+                      <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{selectedIntegrationForDetails.referralLink}</span>
+                      <a
+                        href={selectedIntegrationForDetails.referralLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                    {lang === 'ru' ? 'Ссылка для отчета блогера' : lang === 'uz' ? 'Blogger hisoboti havolasi' : 'Blogger Execution Report Link'}
+                  </p>
+                  {(() => {
+                    const cabinetUrl = `${window.location.origin}/?cabinet=true&id=${selectedIntegrationForDetails.bloggerCabinetToken || selectedIntegrationForDetails.id}`;
+                    return (
+                      <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
+                        <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{cabinetUrl}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(cabinetUrl);
+                            alert(lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!');
+                          }}
+                          className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0 cursor-pointer"
+                          title="Copy link"
+                        >
+                          <Link className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Slots deliverables / submissions list */}
+              {selectedIntegrationForDetails.slotsConfig && Array.isArray(selectedIntegrationForDetails.slotsConfig) && selectedIntegrationForDetails.slotsConfig.length > 0 && (
+                <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
+                  <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5">
+                    Публикации / Deliverables
+                  </h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {selectedIntegrationForDetails.slotsConfig.map((slot, index) => {
+                      if (!slot) return null;
+                      const sub = (Array.isArray(submissions) ? submissions : []).find(s => String(s.integrationId) === String(selectedIntegrationForDetails.id));
+                      const slotKey = `slot_${index + 1}`;
+                      const submissionUrl = (sub && sub.data) ? sub.data[slotKey] : undefined;
+
+                      return (
+                        <div key={index} className="flex justify-between items-center py-1.5 border-b border-neutral-50 last:border-b-0">
+                          <div>
+                            <span className="font-bold text-neutral-700">{(t.slotNumberLabel || 'Slot') + ' #' + (index + 1)}: </span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-neutral-100 border border-neutral-200">
+                              {slot.platform || ''} {slot.format || ''}
+                            </span>
+                          </div>
+                          <div>
+                            {submissionUrl ? (
+                              <a
+                                href={submissionUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-600 hover:underline"
+                              >
+                                <span>{t.publicationLinkLabel || 'Link'}</span>
+                                <ExternalLink className="w-3 h-3 text-blue-500" />
+                              </a>
+                            ) : (
+                              <span className="text-[10px] text-neutral-400 italic font-medium">{t.notPublishedLabel || 'Not published'}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50/50 flex justify-between items-center">
+              {/* Actions: Edit & Delete */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedIntegrationForDetails(null);
+                    openEditIntegration(selectedIntegrationForDetails);
+                  }}
+                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer border border-neutral-200"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-neutral-600" />
+                  <span>{lang === 'ru' ? 'Редактировать' : lang === 'uz' ? 'Tahrirlash' : 'Edit'}</span>
+                </button>
+                {userRole === 'super_admin' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(t.confirmDeleteIntegration)) {
+                        onDeleteIntegration(selectedIntegrationForDetails.id);
+                        setSelectedIntegrationForDetails(null);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer border border-red-100"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                    <span>{lang === 'ru' ? 'Удалить' : lang === 'uz' ? 'O‘chirish' : 'Delete'}</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedIntegrationForDetails(null)}
+                className="px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
+              >
+                {lang === 'ru' ? 'Закрыть' : lang === 'uz' ? 'Yopish' : 'Close'}
+              </button>
+            </div>
           </div>
         </div>
       )}

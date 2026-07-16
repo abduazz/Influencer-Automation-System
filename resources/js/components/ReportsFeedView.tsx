@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link } from 'lucide-react';
+import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText } from 'lucide-react';
 import { Project, Report, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
 
@@ -18,6 +18,15 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
   const t = translations[lang];
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>(() => {
+    const saved = localStorage.getItem('reports_feed_view_mode');
+    return (saved === 'grid' || saved === 'table') ? saved : 'table';
+  });
+
+  const toggleViewMode = (mode: 'table' | 'grid') => {
+    setViewMode(mode);
+    localStorage.setItem('reports_feed_view_mode', mode);
+  };
 
   // Filtering reports based on search query
   const filteredReports = reports.filter(rep => {
@@ -51,23 +60,205 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
           </p>
         </div>
 
-        {/* Search Bar */}
-        <div className="relative w-full md:w-80">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-            <Search className="h-4 w-4 text-neutral-400" />
-          </span>
-          <input
-            type="text"
-            placeholder={lang === 'ru' ? 'Поиск отчетов...' : lang === 'uz' ? 'Hisobotlarni qidirish...' : 'Search reports...'}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white border border-neutral-200 focus:bg-white rounded-xl text-xs focus:outline-none focus:border-black text-black shadow-3xs transition"
-          />
+        {/* Search Bar & View Toggle */}
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="relative w-full md:w-72">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+              <Search className="h-4 w-4 text-neutral-400" />
+            </span>
+            <input
+              type="text"
+              placeholder={lang === 'ru' ? 'Поиск отчетов...' : lang === 'uz' ? 'Hisobotlarni qidirish...' : 'Search reports...'}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-white border border-neutral-200 focus:bg-white rounded-xl text-xs focus:outline-none focus:border-black text-black shadow-3xs transition"
+            />
+          </div>
+
+          <div className="hidden md:flex bg-neutral-100 p-0.5 rounded-xl border border-neutral-200 shrink-0">
+            <button
+              onClick={() => toggleViewMode('table')}
+              className={`p-1.5 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-white text-black shadow-3xs border border-neutral-200'
+                  : 'text-neutral-500 hover:text-black'
+              }`}
+              title={t.viewTable}
+            >
+              <Table className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => toggleViewMode('grid')}
+              className={`p-1.5 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-white text-black shadow-3xs border border-neutral-200'
+                  : 'text-neutral-500 hover:text-black'
+              }`}
+              title={t.viewGrid}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Grid of Report Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Table of Reports (Desktop only when viewMode is table) */}
+      {viewMode === 'table' && filteredReports.length > 0 && (
+        <div className="hidden md:block overflow-hidden bg-white border border-neutral-200 rounded-2xl shadow-3xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-neutral-200 bg-neutral-50 text-[10px] font-bold text-neutral-500 uppercase tracking-wider select-none">
+                  <th className="px-5 py-3 font-extrabold">{t.reportDateField}</th>
+                  <th className="px-5 py-3 font-extrabold">{t.campaignTitleField}</th>
+                  <th className="px-5 py-3 font-extrabold">{t.tableHeaderBlogger}</th>
+                  <th className="px-5 py-3 font-extrabold">{t.platformColumn}</th>
+                  <th className="px-5 py-3 font-extrabold">{t.tableHeaderDetails}</th>
+                  <th className="px-5 py-3 font-extrabold text-right">{t.totalSumColumn}</th>
+                  <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderReceipt}</th>
+                  <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderCabinet}</th>
+                  {onDeleteReport && (
+                    <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderActions}</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 text-xs">
+                {filteredReports.map((rep) => {
+                  const resolvedProject = projects.find(p => p.id === rep.projectId);
+                  const isOther = rep.paymentType === 'other';
+
+                  // Match report to integration for blogger link lookup
+                  const matchingInt = isOther ? null : (
+                    integrations.find(i => 
+                      i.projectId === rep.projectId &&
+                      i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase() &&
+                      i.platform.toLowerCase() === rep.platform?.toLowerCase()
+                    ) || integrations.find(i => 
+                      i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase()
+                    )
+                  );
+
+                  const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
+                  const cabinetUrl = token ? `${window.location.origin}/c/${token}` : '';
+
+                  // Platform Badge Colors
+                  let platformBadgeClass = "bg-neutral-50 text-neutral-600 border-neutral-200";
+                  if (rep.platform === 'Telegram') {
+                    platformBadgeClass = "bg-blue-50 text-blue-600 border-blue-100";
+                  } else if (rep.platform === 'Instagram') {
+                    platformBadgeClass = "bg-pink-50 text-pink-600 border-pink-100";
+                  } else if (rep.platform === 'YouTube') {
+                    platformBadgeClass = "bg-red-50 text-red-600 border-red-100";
+                  }
+
+                  return (
+                    <tr
+                      key={rep.id}
+                      onClick={() => setSelectedReport(rep)}
+                      className="hover:bg-neutral-50/80 transition-colors duration-150 cursor-pointer group"
+                    >
+                      {/* Date */}
+                      <td className="px-5 py-4 whitespace-nowrap text-neutral-500 font-medium">
+                        <span className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+                          {rep.date}
+                        </span>
+                      </td>
+
+                      {/* Project */}
+                      <td className="px-5 py-4 whitespace-nowrap font-bold text-neutral-700">
+                        {resolvedProject?.name || '—'}
+                      </td>
+
+                      {/* Blogger / Expense */}
+                      <td className="px-5 py-4 whitespace-nowrap font-extrabold text-black uppercase tracking-tight">
+                        {isOther ? t.paymentOther : rep.channelBlogger}
+                      </td>
+
+                      {/* Platform */}
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        {isOther ? (
+                          <span className="text-neutral-400">—</span>
+                        ) : (
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md border ${platformBadgeClass}`}>
+                            {rep.platform}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Details / Slots */}
+                      <td className="px-5 py-4 max-w-xs truncate text-neutral-600 font-medium">
+                        {isOther ? (
+                          <span className="italic text-neutral-500">{rep.destination}</span>
+                        ) : (
+                          <span>
+                            {rep.slotsCount} slots × {Number(rep.pricePerSlot).toLocaleString('ru-RU')}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Total Sum */}
+                      <td className="px-5 py-4 whitespace-nowrap text-right font-black text-black">
+                        {Number(rep.totalAmount).toLocaleString('ru-RU')} UZS
+                      </td>
+
+                      {/* Receipt */}
+                      <td className="px-5 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                        {rep.receipt ? (
+                          <button
+                            onClick={() => setSelectedReport(rep)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-md transition cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-neutral-500" />
+                            <span>{lang === 'ru' ? 'Чек' : lang === 'uz' ? 'Chek' : 'View'}</span>
+                          </button>
+                        ) : (
+                          <span className="text-neutral-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Cabinet */}
+                      <td className="px-5 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                        {cabinetUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(cabinetUrl);
+                              alert(lang === 'ru' ? 'Ссылка кабинета скопирована!' : lang === 'uz' ? 'Kabinet havolasi nusxalandi!' : 'Cabinet link copied!');
+                            }}
+                            className="inline-flex items-center justify-center p-1.5 text-black hover:bg-neutral-100 border border-neutral-200 rounded-lg transition shadow-2xs cursor-pointer"
+                            title={lang === 'ru' ? 'Копировать ссылку' : lang === 'uz' ? 'Havolani nusxalash' : 'Copy cabinet link'}
+                          >
+                            <Link className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <span className="text-neutral-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      {onDeleteReport && (
+                        <td className="px-5 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => onDeleteReport(rep.id)}
+                            className="p-1.5 rounded-lg text-neutral-400 hover:text-red-500 hover:bg-red-50 transition cursor-pointer"
+                            title={lang === 'ru' ? 'Удалить отчет' : lang === 'uz' ? 'Hisobotni o\'chirish' : 'Delete report'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Grid of Report Cards (Visible on mobile, or when viewMode is grid) */}
+      <div className={`${viewMode === 'table' ? 'md:hidden' : ''} grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4`}>
         {filteredReports.map((rep) => {
           const resolvedProject = projects.find(p => p.id === rep.projectId);
           const isOther = rep.paymentType === 'other';

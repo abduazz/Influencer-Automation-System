@@ -83,6 +83,7 @@ export default function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
 
+
   const handleAddUser = async (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => {
     const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages);
     setAllowedUsers((prev) => [...prev, newUser]);
@@ -519,7 +520,7 @@ export default function App() {
               <ReportsFeedView
                 projects={projects}
                 integrations={integrations}
-                reports={reports}
+                reports={reports.filter((r) => r.paymentType !== 'other')}
                 lang={lang}
                 userRole={currentUserRole}
                 onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}

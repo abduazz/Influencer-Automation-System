@@ -6,11 +6,12 @@
 import React, { useState } from 'react';
 import { AllowedUser } from '../data/mockData';
 import { translations, Language } from '../translations';
-import { Users, UserPlus, Shield, Mail, Trash2, Key, Info } from 'lucide-react';
+import { Users, UserPlus, Shield, Mail, Trash2, Key, Info, Pencil } from 'lucide-react';
 
 interface AccessManagementViewProps {
   allowedUsers: AllowedUser[];
-  onAddUser: (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => Promise<void>;
+  onAddUser: (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => Promise<void>;
+  onEditUser: (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => Promise<void>;
   onRemoveUser: (id: string) => Promise<void>;
   currentUserEmail: string;
   lang: Language;
@@ -19,6 +20,7 @@ interface AccessManagementViewProps {
 export default function AccessManagementView({
   allowedUsers,
   onAddUser,
+  onEditUser,
   onRemoveUser,
   currentUserEmail,
   lang,
@@ -26,6 +28,8 @@ export default function AccessManagementView({
   const t = translations[lang];
 
   // Form states
+  const [editingUser, setEditingUser] = useState<AllowedUser | null>(null);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'super_admin' | 'pr_manager' | 'product_manager'>('pr_manager');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -46,21 +50,29 @@ export default function AccessManagementView({
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail) return;
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanEmail)) {
-      setErrorMsg(lang === 'ru' ? 'Некорректный формат email!' : lang === 'uz' ? 'Email formati noto‘g‘ri!' : 'Invalid email format!');
+    const cleanName = name.trim();
+    if (!cleanName) {
+      setErrorMsg(lang === 'ru' ? 'Пожалуйста, введите имя!' : lang === 'uz' ? 'Iltimos, ismni kiriting!' : 'Please enter a name!');
       return;
     }
 
-    // Check if email already exists in list (case-insensitive)
-    const exists = allowedUsers.some((u) => u.email.toLowerCase() === cleanEmail);
-    if (exists) {
-      setErrorMsg(t.emailAlreadyExists);
-      return;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    if (!editingUser) {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanEmail)) {
+        setErrorMsg(lang === 'ru' ? 'Некорректный формат email!' : lang === 'uz' ? 'Email formati noto‘g‘ri!' : 'Invalid email format!');
+        return;
+      }
+
+      // Check if email already exists in list (case-insensitive)
+      const exists = allowedUsers.some((u) => u.email.toLowerCase() === cleanEmail);
+      if (exists) {
+        setErrorMsg(t.emailAlreadyExists);
+        return;
+      }
     }
 
     const allowedMetrics = Object.entries(metricsPermissions)
@@ -68,8 +80,23 @@ export default function AccessManagementView({
       .map(([name]) => name);
 
     try {
-      await onAddUser(cleanEmail, role, allowedMetrics);
+      if (editingUser) {
+        await onEditUser(editingUser.id, cleanName, role, allowedMetrics);
+        setSuccessMsg(
+          lang === 'ru'
+            ? 'Доступ успешно обновлен!'
+            : lang === 'uz'
+            ? 'Ruxsat muvaffaqiyatli yangilandi!'
+            : 'Access updated successfully!'
+        );
+        setEditingUser(null);
+      } else {
+        await onAddUser(cleanName, cleanEmail, role, allowedMetrics);
+        setSuccessMsg(t.addSuccessToast.replace('{email}', cleanEmail));
+      }
+
       setEmail('');
+      setName('');
       setMetricsPermissions({
         deals: true,
         spend: true,
@@ -78,7 +105,6 @@ export default function AccessManagementView({
         slots_remaining: true,
         financial_metrics: true
       });
-      setSuccessMsg(t.addSuccessToast.replace('{email}', cleanEmail));
 
       setTimeout(() => {
         setSuccessMsg(null);
@@ -194,10 +220,32 @@ export default function AccessManagementView({
         <div className="bg-white border border-neutral-200 rounded-2xl p-6 text-left shadow-2xs h-fit space-y-4">
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
             <UserPlus className="w-4 h-4 text-black" />
-            <h3 className="font-bold text-black text-xs uppercase tracking-wider">{t.addUserBtn}</h3>
+            <h3 className="font-bold text-black text-xs uppercase tracking-wider">
+              {editingUser
+                ? (lang === 'ru' ? 'Редактировать доступ' : lang === 'uz' ? 'Ruxsatni tahrirlash' : 'Edit Access')
+                : t.addUserBtn}
+            </h3>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Name Field */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                {t.userNameLabel}
+              </label>
+              <div className="relative">
+                <Users className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={t.userNamePlaceholder}
+                  className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs font-medium text-black focus:outline-hidden transition duration-150"
+                  required
+                />
+              </div>
+            </div>
+
             {/* Email Field */}
             <div className="space-y-1.5">
               <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
@@ -210,8 +258,13 @@ export default function AccessManagementView({
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={t.userEmailPlaceholder}
-                  className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs font-medium text-black focus:outline-hidden transition duration-150"
+                  className={`w-full border focus:border-black focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs font-medium focus:outline-hidden transition duration-150 ${
+                    editingUser
+                      ? 'bg-neutral-100 border-neutral-200 text-neutral-450 cursor-not-allowed'
+                      : 'bg-neutral-50 border-neutral-200 text-black'
+                  }`}
                   required
+                  disabled={!!editingUser}
                 />
               </div>
             </div>
@@ -288,13 +341,45 @@ export default function AccessManagementView({
               <p>• <strong>{t.roleProductManager}</strong>: {lang === 'ru' ? 'Доступ только к дешборду (без отчетов).' : lang === 'uz' ? 'Faqat loyihalar paneliga kirish (hisobotsiz).' : 'Only dashboard view, reports disabled.'}</p>
             </div>
 
-            <button
-              type="submit"
-              className="w-full bg-black hover:bg-neutral-800 text-white font-extrabold text-xs py-2.5 rounded-lg transition duration-150 shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Key className="w-3.5 h-3.5" />
-              {t.addUserBtn}
-            </button>
+            {editingUser ? (
+              <div className="flex gap-2 w-full">
+                <button
+                  type="submit"
+                  className="w-1/2 bg-black hover:bg-neutral-800 text-white font-extrabold text-xs py-2.5 rounded-lg transition duration-150 shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  {t.saveChangesBtn}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingUser(null);
+                    setName('');
+                    setEmail('');
+                    setRole('pr_manager');
+                    setMetricsPermissions({
+                      deals: true,
+                      spend: true,
+                      total_slots: true,
+                      slots_published: true,
+                      slots_remaining: true,
+                      financial_metrics: true
+                    });
+                  }}
+                  className="w-1/2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-extrabold text-xs py-2.5 rounded-lg transition duration-150 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {t.cancelBtn}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                className="w-full bg-black hover:bg-neutral-800 text-white font-extrabold text-xs py-2.5 rounded-lg transition duration-150 shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Key className="w-3.5 h-3.5" />
+                {t.addUserBtn}
+              </button>
+            )}
           </form>
         </div>
 
@@ -314,7 +399,7 @@ export default function AccessManagementView({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50/50 text-[9px] font-bold text-neutral-500 uppercase tracking-widest">
-                  <th className="py-2.5 px-4">{t.userEmailLabel.replace('*', '')}</th>
+                  <th className="py-2.5 px-4">{lang === 'ru' ? 'Сотрудник' : lang === 'uz' ? 'Xodim' : 'Member'}</th>
                   <th className="py-2.5 px-4">{t.userRoleLabel.replace('*', '')}</th>
                   <th className="py-2.5 px-4">{lang === 'ru' ? 'Дата добавления' : lang === 'uz' ? 'Qo‘shilgan sana' : 'Date Authorized'}</th>
                   <th className="py-2.5 px-4 text-right">{t.actionsColumn}</th>
@@ -326,13 +411,16 @@ export default function AccessManagementView({
                   return (
                     <tr key={user.id} className="hover:bg-neutral-50/30 transition duration-150">
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-neutral-900">{user.email}</span>
-                          {isSelf && (
-                            <span className="text-[8px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 rounded px-1.5 py-0.2 animate-pulse">
-                              {lang === 'ru' ? 'ВЫ' : lang === 'uz' ? 'SIZ' : 'YOU'}
-                            </span>
-                          )}
+                        <div className="flex flex-col text-left">
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-neutral-900">{user.name || user.email.split('@')[0]}</span>
+                            {isSelf && (
+                              <span className="text-[8px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 rounded px-1.5 py-0.2 animate-pulse">
+                                {lang === 'ru' ? 'ВЫ' : lang === 'uz' ? 'SIZ' : 'YOU'}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-neutral-400 font-semibold">{user.email}</span>
                         </div>
                       </td>
                       <td className="py-3 px-4">
@@ -344,18 +432,44 @@ export default function AccessManagementView({
                         {user.createdAt}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => handleDelete(user)}
-                          disabled={isSelf}
-                          className={`p-1.5 rounded transition duration-150 ${
-                            isSelf
-                              ? 'text-neutral-300 cursor-not-allowed'
-                              : 'text-neutral-400 hover:text-black hover:bg-neutral-100'
-                          }`}
-                          title={isSelf ? t.cannotDeleteSelf : t.revokeAccessBtn}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => {
+                              setEditingUser(user);
+                              setName(user.name || '');
+                              setEmail(user.email);
+                              setRole(user.role);
+                              
+                              // Load metrics
+                              const defaultMetrics = ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'];
+                              const userMetrics = user.allowedMetrics || defaultMetrics;
+                              setMetricsPermissions({
+                                deals: userMetrics.includes('deals'),
+                                spend: userMetrics.includes('spend'),
+                                total_slots: userMetrics.includes('total_slots'),
+                                slots_published: userMetrics.includes('slots_published'),
+                                slots_remaining: userMetrics.includes('slots_remaining'),
+                                financial_metrics: userMetrics.includes('financial_metrics'),
+                              });
+                            }}
+                            className="p-1.5 rounded text-neutral-400 hover:text-black hover:bg-neutral-100 transition duration-150 cursor-pointer"
+                            title={lang === 'ru' ? 'Редактировать' : lang === 'uz' ? 'Tahrirlash' : 'Edit'}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(user)}
+                            disabled={isSelf}
+                            className={`p-1.5 rounded transition duration-150 ${
+                              isSelf
+                                ? 'text-neutral-300 cursor-not-allowed'
+                                : 'text-neutral-400 hover:text-black hover:bg-neutral-100 cursor-pointer'
+                            }`}
+                            title={isSelf ? t.cannotDeleteSelf : t.revokeAccessBtn}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

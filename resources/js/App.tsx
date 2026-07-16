@@ -23,6 +23,7 @@ import {
   fetchAllowedUsers,
   createAllowedUser,
   deleteAllowedUser,
+  updateAllowedUser,
   fetchProjects,
   createProject,
   updateProject,
@@ -82,9 +83,14 @@ export default function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
 
-  const handleAddUser = async (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => {
-    const newUser = await createAllowedUser(email, role, allowedMetrics);
+  const handleAddUser = async (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => {
+    const newUser = await createAllowedUser(name, email, role, allowedMetrics);
     setAllowedUsers((prev) => [...prev, newUser]);
+  };
+
+  const handleEditUser = async (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => {
+    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics);
+    setAllowedUsers((prev) => prev.map((u) => u.id === id ? updatedUser : u));
   };
 
   const handleRemoveUser = async (id: string) => {
@@ -250,7 +256,7 @@ export default function App() {
   };
 
   const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => {
-    const report = await createReport(newRep);
+    const report = await createReport(newRep, currentUserEmail || undefined);
     setReports((prev) => [report, ...prev]);
     const ints = await fetchIntegrations();
     setIntegrations(ints);
@@ -518,6 +524,7 @@ export default function App() {
               <AccessManagementView
                 allowedUsers={allowedUsers}
                 onAddUser={handleAddUser}
+                onEditUser={handleEditUser}
                 onRemoveUser={handleRemoveUser}
                 currentUserEmail={currentUserEmail}
                 lang={lang}

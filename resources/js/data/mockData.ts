@@ -68,6 +68,7 @@ export interface BloggerSubmission {
 
 export interface AllowedUser {
   id: string;
+  name: string;
   email: string;
   role: 'super_admin' | 'pr_manager' | 'product_manager';
   createdAt: string;
@@ -77,12 +78,14 @@ export interface AllowedUser {
 export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
   {
     id: 'user-1',
+    name: 'Abduaziz',
     email: 'abduazizmurodqosimov@gmail.com',
     role: 'super_admin',
     createdAt: '2026-07-10',
   },
   {
     id: 'user-4',
+    name: 'Khalilov',
     email: 'khalilovdev@gmail.com',
     role: 'super_admin',
     createdAt: '2026-07-10',

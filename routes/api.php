@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Artisan;
 
 Route::get('/allowed-users', [UserController::class, 'index']);
 Route::post('/allowed-users', [UserController::class, 'store']);
+Route::put('/allowed-users/{user}', [UserController::class, 'update']);
 Route::delete('/allowed-users/{user}', [UserController::class, 'destroy']);
 
 Route::get('/projects', [ProjectController::class, 'index']);

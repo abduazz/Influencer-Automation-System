@@ -64,7 +64,7 @@ class TelegramService
         }
     }
 
-    public static function sendReportNotification($report, $receiptBase64 = null, $lang = 'ru')
+    public static function sendReportNotification($report, $receiptBase64 = null, $lang = 'ru', $createdByName = null)
     {
         $chatId = config('services.telegram.reports_chat_id');
         if (!$chatId) {
@@ -83,6 +83,7 @@ class TelegramService
                 'price_per_slot' => '💵 <b>Цена за слот:</b>',
                 'total_amount' => '💰 <b>Итоговая сумма:</b>',
                 'prepaid_amount' => '💳 <b>Сумма предоплаты:</b>',
+                'created_by' => '✍️ <b>Создан кем:</b>',
                 'prepaid' => 'Предоплата (Prepaid)',
                 'full' => 'Полная оплата (Full)',
                 'other' => 'Прочие расходы (Other)',
@@ -98,6 +99,7 @@ class TelegramService
                 'price_per_slot' => '💵 <b>Price per Slot:</b>',
                 'total_amount' => '💰 <b>Total Amount:</b>',
                 'prepaid_amount' => '💳 <b>Prepayment Amount:</b>',
+                'created_by' => '✍️ <b>Created by:</b>',
                 'prepaid' => 'Prepayment (Prepaid)',
                 'full' => 'Full Payment (Full)',
                 'other' => 'Other Expenses (Other)',
@@ -113,6 +115,7 @@ class TelegramService
                 'price_per_slot' => '💵 <b>Slot narxi:</b>',
                 'total_amount' => '💰 <b>Jami summa:</b>',
                 'prepaid_amount' => '💳 <b>Oldindan to\'lov summasi:</b>',
+                'created_by' => '✍️ <b>Kim tomonidan yaratildi:</b>',
                 'prepaid' => 'Oldindan to\'lov (Prepaid)',
                 'full' => 'To\'liq to\'lov (Full)',
                 'other' => 'Boshqa xarajatlar (Other)',
@@ -148,6 +151,10 @@ class TelegramService
         }
 
         $text .= "{$t['total_amount']} " . number_format($report->total_amount ?? 0, 0, '.', ' ') . " UZS\n";
+
+        if ($createdByName) {
+            $text .= "{$t['created_by']} " . self::escape($createdByName) . "\n";
+        }
 
         // If a Base64 receipt is provided, send it as photo or document directly
         if ($receiptBase64 && preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $receiptBase64, $matches)) {

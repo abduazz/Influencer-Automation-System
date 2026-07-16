@@ -76,9 +76,11 @@ export function deleteIntegration(id: string): Promise<void> {
 export function fetchReports(): Promise<Report[]> {
   return request<Report[]>('/api/reports');
 }
-export function createReport(data: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>): Promise<Report> {
+export function createReport(data: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>, userEmail?: string): Promise<Report> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
   return request<Report>('/api/reports', {
     method: 'POST',
+    headers,
     body: JSON.stringify(data),
   });
 }
@@ -101,14 +103,20 @@ export function createSubmission(integrationId: string, data: Record<string, str
 export function fetchAllowedUsers(): Promise<AllowedUser[]> {
   return request<AllowedUser[]>('/api/allowed-users');
 }
-export function createAllowedUser(email: string, role: AllowedUser['role'], allowedMetrics?: string[]): Promise<AllowedUser> {
+export function createAllowedUser(name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[]): Promise<AllowedUser> {
   return request<AllowedUser>('/api/allowed-users', {
     method: 'POST',
-    body: JSON.stringify({ email, role, allowedMetrics }),
+    body: JSON.stringify({ name, email, role, allowedMetrics }),
   });
 }
 export function deleteAllowedUser(id: string): Promise<void> {
   return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
+}
+export function updateAllowedUser(id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[]): Promise<AllowedUser> {
+  return request<AllowedUser>(`/api/allowed-users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name, role, allowedMetrics }),
+  });
 }
 
 export async function shortenUrl(longUrl: string): Promise<string> {

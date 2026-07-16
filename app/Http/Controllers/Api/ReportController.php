@@ -156,9 +156,17 @@ class ReportController extends Controller
         // Trigger Telegram & Google Sheets notifications independently after response to speed up submission
         $lang = $request->input('lang', 'ru');
         $receipt = $request->receipt;
-        dispatch(function () use ($report, $receipt, $lang) {
+        
+        $email = $request->header('X-User-Email');
+        $createdByName = null;
+        if ($email) {
+            $user = \App\Models\User::where('email', strtolower(trim($email)))->first();
+            $createdByName = $user ? $user->name : $email;
+        }
+
+        dispatch(function () use ($report, $receipt, $lang, $createdByName) {
             try {
-                \App\Services\TelegramService::sendReportNotification($report, $receipt, $lang);
+                \App\Services\TelegramService::sendReportNotification($report, $receipt, $lang, $createdByName);
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error("Failed to send Telegram report notification: " . $e->getMessage());
             }

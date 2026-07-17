@@ -114,6 +114,7 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                   <th className="px-5 py-3 font-extrabold">{t.tableHeaderBlogger}</th>
                   <th className="px-5 py-3 font-extrabold">{t.platformColumn}</th>
                   <th className="px-5 py-3 font-extrabold">{t.tableHeaderDetails}</th>
+                  <th className="px-5 py-3 font-extrabold">{t.createdByField}</th>
                   <th className="px-5 py-3 font-extrabold text-right">{t.totalSumColumn}</th>
                   <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderReceipt}</th>
                   <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderCabinet}</th>
@@ -195,6 +196,11 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                             {rep.slotsCount} slots × {Number(rep.pricePerSlot).toLocaleString('ru-RU')}
                           </span>
                         )}
+                      </td>
+
+                      {/* Created By */}
+                      <td className="px-5 py-4 whitespace-nowrap text-neutral-500 font-medium">
+                        {rep.createdBy || '—'}
                       </td>
 
                       {/* Total Sum */}
@@ -292,6 +298,11 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                     <p className="text-[9px] text-neutral-400 font-medium mt-0.5">
                       {t.campaignTitleField}: <span className="text-neutral-700 font-bold">{resolvedProject?.name || '—'}</span>
                     </p>
+                    {rep.createdBy && (
+                      <p className="text-[9px] text-neutral-400 font-medium mt-0.5">
+                        {t.createdByField}: <span className="text-neutral-700 font-bold">{rep.createdBy}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-[8px] bg-neutral-50 font-black px-1.5 py-0.5 rounded border border-neutral-200 text-neutral-500 flex items-center gap-1">
@@ -431,6 +442,14 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                      t.paymentOther}
                   </p>
                 </div>
+                {selectedReport.createdBy && (
+                  <div className="col-span-2 border-t border-neutral-200/60 pt-2">
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.createdByField}</p>
+                    <p className="font-bold text-neutral-800 mt-0.5">
+                      {selectedReport.createdBy}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Financial calculations */}

@@ -27,6 +27,7 @@ class Report extends Model
         'receipt',
         'telegram_sent',
         'sheets_sent',
+        'created_by',
     ];
 
     protected $casts = [

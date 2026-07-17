@@ -54,6 +54,7 @@ export interface Report {
   receipt?: string | null;
   lang?: string;
   bloggerCabinetToken?: string | null;
+  createdBy?: string | null;
 }
 
 export interface BloggerSubmission {

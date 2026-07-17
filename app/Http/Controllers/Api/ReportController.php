@@ -30,6 +30,7 @@ class ReportController extends Controller
                 'slotsConfig' => $report->slots_config ?? [],
                 'paymentType' => $report->payment_type,
                 'receipt' => $report->receipt,
+                'createdBy' => $report->created_by,
             ];
         }));
     }
@@ -60,12 +61,20 @@ class ReportController extends Controller
 
         $paymentType = $request->input('paymentType', 'prepaid');
 
+        $email = $request->header('X-User-Email');
+        $createdByName = null;
+        if ($email) {
+            $user = \App\Models\User::where('email', strtolower(trim($email)))->first();
+            $createdByName = $user ? $user->name : $email;
+        }
+
         $reportData = [
             'payment_type' => $paymentType,
             'date' => $request->date,
             'project_id' => $request->projectId ?: null,
             'destination' => $request->destination,
             'comments' => $request->comments,
+            'created_by' => $createdByName,
         ];
 
         if ($paymentType === 'other') {
@@ -157,13 +166,8 @@ class ReportController extends Controller
         $lang = $request->input('lang', 'uz');
         $receipt = $request->receipt;
         
-        $email = $request->header('X-User-Email');
-        $createdByName = null;
-        if ($email) {
-            $user = \App\Models\User::where('email', strtolower(trim($email)))->first();
-            $createdByName = $user ? $user->name : $email;
-        }
-
+        $createdByName = $report->created_by;
+ 
         dispatch(function () use ($report, $receipt, $lang, $createdByName) {
             try {
                 $tgSuccess = \App\Services\TelegramService::sendReportNotification($report, $receipt, $lang, $createdByName);
@@ -173,7 +177,7 @@ class ReportController extends Controller
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error("Failed to send Telegram report notification: " . $e->getMessage());
             }
-
+ 
             try {
                 $sheetsSuccess = \App\Services\GoogleSheetsService::appendReport($report);
                 if ($sheetsSuccess) {
@@ -183,7 +187,7 @@ class ReportController extends Controller
                 \Illuminate\Support\Facades\Log::error("Failed to append report to Google Sheets: " . $e->getMessage());
             }
         })->afterResponse();
-
+ 
         return response()->json([
             'id' => (string) $report->id,
             'date' => $report->date->format('Y-m-d'),
@@ -202,6 +206,7 @@ class ReportController extends Controller
             'paymentType' => $report->payment_type,
             'receipt' => null,
             'bloggerCabinetToken' => $cabinetToken,
+            'createdBy' => $report->created_by,
         ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {

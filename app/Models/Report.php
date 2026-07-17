@@ -25,6 +25,8 @@ class Report extends Model
         'comments',
         'slots_config',
         'receipt',
+        'telegram_sent',
+        'sheets_sent',
     ];
 
     protected $casts = [
@@ -35,6 +37,8 @@ class Report extends Model
         'slots_count' => 'integer',
         'paid_slots_count' => 'integer',
         'slots_config' => 'array',
+        'telegram_sent' => 'boolean',
+        'sheets_sent' => 'boolean',
     ];
 
     protected static function booted(): void

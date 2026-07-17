@@ -16,6 +16,9 @@ echo "🗃️ Running migrations and seeding"
 php artisan migrate --force
 php artisan db:seed --force
 
+echo "🔄 Syncing unsent reports to Telegram & Google Sheets"
+php artisan reports:sync
+
 echo "⚡ Optimizing application caches"
 php artisan optimize
 

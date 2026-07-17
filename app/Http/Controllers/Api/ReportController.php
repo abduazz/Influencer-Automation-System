@@ -166,13 +166,19 @@ class ReportController extends Controller
 
         dispatch(function () use ($report, $receipt, $lang, $createdByName) {
             try {
-                \App\Services\TelegramService::sendReportNotification($report, $receipt, $lang, $createdByName);
+                $tgSuccess = \App\Services\TelegramService::sendReportNotification($report, $receipt, $lang, $createdByName);
+                if ($tgSuccess) {
+                    $report->update(['telegram_sent' => true]);
+                }
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error("Failed to send Telegram report notification: " . $e->getMessage());
             }
 
             try {
-                \App\Services\GoogleSheetsService::appendReport($report);
+                $sheetsSuccess = \App\Services\GoogleSheetsService::appendReport($report);
+                if ($sheetsSuccess) {
+                    $report->update(['sheets_sent' => true]);
+                }
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error("Failed to append report to Google Sheets: " . $e->getMessage());
             }

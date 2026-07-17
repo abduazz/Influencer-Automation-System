@@ -37,7 +37,7 @@ return [
 
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
-        'reports_chat_id' => env('TELEGRAM_REPORTS_CHAT_ID'),
+        'reports_chat_id' => env('TELEGRAM_REPORTS_CHAT_ID') === '-4904683057' ? '-1004329107459' : (env('TELEGRAM_REPORTS_CHAT_ID') ?: '-1004329107459'),
         'submissions_chat_id' => env('TELEGRAM_SUBMISSIONS_CHAT_ID'),
         'chat_id' => env('TELEGRAM_CHAT_ID'),
     ],

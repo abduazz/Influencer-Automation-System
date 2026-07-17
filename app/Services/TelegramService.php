@@ -38,12 +38,24 @@ class TelegramService
             }
 
             $body = $response->body();
+            $resData = json_decode($body, true);
+            if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                $newChatId = $resData['parameters']['migrate_to_chat_id'];
+                Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$chatId} to {$newChatId}");
+                $params['chat_id'] = $newChatId;
+                $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $params);
+                if ($response->successful()) {
+                    return true;
+                }
+                $body = $response->body();
+            }
+
             Log::warning("Telegram HTML sendMessage failed, retrying as plain text. Error: " . $body);
 
             // Second attempt: strip HTML tags and send as plain text (no parse_mode)
             $plainText = strip_tags($text);
             $plainParams = [
-                'chat_id' => $chatId,
+                'chat_id' => $params['chat_id'],
                 'text' => $plainText,
             ];
             if ($threadId) {
@@ -56,7 +68,20 @@ class TelegramService
                 return true;
             }
 
-            Log::error("Telegram API Error (both HTML and plain): " . $response2->body());
+            $body2 = $response2->body();
+            $resData2 = json_decode($body2, true);
+            if (isset($resData2['parameters']['migrate_to_chat_id'])) {
+                $newChatId = $resData2['parameters']['migrate_to_chat_id'];
+                Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$plainParams['chat_id']} to {$newChatId}");
+                $plainParams['chat_id'] = $newChatId;
+                $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
+                if ($response2->successful()) {
+                    return true;
+                }
+                $body2 = $response2->body();
+            }
+
+            Log::error("Telegram API Error (both HTML and plain): " . $body2);
             return false;
         } catch (\Throwable $e) {
             Log::error("Telegram exception: " . $e->getMessage());
@@ -186,7 +211,22 @@ class TelegramService
                         return true;
                     }
 
-                    Log::warning("Telegram sendPhoto/Document HTML failed, retrying plain: " . $response->body());
+                    $body = $response->body();
+                    $resData = json_decode($body, true);
+                    if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                        $newChatId = $resData['parameters']['migrate_to_chat_id'];
+                        Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$chatId} to {$newChatId}");
+                        $chatId = $newChatId;
+                        $photoParams['chat_id'] = $newChatId;
+                        $response = Http::attach($field, $binaryData, $filename)
+                            ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $photoParams);
+                        if ($response->successful()) {
+                            return true;
+                        }
+                        $body = $response->body();
+                    }
+
+                    Log::warning("Telegram sendPhoto/Document HTML failed, retrying plain: " . $body);
 
                     // Fallback: send text first, then file without caption
                     self::sendMessage($chatId, $text, $threadId);
@@ -199,8 +239,19 @@ class TelegramService
                         $fallbackPhotoParams['message_thread_id'] = $threadId;
                     }
 
-                    Http::attach($field, $binaryData, $filename)
+                    $response2 = Http::attach($field, $binaryData, $filename)
                         ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $fallbackPhotoParams);
+
+                    if (!$response2->successful()) {
+                        $body2 = $response2->body();
+                        $resData2 = json_decode($body2, true);
+                        if (isset($resData2['parameters']['migrate_to_chat_id'])) {
+                            $newChatId = $resData2['parameters']['migrate_to_chat_id'];
+                            $fallbackPhotoParams['chat_id'] = $newChatId;
+                            Http::attach($field, $binaryData, $filename)
+                                ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $fallbackPhotoParams);
+                        }
+                    }
                     return true;
                 } catch (\Throwable $e) {
                     Log::error("Telegram sendPhoto/Document Exception: " . $e->getMessage());
@@ -309,7 +360,22 @@ class TelegramService
                         ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
 
                     if (!$response->successful()) {
-                        Log::error("Telegram sendPhoto failed, retrying plain text: " . $response->body());
+                        $body = $response->body();
+                        $resData = json_decode($body, true);
+                        if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                            $newChatId = $resData['parameters']['migrate_to_chat_id'];
+                            Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$chatId} to {$newChatId}");
+                            $chatId = $newChatId;
+                            $photoParams['chat_id'] = $newChatId;
+                            $response = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
+                                ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
+                            if ($response->successful()) {
+                                continue;
+                            }
+                            $body = $response->body();
+                        }
+
+                        Log::error("Telegram sendPhoto failed, retrying plain text: " . $body);
                         // Fallback: send text message first, then photo separately
                         self::sendMessage($chatId, $text, $threadId);
 
@@ -321,8 +387,19 @@ class TelegramService
                             $fallbackPhotoParams['message_thread_id'] = $threadId;
                         }
 
-                        Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
+                        $response2 = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
                             ->post("https://api.telegram.org/bot{$token}/sendPhoto", $fallbackPhotoParams);
+
+                        if (!$response2->successful()) {
+                            $body2 = $response2->body();
+                            $resData2 = json_decode($body2, true);
+                            if (isset($resData2['parameters']['migrate_to_chat_id'])) {
+                                $newChatId = $resData2['parameters']['migrate_to_chat_id'];
+                                $fallbackPhotoParams['chat_id'] = $newChatId;
+                                Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
+                                    ->post("https://api.telegram.org/bot{$token}/sendPhoto", $fallbackPhotoParams);
+                            }
+                        }
                     }
                 } catch (\Throwable $e) {
                     Log::error("Telegram sendPhoto exception: " . $e->getMessage());

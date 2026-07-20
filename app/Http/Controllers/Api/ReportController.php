@@ -43,13 +43,13 @@ class ReportController extends Controller
         }
 
         $validated = $request->validate([
-            'paymentType' => 'nullable|string|in:prepaid,full,other',
+            'paymentType' => 'nullable|string|in:prepaid,full,other,remaining',
             'date' => 'required|date',
             'projectId' => 'required_unless:paymentType,other|nullable|exists:projects,id',
             'destination' => 'required|string|max:255',
             'channelBlogger' => 'required_unless:paymentType,other|nullable|string|max:255',
             'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX',
-            'slotsCount' => 'required_unless:paymentType,other|nullable|integer|min:1',
+            'slotsCount' => 'required_unless:paymentType,other|nullable|integer|min:0',
             'paidSlotsCount' => 'required_unless:paymentType,other|nullable|integer|min:0',
             'pricePerSlot' => 'required_unless:paymentType,other|nullable|numeric|min:0',
             'comments' => 'nullable|string',
@@ -109,17 +109,25 @@ class ReportController extends Controller
                 ->first();
 
             if ($existingIntegration) {
-                // Merge data into existing integration
-                $newSlotsCount = $existingIntegration->slots_count + $report->slots_count;
-                $newPaidSlotsCount = $existingIntegration->paid_slots_count + $report->paid_slots_count;
-                $mergedSlotsConfig = array_merge($existingIntegration->slots_config ?? [], $report->slots_config ?? []);
+                if ($paymentType === 'remaining') {
+                    // Update only paid slots for remaining payment (do not add to total slots)
+                    $newPaidSlotsCount = min($existingIntegration->slots_count, $existingIntegration->paid_slots_count + $report->paid_slots_count);
+                    $existingIntegration->update([
+                        'paid_slots_count' => $newPaidSlotsCount,
+                    ]);
+                } else {
+                    // Merge data into existing integration
+                    $newSlotsCount = $existingIntegration->slots_count + $report->slots_count;
+                    $newPaidSlotsCount = $existingIntegration->paid_slots_count + $report->paid_slots_count;
+                    $mergedSlotsConfig = array_merge($existingIntegration->slots_config ?? [], $report->slots_config ?? []);
 
-                $existingIntegration->update([
-                    'price_per_slot' => $report->price_per_slot, // update to latest price
-                    'slots_count' => $newSlotsCount,
-                    'paid_slots_count' => $newPaidSlotsCount,
-                    'slots_config' => $mergedSlotsConfig,
-                ]);
+                    $existingIntegration->update([
+                        'price_per_slot' => $report->price_per_slot, // update to latest price
+                        'slots_count' => $newSlotsCount,
+                        'paid_slots_count' => $newPaidSlotsCount,
+                        'slots_config' => $mergedSlotsConfig,
+                    ]);
+                }
             } else {
                 // Create new integration
                 $slugName = Str::slug($cleanBloggerName, '_');
@@ -136,7 +144,7 @@ class ReportController extends Controller
                     'platform' => $report->platform,
                     'referral_link' => $referralLink,
                     'price_per_slot' => $report->price_per_slot,
-                    'slots_count' => $report->slots_count,
+                    'slots_count' => $paymentType === 'remaining' ? $report->paid_slots_count : $report->slots_count,
                     'paid_slots_count' => $report->paid_slots_count,
                     'end_date' => $endDate,
                     'status' => 'active',

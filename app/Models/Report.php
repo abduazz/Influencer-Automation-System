@@ -45,7 +45,10 @@ class Report extends Model
     protected static function booted(): void
     {
         static::saving(function (Report $report): void {
-            if ($report->payment_type !== 'other') {
+            if ($report->payment_type === 'remaining') {
+                $report->total_amount = $report->price_per_slot * $report->paid_slots_count;
+                $report->paid_amount = $report->price_per_slot * $report->paid_slots_count;
+            } else if ($report->payment_type !== 'other') {
                 $report->total_amount = $report->price_per_slot * $report->slots_count;
                 $report->paid_amount = $report->price_per_slot * $report->paid_slots_count;
             }

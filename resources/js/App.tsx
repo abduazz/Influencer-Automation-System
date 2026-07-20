@@ -82,6 +82,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs'>('projects');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
+  const [reportsInitialState, setReportsInitialState] = useState<{
+    projectId?: string;
+    bloggerName?: string;
+    paymentType?: 'prepaid' | 'full' | 'other' | 'remaining';
+  } | null>(null);
 
 
   const handleAddUser = async (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => {
@@ -501,6 +506,14 @@ export default function App() {
                 lang={lang}
                 allowedMetrics={allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
                 userRole={currentUserRole}
+                onNavigateToReports={(projectId, bloggerName, paymentType) => {
+                  setReportsInitialState({
+                    projectId,
+                    bloggerName,
+                    paymentType
+                  });
+                  setActiveTab('reports');
+                }}
               />
             )}
 
@@ -513,6 +526,8 @@ export default function App() {
                 lang={lang}
                 userRole={currentUserRole}
                 isWebApp={isTelegramWebApp}
+                initialState={reportsInitialState}
+                onClearInitialState={() => setReportsInitialState(null)}
               />
             )}
 

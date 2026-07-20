@@ -49,7 +49,7 @@ export interface Report {
   totalAmount: number; // calculated
   comments: string;
   slotsConfig?: SlotConfig[];
-  paymentType?: 'prepaid' | 'full' | 'other';
+  paymentType?: 'prepaid' | 'full' | 'other' | 'remaining';
   amount?: number;
   receipt?: string | null;
   lang?: string;

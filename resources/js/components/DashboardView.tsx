@@ -42,6 +42,7 @@ interface DashboardViewProps {
   lang: Language;
   allowedMetrics?: string[];
   userRole?: string | null;
+  onNavigateToReports?: (projectId: string, bloggerName: string, paymentType: 'remaining') => void;
 }
 
 export default function DashboardView({
@@ -56,7 +57,8 @@ export default function DashboardView({
   onDeleteIntegration,
   lang,
   allowedMetrics = ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-  userRole
+  userRole,
+  onNavigateToReports
 }: DashboardViewProps) {
   // Current active project selection
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
@@ -553,8 +555,24 @@ export default function DashboardView({
 
                           {/* Remaining to Pay */}
                           <td className="py-3.5 px-4 font-bold text-rose-600 whitespace-nowrap">
-                            {Math.max(0, item.totalAmount - (item.paidAmount || 0)).toLocaleString('ru-RU')}
-                          </td>
+                             <div className="flex items-center gap-1.5">
+                               <span>{Math.max(0, item.totalAmount - (item.paidAmount || 0)).toLocaleString('ru-RU')}</span>
+                               {Math.max(0, item.totalAmount - (item.paidAmount || 0)) > 0 && (
+                                 <button
+                                   type="button"
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     if (onNavigateToReports) {
+                                       onNavigateToReports(item.projectId, item.bloggerName, 'remaining');
+                                     }
+                                   }}
+                                   className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold border border-rose-150 transition"
+                                 >
+                                   {lang === 'ru' ? 'Доплатить' : (lang === 'uz' ? 'To‘lash' : 'Pay remaining')}
+                                 </button>
+                               )}
+                             </div>
+                           </td>
 
                           {/* Slots Published */}
                           <td className="py-3.5 px-4 text-center whitespace-nowrap">
@@ -1143,11 +1161,27 @@ export default function DashboardView({
                           {Number(selectedIntegrationForDetails.paidAmount || 0).toLocaleString('ru-RU')} UZS
                         </span>
                       </div>
-                      <div className="flex justify-between py-0.5 border-t border-neutral-50 pt-1.5">
+                      <div className="flex justify-between items-center py-0.5 border-t border-neutral-50 pt-1.5">
                         <span className="text-neutral-500 font-bold">{t.metricRemainingToPay || 'Remaining'}:</span>
-                        <span className="font-black text-rose-600">
-                          {Math.max(0, Number(selectedIntegrationForDetails.totalAmount || 0) - Number(selectedIntegrationForDetails.paidAmount || 0)).toLocaleString('ru-RU')} UZS
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-black text-rose-600">
+                            {Math.max(0, Number(selectedIntegrationForDetails.totalAmount || 0) - Number(selectedIntegrationForDetails.paidAmount || 0)).toLocaleString('ru-RU')} UZS
+                          </span>
+                          {Math.max(0, Number(selectedIntegrationForDetails.totalAmount || 0) - Number(selectedIntegrationForDetails.paidAmount || 0)) > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedIntegrationForDetails(null);
+                                if (onNavigateToReports) {
+                                  onNavigateToReports(selectedIntegrationForDetails.projectId, selectedIntegrationForDetails.bloggerName, 'remaining');
+                                }
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold border border-rose-150 transition"
+                            >
+                              {lang === 'ru' ? 'Доплатить' : (lang === 'uz' ? 'To‘lash' : 'Pay remaining')}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}

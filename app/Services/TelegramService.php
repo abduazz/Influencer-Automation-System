@@ -112,6 +112,7 @@ class TelegramService
                 'prepaid' => 'Предоплата (Prepaid)',
                 'full' => 'Полная оплата (Full)',
                 'other' => 'Прочие расходы (Other)',
+                'remaining' => 'Доплата (Remaining)',
             ],
             'en' => [
                 'new_report' => '📝 <b>New Report Created!</b>',
@@ -128,6 +129,7 @@ class TelegramService
                 'prepaid' => 'Prepayment (Prepaid)',
                 'full' => 'Full Payment (Full)',
                 'other' => 'Other Expenses (Other)',
+                'remaining' => 'Remaining Payment (Remaining)',
             ],
             'uz' => [
                 'new_report' => '📝 <b>Yangi hisobot yaratildi!</b>',
@@ -144,6 +146,7 @@ class TelegramService
                 'prepaid' => 'Oldindan to\'lov (Prepaid)',
                 'full' => 'To\'liq to\'lov (Full)',
                 'other' => 'Boshqa xarajatlar (Other)',
+                'remaining' => 'Qo\'shimcha to\'lov (Remaining)',
             ]
         ];
 
@@ -170,7 +173,12 @@ class TelegramService
         if ($report->payment_type !== 'other') {
             $text .= "{$t['blogger']} " . self::escape($report->channel_blogger ?? '—') . "\n";
             $text .= "{$t['platform']} " . self::escape($report->platform ?? '—') . "\n";
-            $text .= "{$t['slots_count']} " . ($report->slots_count ?? '0') . "\n";
+            if ($report->payment_type === 'remaining') {
+                $slotsLabel = $lang === 'ru' ? '🔢 <b>Доплачено слотов:</b>' : ($lang === 'uz' ? '🔢 <b>Qo\'shimcha to\'langan slotlar:</b>' : '🔢 <b>Remaining Paid Slots:</b>');
+                $text .= "{$slotsLabel} " . ($report->paid_slots_count ?? '0') . "\n";
+            } else {
+                $text .= "{$t['slots_count']} " . ($report->slots_count ?? '0') . "\n";
+            }
             $text .= "{$t['price_per_slot']} " . number_format($report->price_per_slot ?? 0, 0, '.', ' ') . " UZS\n";
         }
 

@@ -272,6 +272,7 @@ class TelegramService
         $locales = [
             'ru' => [
                 'submission_title' => '📢 <b>Выполнение работы блогером!</b>',
+                'project' => '📁 <b>Проект:</b>',
                 'blogger' => '👤 <b>Блогер:</b>',
                 'slot_number' => 'Слот',
                 'total_purchased' => '📊 <b>Количество купленных слотов:</b>',
@@ -279,6 +280,7 @@ class TelegramService
             ],
             'en' => [
                 'submission_title' => '📢 <b>Work Performed by Blogger!</b>',
+                'project' => '📁 <b>Project:</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
                 'slot_number' => 'Slot',
                 'total_purchased' => '📊 <b>Total Purchased Slots:</b>',
@@ -286,6 +288,7 @@ class TelegramService
             ],
             'uz' => [
                 'submission_title' => '📢 <b>Blogger ishni bajardi!</b>',
+                'project' => '📁 <b>Loyiha:</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
                 'slot_number' => 'Slot',
                 'total_purchased' => '📊 <b>Sotib olingan slotlar soni:</b>',
@@ -329,7 +332,12 @@ class TelegramService
 
             $isScreenshot = preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $link, $matches);
 
+            $projectName = $integration->project?->name;
+
             $text = "{$t['submission_title']}\n\n";
+            if ($projectName) {
+                $text .= "{$t['project']} " . self::escape($projectName) . "\n";
+            }
             $text .= "{$t['blogger']} " . self::escape($blogger) . "\n";
 
             if ($isScreenshot) {

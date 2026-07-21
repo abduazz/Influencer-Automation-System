@@ -234,7 +234,85 @@ class ReportController extends Controller
 
     public function destroy(Report $report)
     {
+        $projectId = $report->project_id;
+        $platform = $report->platform;
+        $channelBlogger = $report->channel_blogger;
+        $paymentType = $report->payment_type;
+
         $report->delete();
+
+        if ($paymentType !== 'other' && $projectId !== null && $channelBlogger !== null && $platform !== null) {
+            $cleanBloggerName = trim(str_replace(['@', '#'], '', $channelBlogger));
+
+            $integration = Integration::where('project_id', $projectId)
+                ->where('platform', $platform)
+                ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                ->first();
+
+            if ($integration) {
+                // Find remaining reports for this integration
+                $remainingReports = Report::where('project_id', $projectId)
+                    ->where('platform', $platform)
+                    ->get()
+                    ->filter(function ($r) use ($cleanBloggerName) {
+                        $rClean = trim(str_replace(['@', '#'], '', $r->channel_blogger));
+                        return strtolower($rClean) === strtolower($cleanBloggerName);
+                    });
+
+                if ($remainingReports->isEmpty()) {
+                    $integration->delete();
+                } else {
+                    $first = true;
+                    $pricePerSlot = 0;
+                    $slotsCount = 0;
+                    $paidSlotsCount = 0;
+                    $slotsConfig = [];
+                    $referralLink = null;
+                    $startDate = null;
+
+                    foreach ($remainingReports as $rep) {
+                        if ($first) {
+                            $startDate = \Carbon\Carbon::parse($rep->date);
+                            $referralLink = $rep->destination;
+                            $pricePerSlot = $rep->price_per_slot;
+                            if ($rep->payment_type === 'remaining') {
+                                $slotsCount = $rep->paid_slots_count;
+                                $paidSlotsCount = $rep->paid_slots_count;
+                            } else {
+                                $slotsCount = $rep->slots_count;
+                                $paidSlotsCount = $rep->paid_slots_count;
+                            }
+                            $slotsConfig = $rep->slots_config ?? [];
+                            $first = false;
+                        } else {
+                            if ($rep->payment_type === 'remaining') {
+                                $paidSlotsCount += $rep->paid_slots_count;
+                            } else {
+                                $slotsCount += $rep->slots_count;
+                                $paidSlotsCount += $rep->paid_slots_count;
+                                $slotsConfig = array_merge($slotsConfig, $rep->slots_config ?? []);
+                                $pricePerSlot = $rep->price_per_slot;
+                            }
+                        }
+                    }
+
+                    if ($slotsCount > 0) {
+                        $paidSlotsCount = min($slotsCount, $paidSlotsCount);
+                    }
+
+                    $integration->update([
+                        'price_per_slot' => $pricePerSlot,
+                        'slots_count' => $slotsCount,
+                        'paid_slots_count' => $paidSlotsCount,
+                        'slots_config' => $slotsConfig,
+                        'referral_link' => $referralLink,
+                        'start_date' => $startDate,
+                        'end_date' => $startDate ? $startDate->copy()->addDays(14) : null,
+                    ]);
+                }
+            }
+        }
+
         return response()->json(['success' => true], 200);
     }
 }

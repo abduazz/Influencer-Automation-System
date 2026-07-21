@@ -159,4 +159,122 @@ class ReportControllerTest extends TestCase
         // One of the sheets request URLs should reference the spreadsheetId
         $this->assertTrue(str_contains($firstReq->url(), '1_TBYmmaWZPIG5_Kz2Sr706w6Km_VS-l7Q2UtKADrrus'));
     }
+
+    public function test_deleting_last_report_deletes_integration(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $project = Project::create([
+            'name' => 'Campaign C',
+            'description' => 'Test Description',
+        ]);
+
+        $payload = [
+            'paymentType' => 'prepaid',
+            'date' => '2026-07-16',
+            'projectId' => $project->id,
+            'destination' => 'https://example.com/target',
+            'channelBlogger' => 'blogger_to_delete',
+            'platform' => 'Telegram',
+            'slotsCount' => 5,
+            'paidSlotsCount' => 2,
+            'pricePerSlot' => 100.00,
+            'lang' => 'ru',
+        ];
+
+        $response = $this->withHeaders([
+            'X-User-Email' => 'john@company.com',
+        ])->postJson('/api/reports', $payload);
+
+        $response->assertStatus(201);
+        $reportId = $response->json('id');
+
+        // Integration should be created
+        $this->assertDatabaseHas('integrations', [
+            'project_id' => $project->id,
+            'blogger_name' => 'blogger_to_delete',
+            'slots_count' => 5,
+            'paid_slots_count' => 2,
+        ]);
+
+        // Delete the report
+        $deleteResponse = $this->deleteJson("/api/reports/{$reportId}");
+        $deleteResponse->assertStatus(200);
+
+        // Integration should be deleted since it was the last report
+        $this->assertDatabaseMissing('integrations', [
+            'project_id' => $project->id,
+            'blogger_name' => 'blogger_to_delete',
+        ]);
+    }
+
+    public function test_deleting_report_recalculates_integration(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $project = Project::create([
+            'name' => 'Campaign D',
+            'description' => 'Test Description',
+        ]);
+
+        // Create first report (prepaid, 5 slots, 2 paid, price 100)
+        $payload1 = [
+            'paymentType' => 'prepaid',
+            'date' => '2026-07-16',
+            'projectId' => $project->id,
+            'destination' => 'https://example.com/target',
+            'channelBlogger' => 'blogger_to_keep',
+            'platform' => 'Telegram',
+            'slotsCount' => 5,
+            'paidSlotsCount' => 2,
+            'pricePerSlot' => 100.00,
+            'lang' => 'ru',
+        ];
+
+        $response1 = $this->postJson('/api/reports', $payload1);
+        $response1->assertStatus(201);
+
+        // Create second report (remaining, 0 slots, 3 paid, price 100)
+        $payload2 = [
+            'paymentType' => 'remaining',
+            'date' => '2026-07-17',
+            'projectId' => $project->id,
+            'destination' => 'https://example.com/target',
+            'channelBlogger' => 'blogger_to_keep',
+            'platform' => 'Telegram',
+            'slotsCount' => 0,
+            'paidSlotsCount' => 3,
+            'pricePerSlot' => 100.00,
+            'lang' => 'ru',
+        ];
+
+        $response2 = $this->postJson('/api/reports', $payload2);
+        $response2->assertStatus(201);
+        $reportId2 = $response2->json('id');
+
+        // Integration should have slots_count = 5, paid_slots_count = 5 (2 + 3)
+        $this->assertDatabaseHas('integrations', [
+            'project_id' => $project->id,
+            'blogger_name' => 'blogger_to_keep',
+            'slots_count' => 5,
+            'paid_slots_count' => 5,
+        ]);
+
+        // Delete the remaining payment report
+        $deleteResponse = $this->deleteJson("/api/reports/{$reportId2}");
+        $deleteResponse->assertStatus(200);
+
+        // Integration should be recalculated back to slots_count = 5, paid_slots_count = 2
+        $this->assertDatabaseHas('integrations', [
+            'project_id' => $project->id,
+            'blogger_name' => 'blogger_to_keep',
+            'slots_count' => 5,
+            'paid_slots_count' => 2,
+        ]);
+    }
 }
+

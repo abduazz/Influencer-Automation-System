@@ -14,6 +14,7 @@ export interface Project {
 export interface SlotConfig {
   platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
   format: string; // "Reels", "Stories", "Post", "Release", etc.
+  projectId?: string | null;
 }
 
 export interface Integration {
@@ -54,6 +55,24 @@ export interface Report {
   receipt?: string | null;
   lang?: string;
   bloggerCabinetToken?: string | null;
+  createdBy?: string | null;
+}
+
+export interface BulkPurchase {
+  id: string;
+  bloggerName: string;
+  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
+  totalSlots: number;
+  allocatedSlots: number;
+  remainingSlots: number;
+  pricePerSlot: number;
+  totalAmount: number;
+  paidAmount: number;
+  purchaseDate: string;
+  referralLink?: string;
+  receipt?: string | null;
+  comments?: string;
+  slotsConfig?: { slot: number; platform: string; format: string; projectId: string | null; allocatedAt?: string | null }[];
   createdBy?: string | null;
 }
 

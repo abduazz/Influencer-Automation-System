@@ -276,5 +276,56 @@ class ReportControllerTest extends TestCase
             'paid_slots_count' => 2,
         ]);
     }
+
+    public function test_creating_multi_project_bulk_report_allocates_integrations_per_project(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $projectA = Project::create(['name' => 'Project A', 'description' => 'Desc A']);
+        $projectB = Project::create(['name' => 'Project B', 'description' => 'Desc B']);
+
+        $payload = [
+            'paymentType' => 'full',
+            'date' => '2026-07-24',
+            'projectId' => null,
+            'destination' => 'https://t.me/bulk_channel',
+            'channelBlogger' => 'bulk_blogger',
+            'platform' => 'Telegram',
+            'slotsCount' => 5,
+            'paidSlotsCount' => 5,
+            'pricePerSlot' => 1000.00,
+            'slotsConfig' => [
+                ['platform' => 'Telegram', 'format' => 'Post', 'projectId' => (string)$projectA->id],
+                ['platform' => 'Telegram', 'format' => 'Post', 'projectId' => (string)$projectA->id],
+                ['platform' => 'Telegram', 'format' => 'Post', 'projectId' => (string)$projectB->id],
+                ['platform' => 'Telegram', 'format' => 'Post', 'projectId' => (string)$projectB->id],
+                ['platform' => 'Telegram', 'format' => 'Post', 'projectId' => null],
+            ],
+            'lang' => 'ru',
+        ];
+
+        $response = $this->postJson('/api/reports', $payload);
+        $response->assertStatus(201);
+
+        // Integration for Project A should have 2 slots @ 1000 = 2000 total
+        $this->assertDatabaseHas('integrations', [
+            'project_id' => $projectA->id,
+            'blogger_name' => 'bulk_blogger',
+            'slots_count' => 2,
+            'price_per_slot' => 1000.00,
+            'total_amount' => 2000.00,
+        ]);
+
+        // Integration for Project B should have 2 slots @ 1000 = 2000 total
+        $this->assertDatabaseHas('integrations', [
+            'project_id' => $projectB->id,
+            'blogger_name' => 'bulk_blogger',
+            'slots_count' => 2,
+            'price_per_slot' => 1000.00,
+            'total_amount' => 2000.00,
+        ]);
+    }
 }
 

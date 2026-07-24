@@ -188,6 +188,9 @@ export default function ReportsView({
   const [paidAmount, setPaidAmount] = useState<number | ''>(0);
   const [slotsConfig, setSlotsConfig] = useState<SlotConfig[]>([]);
 
+  const [isMultiProject, setIsMultiProject] = useState<boolean>(false);
+  const [slotProjects, setSlotProjects] = useState<{ [slotIndex: number]: string }>({});
+
   const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
   const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[]>([]);
   const [receipt, setReceipt] = useState<string | null>(null);
@@ -273,6 +276,7 @@ export default function ReportsView({
         next.push({
           platform: platform,
           format: platform === 'Instagram' ? 'Stories' : platform === 'Telegram' ? 'Post' : 'Release',
+          projectId: isMultiProject ? (slotProjects[i] || null) : (projectId || null),
         });
       }
       setSlotsConfig(next);
@@ -284,15 +288,19 @@ export default function ReportsView({
             next.push({
               platform: platform,
               format: platform === 'Instagram' ? 'Stories' : platform === 'Telegram' ? 'Post' : 'Release',
+              projectId: isMultiProject ? (slotProjects[i] || null) : (projectId || null),
             });
           }
         } else if (next.length > slotsCount) {
           next.splice(slotsCount);
         }
-        return next;
+        return next.map((s, idx) => ({
+          ...s,
+          projectId: isMultiProject ? (slotProjects[idx] || null) : (projectId || null),
+        }));
       });
     }
-  }, [slotsCount, platform, customizeSlots]);
+  }, [slotsCount, platform, customizeSlots, isMultiProject, slotProjects, projectId]);
 
   const handlePricePerSlotChange = (newPrice: number | '') => {
     setPricePerSlot(newPrice);
@@ -349,7 +357,7 @@ export default function ReportsView({
     e.preventDefault();
     if (isSubmitting) return;
     if (!destination.trim()) return;
-    if (paymentType !== 'other' && (!projectId || !channelBlogger.trim())) return;
+    if (paymentType !== 'other' && (!isMultiProject && !projectId || !channelBlogger.trim())) return;
 
     if (paymentType !== 'other' && customizeSlots) {
       const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
@@ -383,7 +391,7 @@ export default function ReportsView({
       payload.pricePerSlot = null;
       payload.slotsConfig = [];
     } else {
-      payload.projectId = projectId || null;
+      payload.projectId = isMultiProject ? null : (projectId || null);
       payload.channelBlogger = channelBlogger;
       payload.platform = platform;
       payload.slotsCount = slotsCount;
@@ -393,11 +401,22 @@ export default function ReportsView({
       let finalSlotsConfig = slotsConfig;
       if (customizeSlots) {
         finalSlotsConfig = [];
+        let slotIdx = 0;
         slotGroups.forEach(g => {
           for (let i = 0; i < g.quantity; i++) {
-            finalSlotsConfig.push({ platform: g.platform, format: g.format });
+            finalSlotsConfig.push({
+              platform: g.platform,
+              format: g.format,
+              projectId: isMultiProject ? (slotProjects[slotIdx] || null) : (projectId || null),
+            });
+            slotIdx++;
           }
         });
+      } else {
+        finalSlotsConfig = slotsConfig.map((s, idx) => ({
+          ...s,
+          projectId: isMultiProject ? (slotProjects[idx] || null) : (projectId || null),
+        }));
       }
       payload.slotsConfig = finalSlotsConfig;
     }
@@ -616,27 +635,118 @@ export default function ReportsView({
                         />
                       </div>
 
-                      {/* Project Select */}
+                      {/* Project Select / Multi-project configurator */}
                       <div>
-                        <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                          {t.targetProjectField} {paymentType !== 'other' ? '*' : ''}
-                        </label>
-                        <select
-                          value={projectId}
-                          required={paymentType !== 'other'}
-                          onChange={(e) => setProjectId(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                        >
-                          <option value="" disabled={paymentType !== 'other'}>
-                            {paymentType === 'other'
-                              ? (lang === 'ru' ? '(Необязательно) Выберите проект' : lang === 'uz' ? '(Ixtiyoriy) Loyihani tanlang' : '(Optional) Select Project')
-                              : (lang === 'ru' ? 'Выберите проект *' : lang === 'uz' ? 'Loyihani tanlang *' : 'Select Project *')
-                            }
-                          </option>
-                          {projects.map(p => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
+                        {paymentType !== 'other' && (
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                              {t.targetProjectField} *
+                            </label>
+                          </div>
+                        )}
+
+                        {!isMultiProject ? (
+                          <select
+                            value={projectId}
+                            required={paymentType !== 'other'}
+                            onChange={(e) => setProjectId(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                          >
+                            <option value="" disabled={paymentType !== 'other'}>
+                              {paymentType === 'other'
+                                ? (lang === 'ru' ? '(Необязательно) Выберите проект' : lang === 'uz' ? '(Ixtiyoriy) Loyihani tanlang' : '(Optional) Select Project')
+                                : (lang === 'ru' ? 'Выберите проект *' : lang === 'uz' ? 'Loyihani tanlang *' : 'Select Project *')
+                              }
+                            </option>
+                            {projects.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg space-y-2.5">
+                            <p className="text-[9px] text-neutral-600 font-medium">
+                              {lang === 'ru'
+                                ? `Выберите проект для каждого из ${slotsCount} купленных слотов (цена слота: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)} $):`
+                                : lang === 'uz'
+                                ? `Sotib olingan ${slotsCount} ta slotning har biri uchun loyihani tanlang (1 slot: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)} $):`
+                                : `Specify project for each of the ${slotsCount} slots (price/slot: $${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)}):`}
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                              {Array.from({ length: slotsCount }).map((_, idx) => {
+                                const currentVal = slotProjects[idx] || '';
+                                const unitPrice = pricePerSlot === '' ? 0 : pricePerSlot;
+                                return (
+                                  <div key={idx} className="p-2 bg-white border border-neutral-200 rounded-md flex flex-col gap-1 shadow-3xs">
+                                    <div className="flex justify-between items-center text-[9px] font-bold">
+                                      <span className="text-black">Слот #{idx + 1}</span>
+                                      <span className="text-neutral-500">${formatPrice(unitPrice)}</span>
+                                    </div>
+                                    <select
+                                      value={currentVal}
+                                      onChange={(e) => {
+                                        const newProj = e.target.value;
+                                        setSlotProjects(prev => ({
+                                          ...prev,
+                                          [idx]: newProj,
+                                        }));
+                                      }}
+                                      className="w-full px-2 py-1 bg-white border border-neutral-200 rounded text-[10px] font-medium text-black focus:outline-none focus:border-black"
+                                    >
+                                      <option value="">-- {lang === 'ru' ? 'Не распределен (Резерв)' : lang === 'uz' ? 'Taqsimlanmagan (Zahira)' : 'Unassigned (Reserve)'} --</option>
+                                      {projects.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Summary breakdown */}
+                            <div className="p-2 bg-white border border-neutral-200 rounded-md text-[9px] space-y-1">
+                              <span className="font-bold text-neutral-400 uppercase tracking-wider block">
+                                {lang === 'ru' ? 'Итоговый бюджет по проектам:' : lang === 'uz' ? 'Loyihalar bo\'yicha yakuniy taqsimot:' : 'Budget per project:'}
+                              </span>
+                              {(() => {
+                                const unitPrice = pricePerSlot === '' ? 0 : pricePerSlot;
+                                const summary: { [name: string]: { slots: number; amount: number } } = {};
+                                let reserveSlots = 0;
+
+                                for (let i = 0; i < slotsCount; i++) {
+                                  const pId = slotProjects[i];
+                                  if (pId) {
+                                    const projName = projects.find(p => String(p.id) === String(pId))?.name || `Project #${pId}`;
+                                    if (!summary[projName]) {
+                                      summary[projName] = { slots: 0, amount: 0 };
+                                    }
+                                    summary[projName].slots += 1;
+                                    summary[projName].amount += unitPrice;
+                                  } else {
+                                    reserveSlots += 1;
+                                  }
+                                }
+
+                                return (
+                                  <div className="space-y-0.5 font-medium">
+                                    {Object.entries(summary).map(([pName, data]) => (
+                                      <div key={pName} className="flex justify-between items-center text-black">
+                                        <span>{pName}: <strong>{data.slots} слотов</strong></span>
+                                        <span className="font-bold">${formatPrice(data.amount)}</span>
+                                      </div>
+                                    ))}
+                                    {reserveSlots > 0 && (
+                                      <div className="flex justify-between items-center text-neutral-500 italic">
+                                        <span>{lang === 'ru' ? 'Не распределено (Резерв)' : lang === 'uz' ? 'Zahira' : 'Reserve'}: <strong>{reserveSlots} слотов</strong></span>
+                                        <span>${formatPrice(reserveSlots * unitPrice)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {paymentType === 'other' ? (

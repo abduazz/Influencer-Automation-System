@@ -45,7 +45,7 @@ class ReportController extends Controller
         $validated = $request->validate([
             'paymentType' => 'nullable|string|in:prepaid,full,other,remaining',
             'date' => 'required|date',
-            'projectId' => 'required_unless:paymentType,other|nullable|exists:projects,id',
+            'projectId' => 'nullable|exists:projects,id',
             'destination' => 'required|string|max:255',
             'channelBlogger' => 'required_unless:paymentType,other|nullable|string|max:255',
             'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX',
@@ -98,59 +98,95 @@ class ReportController extends Controller
 
         $report = Report::create($reportData);
 
-        // Auto-create or merge Integration record ONLY if paymentType is not other and project_id is not null
-        if ($paymentType !== 'other' && $report->project_id !== null) {
+        // Auto-create or merge Integration records for each allocated project
+        if ($paymentType !== 'other') {
             $cleanBloggerName = trim(str_replace(['@', '#'], '', $report->channel_blogger));
             
-            // Search for existing integration by project_id, platform, and blogger_name (case insensitive)
-            $existingIntegration = Integration::where('project_id', $report->project_id)
-                ->where('platform', $report->platform)
-                ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
-                ->first();
+            // Group slots by projectId
+            $projectGroups = [];
+            if (!empty($report->slots_config) && is_array($report->slots_config)) {
+                foreach ($report->slots_config as $slot) {
+                    $pId = !empty($slot['projectId']) ? (string)$slot['projectId'] : null;
+                    if ($pId !== null) {
+                        if (!isset($projectGroups[$pId])) {
+                            $projectGroups[$pId] = [
+                                'slots_count' => 0,
+                                'slots_config' => [],
+                            ];
+                        }
+                        $projectGroups[$pId]['slots_count']++;
+                        $projectGroups[$pId]['slots_config'][] = $slot;
+                    }
+                }
+            }
 
-            if ($existingIntegration) {
-                if ($paymentType === 'remaining') {
-                    // Update only paid slots for remaining payment (do not add to total slots)
-                    $newPaidSlotsCount = min($existingIntegration->slots_count, $existingIntegration->paid_slots_count + $report->paid_slots_count);
-                    $existingIntegration->update([
-                        'paid_slots_count' => $newPaidSlotsCount,
-                    ]);
+            // Fallback to single project_id if no per-slot project was specified
+            if (empty($projectGroups) && $report->project_id !== null) {
+                $projectGroups[(string)$report->project_id] = [
+                    'slots_count' => $report->slots_count,
+                    'slots_config' => $report->slots_config ?? [],
+                ];
+            }
+
+            foreach ($projectGroups as $targetProjectId => $group) {
+                $existingIntegration = Integration::where('project_id', $targetProjectId)
+                    ->where('platform', $report->platform)
+                    ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                    ->first();
+
+                $groupSlotsCount = $group['slots_count'];
+                $groupSlotsConfig = $group['slots_config'];
+
+                if ($paymentType === 'full') {
+                    $groupPaidSlotsCount = $groupSlotsCount;
+                } else if ($paymentType === 'remaining') {
+                    $groupPaidSlotsCount = ($groupSlotsCount > 0) ? $groupSlotsCount : $report->paid_slots_count;
                 } else {
-                    // Merge data into existing integration
-                    $newSlotsCount = $existingIntegration->slots_count + $report->slots_count;
-                    $newPaidSlotsCount = $existingIntegration->paid_slots_count + $report->paid_slots_count;
-                    $mergedSlotsConfig = array_merge($existingIntegration->slots_config ?? [], $report->slots_config ?? []);
+                    $groupPaidSlotsCount = ($report->slots_count > 0)
+                        ? (int) round(($groupSlotsCount / $report->slots_count) * $report->paid_slots_count)
+                        : $report->paid_slots_count;
+                }
 
-                    $existingIntegration->update([
-                        'price_per_slot' => $report->price_per_slot, // update to latest price
-                        'slots_count' => $newSlotsCount,
-                        'paid_slots_count' => $newPaidSlotsCount,
-                        'slots_config' => $mergedSlotsConfig,
+                if ($existingIntegration) {
+                    if ($paymentType === 'remaining') {
+                        $newPaidSlotsCount = min($existingIntegration->slots_count, $existingIntegration->paid_slots_count + $groupPaidSlotsCount);
+                        $existingIntegration->update([
+                            'paid_slots_count' => $newPaidSlotsCount,
+                        ]);
+                    } else {
+                        $newSlotsCount = $existingIntegration->slots_count + $groupSlotsCount;
+                        $newPaidSlotsCount = $existingIntegration->paid_slots_count + $groupPaidSlotsCount;
+                        $mergedSlotsConfig = array_merge($existingIntegration->slots_config ?? [], $groupSlotsConfig);
+
+                        $existingIntegration->update([
+                            'price_per_slot' => $report->price_per_slot,
+                            'slots_count' => $newSlotsCount,
+                            'paid_slots_count' => $newPaidSlotsCount,
+                            'slots_config' => $mergedSlotsConfig,
+                        ]);
+                    }
+                } else {
+                    $slugName = Str::slug($cleanBloggerName, '_');
+                    $token = 'tok_' . time() . '_' . Str::random(6) . '_' . $slugName;
+                    $referralLink = $report->destination;
+                    $startDate = \Carbon\Carbon::parse($report->date);
+                    $endDate = $startDate->copy()->addDays(14);
+
+                    Integration::create([
+                        'project_id' => $targetProjectId,
+                        'blogger_name' => $cleanBloggerName,
+                        'start_date' => $startDate,
+                        'platform' => $report->platform,
+                        'referral_link' => $referralLink,
+                        'price_per_slot' => $report->price_per_slot,
+                        'slots_count' => $groupSlotsCount,
+                        'paid_slots_count' => $groupPaidSlotsCount,
+                        'end_date' => $endDate,
+                        'status' => 'active',
+                        'blogger_cabinet_token' => $token,
+                        'slots_config' => $groupSlotsConfig,
                     ]);
                 }
-            } else {
-                // Create new integration
-                $slugName = Str::slug($cleanBloggerName, '_');
-                $token = 'tok_' . time() . '_' . $slugName;
-                $referralLink = $report->destination;
-                
-                $startDate = \Carbon\Carbon::parse($report->date);
-                $endDate = $startDate->copy()->addDays(14);
-
-                Integration::create([
-                    'project_id' => $report->project_id,
-                    'blogger_name' => $cleanBloggerName,
-                    'start_date' => $startDate,
-                    'platform' => $report->platform,
-                    'referral_link' => $referralLink,
-                    'price_per_slot' => $report->price_per_slot,
-                    'slots_count' => $paymentType === 'remaining' ? $report->paid_slots_count : $report->slots_count,
-                    'paid_slots_count' => $report->paid_slots_count,
-                    'end_date' => $endDate,
-                    'status' => 'active',
-                    'blogger_cabinet_token' => $token,
-                    'slots_config' => $report->slots_config,
-                ]);
             }
         }
 
@@ -159,14 +195,26 @@ class ReportController extends Controller
         $report->load('project');
 
         $cabinetToken = null;
-        if ($paymentType !== 'other' && $report->project_id !== null) {
+        if ($paymentType !== 'other') {
             $cleanBloggerName = trim(str_replace(['@', '#'], '', $report->channel_blogger));
-            $integration = Integration::where('project_id', $report->project_id)
-                ->where('platform', $report->platform)
-                ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
-                ->first();
-            if ($integration) {
-                $cabinetToken = $integration->blogger_cabinet_token;
+            $targetProj = $report->project_id;
+            if (!$targetProj && !empty($report->slots_config)) {
+                foreach ($report->slots_config as $slot) {
+                    if (!empty($slot['projectId'])) {
+                        $targetProj = $slot['projectId'];
+                        break;
+                    }
+                }
+            }
+
+            if ($targetProj) {
+                $integration = Integration::where('project_id', $targetProj)
+                    ->where('platform', $report->platform)
+                    ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                    ->first();
+                if ($integration) {
+                    $cabinetToken = $integration->blogger_cabinet_token;
+                }
             }
         }
 

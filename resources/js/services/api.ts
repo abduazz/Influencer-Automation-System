@@ -1,4 +1,4 @@
-import { Project, Integration, Report, BloggerSubmission, AllowedUser } from '../data/mockData';
+import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase } from '../data/mockData';
 
 // Fetch helper that handles errors
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -144,3 +144,36 @@ export function fetchLogs(): Promise<LogEntry[]> {
 export function clearLogs(): Promise<void> {
   return request<void>('/api/logs', { method: 'DELETE' });
 }
+
+// Bulk Purchases API
+export function fetchBulkPurchases(): Promise<BulkPurchase[]> {
+  return request<BulkPurchase[]>('/api/bulk-purchases');
+}
+export function createBulkPurchase(data: {
+  bloggerName: string;
+  platform: string;
+  totalSlots: number;
+  pricePerSlot: number;
+  paidAmount?: number;
+  purchaseDate: string;
+  referralLink?: string;
+  receipt?: string | null;
+  comments?: string;
+}, userEmail?: string): Promise<BulkPurchase> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
+  return request<BulkPurchase>('/api/bulk-purchases', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+}
+export function allocateBulkPurchaseSlots(bulkPurchaseId: string, projectId: string, slotsCount: number): Promise<BulkPurchase> {
+  return request<BulkPurchase>(`/api/bulk-purchases/${bulkPurchaseId}/allocate`, {
+    method: 'POST',
+    body: JSON.stringify({ projectId, slotsCount }),
+  });
+}
+export function deleteBulkPurchase(id: string): Promise<void> {
+  return request<void>(`/api/bulk-purchases/${id}`, { method: 'DELETE' });
+}
+

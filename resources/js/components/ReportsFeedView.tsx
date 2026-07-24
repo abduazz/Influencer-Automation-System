@@ -30,8 +30,11 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
 
   // Filtering reports based on search query
   const filteredReports = reports.filter(rep => {
-    const resolvedProject = projects.find(p => p.id === rep.projectId);
-    const projectName = resolvedProject?.name || '';
+    const resolvedProject = projects.find(p => String(p.id) === String(rep.projectId));
+    const multiProjectNames = rep.slotsConfig
+      ? rep.slotsConfig.map(s => s.projectId ? projects.find(p => String(p.id) === String(s.projectId))?.name : '').filter(Boolean).join(' ')
+      : '';
+    const projectName = (resolvedProject?.name || '') + ' ' + multiProjectNames;
     const blogger = rep.channelBlogger || '';
     const destination = rep.destination || '';
     const comments = rep.comments || '';
@@ -44,6 +47,48 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
       comments.toLowerCase().includes(searchLower)
     );
   });
+
+  const renderProjectCell = (rep: Report) => {
+    if (rep.projectId) {
+      const p = projects.find(proj => String(proj.id) === String(rep.projectId));
+      return p ? p.name : '—';
+    }
+
+    if (rep.slotsConfig && rep.slotsConfig.length > 0) {
+      const counts: { [name: string]: number } = {};
+      let reserve = 0;
+
+      rep.slotsConfig.forEach((s) => {
+        if (s.projectId) {
+          const p = projects.find(proj => String(proj.id) === String(s.projectId));
+          const name = p ? p.name : `Proj #${s.projectId}`;
+          counts[name] = (counts[name] || 0) + 1;
+        } else {
+          reserve++;
+        }
+      });
+
+      const entries = Object.entries(counts);
+      if (entries.length > 0 || reserve > 0) {
+        return (
+          <div className="flex flex-wrap gap-1 items-center">
+            {entries.map(([pName, cnt]) => (
+              <span key={pName} className="px-1.5 py-0.5 text-[9px] font-bold bg-neutral-100 border border-neutral-200 rounded text-neutral-800">
+                {pName}: {cnt}
+              </span>
+            ))}
+            {reserve > 0 && (
+              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-amber-50 border border-amber-200 rounded text-amber-800">
+                {lang === 'ru' ? 'Резерв' : lang === 'uz' ? 'Zahira' : 'Reserve'}: {reserve}
+              </span>
+            )}
+          </div>
+        );
+      }
+    }
+
+    return '—';
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
@@ -168,7 +213,7 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
 
                       {/* Project */}
                       <td className="px-5 py-4 whitespace-nowrap font-bold text-neutral-700">
-                        {resolvedProject?.name || '—'}
+                        {renderProjectCell(rep)}
                       </td>
 
                       {/* Blogger / Expense */}
@@ -295,9 +340,9 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                     <h4 className="font-extrabold text-xs text-black uppercase tracking-tight group-hover:text-neutral-600 transition">
                       {isOther ? t.paymentOther : rep.channelBlogger}
                     </h4>
-                    <p className="text-[9px] text-neutral-400 font-medium mt-0.5">
-                      {t.campaignTitleField}: <span className="text-neutral-700 font-bold">{resolvedProject?.name || '—'}</span>
-                    </p>
+                    <div className="text-[9px] text-neutral-400 font-medium mt-0.5 flex items-center gap-1">
+                      <span>{t.campaignTitleField}:</span> <div className="text-neutral-700 font-bold">{renderProjectCell(rep)}</div>
+                    </div>
                     {rep.createdBy && (
                       <p className="text-[9px] text-neutral-400 font-medium mt-0.5">
                         {t.createdByField}: <span className="text-neutral-700 font-bold">{rep.createdBy}</span>

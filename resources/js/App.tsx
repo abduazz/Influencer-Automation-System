@@ -13,6 +13,7 @@ import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import ReportsView from './components/ReportsView';
 import ReportsFeedView from './components/ReportsFeedView';
+import BulkPurchasesView from './components/BulkPurchasesView';
 import BloggerCabinetView from './components/BloggerCabinetView';
 import AccessManagementView from './components/AccessManagementView';
 import LogsView from './components/LogsView';
@@ -37,6 +38,7 @@ import {
   deleteReport,
   fetchSubmissions,
   createSubmission,
+  fetchBulkPurchases,
 } from './services/api';
 
 import {
@@ -45,6 +47,7 @@ import {
   Report,
   BloggerSubmission,
   AllowedUser,
+  BulkPurchase,
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
@@ -169,6 +172,24 @@ export default function App() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [submissions, setSubmissions] = useState<BloggerSubmission[]>([]);
+  const [bulkPurchases, setBulkPurchases] = useState<BulkPurchase[]>([]);
+
+  const handleRefreshAllData = async () => {
+    try {
+      const [projs, ints, reps, bulks] = await Promise.all([
+        fetchProjects(),
+        fetchIntegrations(),
+        fetchReports(),
+        fetchBulkPurchases(),
+      ]);
+      setProjects(projs);
+      setIntegrations(ints);
+      setReports(reps);
+      setBulkPurchases(bulks);
+    } catch (err) {
+      console.error("Failed to refresh data", err);
+    }
+  };
 
   // Load all data from server
   useEffect(() => {
@@ -176,12 +197,13 @@ export default function App() {
 
     async function loadData() {
       try {
-        const [users, projs, ints, reps, subs] = await Promise.all([
+        const [users, projs, ints, reps, subs, bulks] = await Promise.all([
           fetchAllowedUsers(),
           fetchProjects(),
           fetchIntegrations(),
           fetchReports(),
-          fetchSubmissions()
+          fetchSubmissions(),
+          fetchBulkPurchases(),
         ]);
 
         if (!cancelled) {
@@ -190,6 +212,7 @@ export default function App() {
           setIntegrations(ints);
           setReports(reps);
           setSubmissions(subs);
+          setBulkPurchases(bulks);
         }
       } catch (err) {
         console.error("Failed to load backend data", err);
@@ -528,6 +551,17 @@ export default function App() {
                 isWebApp={isTelegramWebApp}
                 initialState={reportsInitialState}
                 onClearInitialState={() => setReportsInitialState(null)}
+              />
+            )}
+
+            {activeTab === 'bulk_purchases' && currentUserRole !== 'product_manager' && (
+              <BulkPurchasesView
+                projects={projects}
+                bulkPurchases={bulkPurchases}
+                onRefreshData={handleRefreshAllData}
+                lang={lang}
+                userEmail={currentUserEmail || undefined}
+                userRole={currentUserRole}
               />
             )}
 

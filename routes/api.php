@@ -31,6 +31,11 @@ Route::get('/blogger-submissions', [BloggerSubmissionController::class, 'index']
 Route::post('/blogger-submissions', [BloggerSubmissionController::class, 'store']);
 Route::delete('/blogger-submissions/{id}', [BloggerSubmissionController::class, 'destroy']);
 
+Route::get('/bulk-purchases', [\App\Http\Controllers\Api\BulkPurchaseController::class, 'index']);
+Route::post('/bulk-purchases', [\App\Http\Controllers\Api\BulkPurchaseController::class, 'store']);
+Route::post('/bulk-purchases/{bulkPurchase}/allocate', [\App\Http\Controllers\Api\BulkPurchaseController::class, 'allocate']);
+Route::delete('/bulk-purchases/{bulkPurchase}', [\App\Http\Controllers\Api\BulkPurchaseController::class, 'destroy']);
+
 
 Route::get('/logs', [\App\Http\Controllers\Api\LogController::class, 'index']);
 Route::delete('/logs', [\App\Http\Controllers\Api\LogController::class, 'destroy']);

@@ -23,8 +23,8 @@ import {
 import { Language, translations } from '../translations';
 
 interface SidebarProps {
-  activeTab: 'projects' | 'reports' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
-  setActiveTab: (tab: 'projects' | 'reports' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
+  activeTab: 'projects' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
+  setActiveTab: (tab: 'projects' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
   projectsCount: number;
   integrationsCount: number;
   lang: Language;
@@ -139,6 +139,24 @@ export default function Sidebar({
               <div className="flex items-center gap-3.5">
                 <FilePlus className="w-4 h-4" />
                 {!isCollapsed && <span>{t.createReport}</span>}
+              </div>
+            </button>
+          )}
+
+          {userRole !== 'product_manager' && hasAccess('reports') && (
+            <button
+              id="nav-bulk-purchases-btn"
+              onClick={() => setActiveTab('bulk_purchases')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'bulk_purchases'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases'}
+            >
+              <div className="flex items-center gap-3.5">
+                <Layers className="w-4 h-4" />
+                {!isCollapsed && <span>{lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases'}</span>}
               </div>
             </button>
           )}

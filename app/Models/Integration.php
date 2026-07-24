@@ -49,7 +49,7 @@ class Integration extends Model
 
             if (blank($integration->blogger_cabinet_token)) {
                 $cleanName = Str::slug(str_replace(['@', '#'], '', $integration->blogger_name), '_');
-                $integration->blogger_cabinet_token = 'tok_' . time() . '_' . $cleanName;
+                $integration->blogger_cabinet_token = 'tok_' . time() . '_' . Str::random(6) . '_' . $cleanName;
             }
         });
     }

@@ -390,14 +390,14 @@ export default function App() {
 
   // Resolve allowed pages for the active user
   const activeUser = allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase());
-  const allowedPages = activeUser?.allowedPages || ['projects', 'reports', 'reports_feed', 'other_expenses'];
+  const allowedPages = activeUser?.allowedPages || ['projects', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
 
   // Enforce page-level access control: redirect user to their first allowed page if active tab is forbidden
   useEffect(() => {
     if (isBloggerCabinetRoute) return;
     if (!currentUserRole || currentUserRole === 'super_admin') return;
 
-    const isAllowedTab = allowedPages.includes(activeTab);
+    const isAllowedTab = activeTab === 'bulk_purchases' ? true : allowedPages.includes(activeTab);
     const isSystemTab = ['access', 'logs', 'blogger'].includes(activeTab);
 
     if (!isAllowedTab && !isSystemTab) {
@@ -554,7 +554,7 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'bulk_purchases' && currentUserRole !== 'product_manager' && (
+            {activeTab === 'bulk_purchases' && (
               <BulkPurchasesView
                 projects={projects}
                 bulkPurchases={bulkPurchases}
@@ -658,19 +658,17 @@ export default function App() {
           )}
 
           {/* Bulk Purchases Tab */}
-          {currentUserRole !== 'product_manager' && (
-            <button
-              onClick={() => setActiveTab('bulk_purchases')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-                activeTab === 'bulk_purchases' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              <Layers className="w-5 h-5" />
-              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-                {lang === 'ru' ? 'Оптовая' : lang === 'uz' ? 'Ommaviy' : 'Bulk'}
-              </span>
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('bulk_purchases')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+              activeTab === 'bulk_purchases' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+            }`}
+          >
+            <Layers className="w-5 h-5" />
+            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+              {lang === 'ru' ? 'Оптовая' : lang === 'uz' ? 'Ommaviy' : 'Bulk'}
+            </span>
+          </button>
 
           {/* Reports Feed Tab */}
           {currentUserRole !== 'product_manager' && (

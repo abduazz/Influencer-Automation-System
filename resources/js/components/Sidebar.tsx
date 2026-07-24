@@ -55,10 +55,7 @@ export default function Sidebar({
 
   const hasAccess = (pageKey: string) => {
     if (userRole === 'super_admin') return true;
-    if (pageKey === 'bulk_purchases') {
-      if (!allowedPages || allowedPages.length === 0) return true;
-      return allowedPages.includes('bulk_purchases') || allowedPages.includes('reports');
-    }
+    if (pageKey === 'bulk_purchases') return true;
     return (allowedPages || ['projects', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
   };
 
@@ -147,7 +144,7 @@ export default function Sidebar({
             </button>
           )}
 
-          {userRole !== 'product_manager' && hasAccess('reports') && (
+          {hasAccess('bulk_purchases') && (
             <button
               id="nav-bulk-purchases-btn"
               onClick={() => setActiveTab('bulk_purchases')}

@@ -55,7 +55,11 @@ export default function Sidebar({
 
   const hasAccess = (pageKey: string) => {
     if (userRole === 'super_admin') return true;
-    return (allowedPages || ['projects', 'reports', 'reports_feed', 'other_expenses']).includes(pageKey);
+    if (pageKey === 'bulk_purchases') {
+      if (!allowedPages || allowedPages.length === 0) return true;
+      return allowedPages.includes('bulk_purchases') || allowedPages.includes('reports');
+    }
+    return (allowedPages || ['projects', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
   };
 
   return (

@@ -657,6 +657,21 @@ export default function App() {
             </button>
           )}
 
+          {/* Bulk Purchases Tab */}
+          {currentUserRole !== 'product_manager' && (
+            <button
+              onClick={() => setActiveTab('bulk_purchases')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'bulk_purchases' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <Layers className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Оптовая' : lang === 'uz' ? 'Ommaviy' : 'Bulk'}
+              </span>
+            </button>
+          )}
+
           {/* Reports Feed Tab */}
           {currentUserRole !== 'product_manager' && (
             <button

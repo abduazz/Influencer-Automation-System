@@ -49,6 +49,7 @@ export default function AccessManagementView({
     super_admin: false,
     projects: true,
     reports: true,
+    bulk_purchases: true,
     reports_feed: true,
     other_expenses: true
   });
@@ -346,6 +347,7 @@ export default function AccessManagementView({
                   { key: 'super_admin', label: t.pageSuperAdmin },
                   { key: 'projects', label: t.pageProjects },
                   { key: 'reports', label: t.pageReports },
+                  { key: 'bulk_purchases', label: lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases' },
                   { key: 'reports_feed', label: t.pageReportsFeed },
                   { key: 'other_expenses', label: t.pageOtherExpenses },
                 ].map((p) => {

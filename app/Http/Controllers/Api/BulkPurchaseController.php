@@ -192,8 +192,7 @@ class BulkPurchaseController extends Controller
                 'slots_config' => $mergedSlotsConfig,
             ]);
         } else {
-            $slugName = Str::slug($cleanBloggerName, '_');
-            $token = 'tok_' . time() . '_' . Str::random(6) . '_' . $slugName;
+            $token = Integration::generateCabinetToken($cleanBloggerName);
             $startDate = now();
             $endDate = $startDate->copy()->addDays(14);
 

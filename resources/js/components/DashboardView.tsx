@@ -1260,7 +1260,7 @@ export default function DashboardView({
                     {lang === 'ru' ? 'Ссылка для отчета блогера' : lang === 'uz' ? 'Blogger hisoboti havolasi' : 'Blogger Execution Report Link'}
                   </p>
                   {(() => {
-                    const cabinetUrl = `${window.location.origin}/?cabinet=true&id=${selectedIntegrationForDetails.bloggerCabinetToken || selectedIntegrationForDetails.id}`;
+                    const cabinetUrl = `${window.location.origin}/c/${selectedIntegrationForDetails.bloggerCabinetToken || selectedIntegrationForDetails.id}`;
                     return (
                       <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
                         <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{cabinetUrl}</span>

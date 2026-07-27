@@ -441,7 +441,7 @@ export default function ReportsView({
       const toastSubject = paymentType === 'other' ? destination : channelBlogger;
       let cabinetLink: string | null = null;
       if (createdReport?.bloggerCabinetToken) {
-        cabinetLink = `${window.location.origin}/?cabinet=true&id=${createdReport.bloggerCabinetToken}`;
+        cabinetLink = `${window.location.origin}/c/${createdReport.bloggerCabinetToken}`;
       }
 
       setSuccessToast({
@@ -523,7 +523,7 @@ export default function ReportsView({
                           <input
                             type="text"
                             readOnly
-                            value={`${window.location.origin}/?cabinet=true&id=${createdReportResult.bloggerCabinetToken}`}
+                            value={`${window.location.origin}/c/${createdReportResult.bloggerCabinetToken}`}
                             onClick={(e) => {
                               const target = e.target as HTMLInputElement;
                               target.select();
@@ -534,7 +534,7 @@ export default function ReportsView({
                           <button
                             type="button"
                             onClick={() => {
-                              const url = `${window.location.origin}/?cabinet=true&id=${createdReportResult.bloggerCabinetToken}`;
+                              const url = `${window.location.origin}/c/${createdReportResult.bloggerCabinetToken}`;
                               navigator.clipboard.writeText(url);
                               alert(lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!');
                             }}

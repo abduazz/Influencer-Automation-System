@@ -41,6 +41,13 @@ class Integration extends Model
         'slots_config' => 'array',
     ];
 
+    public static function generateCabinetToken(string $bloggerName): string
+    {
+        $slug = Str::slug(str_replace(['@', '#'], '', $bloggerName));
+        $suffix = Str::lower(Str::random(6));
+        return $slug ? ($slug . '-' . $suffix) : $suffix;
+    }
+
     protected static function booted(): void
     {
         static::saving(function (Integration $integration): void {
@@ -49,8 +56,7 @@ class Integration extends Model
             $integration->paid_amount = $integration->price_per_slot * $paidSlots;
 
             if (blank($integration->blogger_cabinet_token)) {
-                $cleanName = Str::slug(str_replace(['@', '#'], '', $integration->blogger_name), '_');
-                $integration->blogger_cabinet_token = 'tok_' . time() . '_' . Str::random(6) . '_' . $cleanName;
+                $integration->blogger_cabinet_token = self::generateCabinetToken($integration->blogger_name);
             }
         });
     }

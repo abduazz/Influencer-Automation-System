@@ -18,7 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Language, translations } from '../translations';
-import { shortenUrl } from '../services/api';
+
 
 interface BloggerCabinetViewProps {
   projects: Project[];
@@ -98,7 +98,7 @@ export default function BloggerCabinetView({
   const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Instagram');
   const [activeSlotsCount, setActiveSlotsCount] = useState<number>(4);
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>('int-2');
-  const [isShortening, setIsShortening] = useState(false);
+
 
   const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId);
   const resolvedProject = projects.find(p => p.id === selectedIntegration?.projectId);
@@ -329,23 +329,18 @@ export default function BloggerCabinetView({
           <button
             onClick={async () => {
               const tokenOrId = selectedIntegration?.bloggerCabinetToken || selectedIntegrationId;
-              const longUrl = `${window.location.origin}/c/${tokenOrId}`;
-              setIsShortening(true);
+              const cabinetUrl = `${window.location.origin}/c/${tokenOrId}`;
               try {
-                const shortUrl = await shortenUrl(longUrl);
-                await navigator.clipboard.writeText(shortUrl);
-                alert(`${t.copiedAlert}\n${shortUrl}`);
+                await navigator.clipboard.writeText(cabinetUrl);
+                alert(`${t.copiedAlert}\n${cabinetUrl}`);
               } catch (err) {
-                console.error("Failed to copy short URL", err);
-              } finally {
-                setIsShortening(false);
+                console.error("Failed to copy cabinet URL", err);
               }
             }}
-            disabled={isShortening}
-            className="px-3.5 py-1.5 bg-black hover:bg-neutral-900 text-white font-extrabold rounded-lg transition duration-100 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-3.5 py-1.5 bg-black hover:bg-neutral-900 text-white font-extrabold rounded-lg transition duration-100 flex items-center gap-1.5 cursor-pointer"
           >
             <Link className="w-3.5 h-3.5" />
-            <span>{isShortening ? (lang === 'ru' ? 'Сокращение...' : 'Shortening...') : (lang === 'ru' ? 'Копировать ссылку для блогера' : lang === 'uz' ? 'Blogger havolasini nusxalash' : 'Copy Blogger Link')}</span>
+            <span>{lang === 'ru' ? 'Копировать ссылку для блогера' : lang === 'uz' ? 'Blogger havolasini nusxalash' : 'Copy Blogger Link'}</span>
           </button>
         </div>
       )}

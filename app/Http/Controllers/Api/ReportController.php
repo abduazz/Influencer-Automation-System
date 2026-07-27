@@ -178,8 +178,7 @@ class ReportController extends Controller
                         $existingIntegration->update($existingIntegrationUpdate);
                     }
                 } else {
-                    $slugName = Str::slug($cleanBloggerName, '_');
-                    $token = 'tok_' . time() . '_' . Str::random(6) . '_' . $slugName;
+                    $token = Integration::generateCabinetToken($cleanBloggerName);
                     $referralLink = $report->destination;
                     $startDate = \Carbon\Carbon::parse($report->date);
                     $endDate = $startDate->copy()->addDays(14);

@@ -266,10 +266,7 @@ export default function BulkPurchasesView({
                 <div>
                   <div className="flex items-start justify-between gap-2 border-b border-neutral-100 pb-3">
                     <div>
-                      <span className="px-2 py-0.5 text-[9px] font-bold rounded border bg-neutral-50 text-neutral-600 border-neutral-200 uppercase">
-                        {bp.platform}
-                      </span>
-                      <h3 className="font-black text-sm text-black uppercase tracking-tight mt-1">
+                      <h3 className="font-black text-sm text-black uppercase tracking-tight">
                         {bp.bloggerName}
                       </h3>
                       <p className="text-[10px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">

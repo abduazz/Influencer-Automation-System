@@ -72,7 +72,8 @@ export const translations = {
     pricePerSlotLabel: 'Price per Slot *',
     startDateLabel: 'Start Date *',
     endDateLabel: 'End Date *',
-    referralLinkLabel: 'Referral Link *',
+    referralLinkLabel: 'Referral Link',
+    bloggerPageLinkLabel: 'Blogger Page Link *',
 
     // Reports View
     tgReportsTitle: 'Telegram Mini App Reports',
@@ -173,7 +174,6 @@ export const translations = {
     metricRemainingToPay: 'Remaining to Pay',
     metricSlotsPublished: 'Slots Published',
     integrationDetailsTitle: 'Integration Details',
-    bloggerCabinetTitle: 'Blogger Cabinet',
     notPublishedLabel: 'Not published',
     publicationLinkLabel: 'Publication Link',
     metricSlotsRemaining: 'Slots Remaining',
@@ -282,7 +282,8 @@ export const translations = {
     pricePerSlotLabel: 'Цена за слот *',
     startDateLabel: 'Дата начала *',
     endDateLabel: 'Дата окончания *',
-    referralLinkLabel: 'Реферальная ссылка *',
+    referralLinkLabel: 'Реферальная ссылка',
+    bloggerPageLinkLabel: 'Ссылка на страницу блогера *',
 
     // Reports View
     tgReportsTitle: 'Отчеты Telegram Mini App',
@@ -383,7 +384,6 @@ export const translations = {
     metricRemainingToPay: 'Осталось выплатить',
     metricSlotsPublished: 'Выставлено слотов',
     integrationDetailsTitle: 'Детали интеграции',
-    bloggerCabinetTitle: 'Кабинет блогера',
     notPublishedLabel: 'Не опубликовано',
     publicationLinkLabel: 'Ссылка на публикацию',
     metricSlotsRemaining: 'Осталось выставить',
@@ -492,7 +492,8 @@ export const translations = {
     pricePerSlotLabel: 'Slot narxi *',
     startDateLabel: 'Boshlanish sanasi *',
     endDateLabel: 'Tugash sanasi *',
-    referralLinkLabel: 'Referal havola *',
+    referralLinkLabel: 'Referal havola',
+    bloggerPageLinkLabel: 'Blogger sahifasi havolasi *',
 
     // Reports View
     tgReportsTitle: 'Telegram Mini App Hisobotlari',
@@ -593,7 +594,6 @@ export const translations = {
     metricRemainingToPay: 'To‘lanishi kerak bo‘lgan qoldiq',
     metricSlotsPublished: 'Joylashtirilgan slotlar',
     integrationDetailsTitle: 'Integratsiya tafsilotlari',
-    bloggerCabinetTitle: 'Blogger kabineti',
     notPublishedLabel: 'Chop etilmagan',
     publicationLinkLabel: 'Nashr havolasi',
     metricSlotsRemaining: 'Joylashtirilishi qolgan slotlar',

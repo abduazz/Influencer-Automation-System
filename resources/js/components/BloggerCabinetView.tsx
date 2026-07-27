@@ -457,10 +457,28 @@ export default function BloggerCabinetView({
                 <form onSubmit={handleSubmit} className="space-y-4 max-w-xl mx-auto w-full">
                   <div className="flex justify-between items-center border-b border-neutral-100 pb-3 mb-4">
                     <div className="text-left">
-                      <h2 className="text-base font-black text-black tracking-tight">
-                        {t.bloggerCabinetTitle} {projectName ? `— ${projectName}` : ''}
+                      <h2 className="text-base font-black text-black tracking-tight flex items-center gap-2">
+                        <span>{t.bloggerCabinetTitle} {projectName ? `— ${projectName}` : ''}</span>
                       </h2>
-                      <p className="text-[10px] text-neutral-500 mt-0.5">
+                      {selectedIntegration && (
+                        <div className="flex items-center gap-2 mt-1 text-xs font-bold text-neutral-700">
+                          {selectedIntegration.bloggerName && (
+                            <span>👤 {selectedIntegration.bloggerName}</span>
+                          )}
+                          {selectedIntegration.bloggerPageLink && (
+                            <a
+                              href={selectedIntegration.bloggerPageLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200 text-[10px] text-blue-600 font-extrabold hover:underline"
+                            >
+                              <span>{lang === 'ru' ? 'Страница блогера' : lang === 'uz' ? 'Blogger sahifasi' : 'Blogger Page'}</span>
+                              <ExternalLink className="w-3 h-3 text-blue-500" />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-[10px] text-neutral-500 mt-1">
                         {lang === 'ru' ? 'Слоты по платформам' : lang === 'uz' ? 'Platformalar bo‘yicha slotlar' : 'Slots by Platform'}:{' '}
                         <span className="font-bold text-black">{getSlotSummaryString()}</span>
                       </p>

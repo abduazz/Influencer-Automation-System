@@ -16,6 +16,7 @@ class Report extends Model
         'project_id',
         'destination',
         'channel_blogger',
+        'blogger_page_link',
         'platform',
         'slots_count',
         'paid_slots_count',

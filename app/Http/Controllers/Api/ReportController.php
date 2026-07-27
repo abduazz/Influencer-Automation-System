@@ -20,6 +20,7 @@ class ReportController extends Controller
                 'projectName' => $report->project?->name ?? '',
                 'destination' => $report->destination,
                 'channelBlogger' => $report->channel_blogger,
+                'bloggerPageLink' => $report->blogger_page_link,
                 'platform' => $report->platform,
                 'slotsCount' => $report->slots_count,
                 'paidSlotsCount' => $report->paid_slots_count,
@@ -46,8 +47,9 @@ class ReportController extends Controller
             'paymentType' => 'nullable|string|in:prepaid,full,other,remaining',
             'date' => 'required|date',
             'projectId' => 'nullable|exists:projects,id',
-            'destination' => 'required|string|max:255',
+            'destination' => 'nullable|string|max:255',
             'channelBlogger' => 'required_unless:paymentType,other|nullable|string|max:255',
+            'bloggerPageLink' => 'required_unless:paymentType,other|nullable|string',
             'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX',
             'slotsCount' => 'required_unless:paymentType,other|nullable|integer|min:0',
             'paidSlotsCount' => 'required_unless:paymentType,other|nullable|integer|min:0',
@@ -85,10 +87,12 @@ class ReportController extends Controller
             $reportData['slots_count'] = 1;
             $reportData['paid_slots_count'] = 1;
             $reportData['channel_blogger'] = null;
+            $reportData['blogger_page_link'] = null;
             $reportData['platform'] = null;
             $reportData['slots_config'] = null;
         } else {
             $reportData['channel_blogger'] = $request->channelBlogger;
+            $reportData['blogger_page_link'] = $request->bloggerPageLink;
             $reportData['platform'] = $request->platform;
             $reportData['slots_count'] = $request->slotsCount;
             $reportData['paid_slots_count'] = $request->paidSlotsCount;
@@ -150,20 +154,28 @@ class ReportController extends Controller
                 if ($existingIntegration) {
                     if ($paymentType === 'remaining') {
                         $newPaidSlotsCount = min($existingIntegration->slots_count, $existingIntegration->paid_slots_count + $groupPaidSlotsCount);
-                        $existingIntegration->update([
+                        $existingIntegrationUpdate = [
                             'paid_slots_count' => $newPaidSlotsCount,
-                        ]);
+                        ];
+                        if (!empty($report->blogger_page_link)) {
+                            $existingIntegrationUpdate['blogger_page_link'] = $report->blogger_page_link;
+                        }
+                        $existingIntegration->update($existingIntegrationUpdate);
                     } else {
                         $newSlotsCount = $existingIntegration->slots_count + $groupSlotsCount;
                         $newPaidSlotsCount = $existingIntegration->paid_slots_count + $groupPaidSlotsCount;
                         $mergedSlotsConfig = array_merge($existingIntegration->slots_config ?? [], $groupSlotsConfig);
 
-                        $existingIntegration->update([
+                        $existingIntegrationUpdate = [
                             'price_per_slot' => $report->price_per_slot,
                             'slots_count' => $newSlotsCount,
                             'paid_slots_count' => $newPaidSlotsCount,
                             'slots_config' => $mergedSlotsConfig,
-                        ]);
+                        ];
+                        if (!empty($report->blogger_page_link)) {
+                            $existingIntegrationUpdate['blogger_page_link'] = $report->blogger_page_link;
+                        }
+                        $existingIntegration->update($existingIntegrationUpdate);
                     }
                 } else {
                     $slugName = Str::slug($cleanBloggerName, '_');
@@ -175,6 +187,7 @@ class ReportController extends Controller
                     Integration::create([
                         'project_id' => $targetProjectId,
                         'blogger_name' => $cleanBloggerName,
+                        'blogger_page_link' => $report->blogger_page_link,
                         'start_date' => $startDate,
                         'platform' => $report->platform,
                         'referral_link' => $referralLink,

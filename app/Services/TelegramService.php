@@ -101,52 +101,37 @@ class TelegramService
                 'new_report' => '📝 <b>Создан новый отчет!</b>',
                 'date' => '📅 <b>Дата:</b>',
                 'project' => '📂 <b>Проект:</b>',
-                'payment_type' => '💳 <b>Тип оплаты:</b>',
                 'blogger' => '👤 <b>Блогер:</b>',
                 'platform' => '📱 <b>Платформа:</b>',
                 'slots_count' => '🔢 <b>Количество слотов:</b>',
                 'price_per_slot' => '💵 <b>Цена за слот:</b>',
                 'total_amount' => '💰 <b>Итоговая сумма:</b>',
-                'prepaid_amount' => '💳 <b>Сумма предоплаты:</b>',
                 'created_by' => '✍️ <b>Создан кем:</b>',
-                'prepaid' => 'Предоплата (Prepaid)',
-                'full' => 'Полная оплата (Full)',
-                'other' => 'Прочие расходы (Other)',
-                'remaining' => 'Доплата (Remaining)',
+                'comments' => '💬 <b>Комментарии:</b>',
             ],
             'en' => [
                 'new_report' => '📝 <b>New Report Created!</b>',
                 'date' => '📅 <b>Date:</b>',
                 'project' => '📂 <b>Project:</b>',
-                'payment_type' => '💳 <b>Payment Type:</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
                 'platform' => '📱 <b>Platform:</b>',
                 'slots_count' => '🔢 <b>Slots Count:</b>',
                 'price_per_slot' => '💵 <b>Price per Slot:</b>',
                 'total_amount' => '💰 <b>Total Amount:</b>',
-                'prepaid_amount' => '💳 <b>Prepayment Amount:</b>',
                 'created_by' => '✍️ <b>Created by:</b>',
-                'prepaid' => 'Prepayment (Prepaid)',
-                'full' => 'Full Payment (Full)',
-                'other' => 'Other Expenses (Other)',
-                'remaining' => 'Remaining Payment (Remaining)',
+                'comments' => '💬 <b>Comments:</b>',
             ],
             'uz' => [
                 'new_report' => '📝 <b>Yangi hisobot yaratildi!</b>',
                 'date' => '📅 <b>Sana:</b>',
                 'project' => '📂 <b>Loyiha:</b>',
-                'payment_type' => '💳 <b>To\'lov turi:</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
                 'platform' => '📱 <b>Platforma:</b>',
                 'slots_count' => '🔢 <b>Slotlar soni:</b>',
                 'price_per_slot' => '💵 <b>Slot narxi:</b>',
                 'total_amount' => '💰 <b>Jami summa:</b>',
-                'prepaid_amount' => '💳 <b>Oldindan to\'lov summasi:</b>',
                 'created_by' => '✍️ <b>Kim tomonidan yaratildi:</b>',
-                'prepaid' => 'Oldindan to\'lov (Prepaid)',
-                'full' => 'To\'liq to\'lov (Full)',
-                'other' => 'Boshqa xarajatlar (Other)',
-                'remaining' => 'Qo\'shimcha to\'lov (Remaining)',
+                'comments' => '💬 <b>Izohlar:</b>',
             ]
         ];
 
@@ -154,11 +139,23 @@ class TelegramService
         $l = isset($locales[$lang]) ? $lang : 'uz';
         $t = $locales[$l];
 
-        $paymentType = $t[$report->payment_type] ?? $report->payment_type;
-        if ($report->payment_type === 'prepaid' && $report->slots_count > 0) {
-            $percentage = round(($report->paid_slots_count / $report->slots_count) * 100);
-            $paymentType .= " - {$percentage}%";
+        // Suffix attached to Total Amount describing payment type
+        $paymentTypeSuffix = '';
+        if ($report->payment_type === 'full') {
+            $paymentTypeSuffix = '(Full)';
+        } else if ($report->payment_type === 'prepaid') {
+            if ($report->slots_count > 0 && $report->paid_slots_count > 0) {
+                $percentage = round(($report->paid_slots_count / $report->slots_count) * 100);
+                $paymentTypeSuffix = "(Prepaid {$percentage}%)";
+            } else {
+                $paymentTypeSuffix = '(Prepaid)';
+            }
+        } else if ($report->payment_type === 'remaining') {
+            $paymentTypeSuffix = '(Remaining)';
+        } else if ($report->payment_type === 'other') {
+            $paymentTypeSuffix = '(Other)';
         }
+
         $projectName = $report->project?->name ?? '—';
         $threadId = $report->project?->telegram_thread_id ?? null;
 
@@ -168,10 +165,13 @@ class TelegramService
         }
         $text .= "{$t['date']} " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";
         $text .= "{$t['project']} " . self::escape($projectName) . "\n";
-        $text .= "{$t['payment_type']} " . self::escape($paymentType) . "\n";
 
         if ($report->payment_type !== 'other') {
-            $text .= "{$t['blogger']} " . self::escape($report->channel_blogger ?? '—') . "\n";
+            $bloggerLine = self::escape($report->channel_blogger ?? '—');
+            if (!empty($report->blogger_page_link)) {
+                $bloggerLine .= " - " . self::escape($report->blogger_page_link);
+            }
+            $text .= "{$t['blogger']} {$bloggerLine}\n";
             $text .= "{$t['platform']} " . self::escape($report->platform ?? '—') . "\n";
             if ($report->payment_type === 'remaining') {
                 $slotsLabel = $lang === 'ru' ? '🔢 <b>Доплачено слотов:</b>' : ($lang === 'uz' ? '🔢 <b>Qo\'shimcha to\'langan slotlar:</b>' : '🔢 <b>Remaining Paid Slots:</b>');
@@ -182,11 +182,15 @@ class TelegramService
             $text .= "{$t['price_per_slot']} " . number_format($report->price_per_slot ?? 0, 0, '.', ' ') . " UZS\n";
         }
 
-        if ($report->payment_type === 'prepaid') {
-            $text .= "{$t['prepaid_amount']} " . number_format($report->paid_amount ?? 0, 0, '.', ' ') . " UZS\n";
+        $text .= "{$t['total_amount']} " . number_format($report->total_amount ?? 0, 0, '.', ' ') . " UZS";
+        if ($paymentTypeSuffix !== '') {
+            $text .= " - {$paymentTypeSuffix}";
         }
+        $text .= "\n";
 
-        $text .= "{$t['total_amount']} " . number_format($report->total_amount ?? 0, 0, '.', ' ') . " UZS\n";
+        if (!empty(trim($report->comments ?? ''))) {
+            $text .= "\n{$t['comments']} " . self::escape(trim($report->comments)) . "\n";
+        }
 
         // If a Base64 receipt is provided, send it as photo or document directly
         if ($receiptBase64 && preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $receiptBase64, $matches)) {
@@ -346,7 +350,11 @@ class TelegramService
             if ($projectName) {
                 $text .= "{$t['project']} " . self::escape($projectName) . "\n";
             }
-            $text .= "{$t['blogger']} " . self::escape($blogger) . "\n";
+            $bloggerLine = self::escape($blogger);
+            if (!empty($integration->blogger_page_link)) {
+                $bloggerLine .= " - " . self::escape($integration->blogger_page_link);
+            }
+            $text .= "{$t['blogger']} {$bloggerLine}\n";
 
             if ($isScreenshot) {
                 $text .= "  • <b>{$t['slot_number']} #{$slotNumber} ({$slotPlatform}):</b> [Screenshot Proof] 🖼️\n\n";

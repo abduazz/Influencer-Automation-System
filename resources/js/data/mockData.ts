@@ -21,6 +21,7 @@ export interface Integration {
   id: string;
   projectId: string;
   bloggerName: string;
+  bloggerPageLink?: string;
   startDate: string;
   platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
   referralLink: string;
@@ -42,6 +43,7 @@ export interface Report {
   projectName?: string; // resolved for display
   destination: string;
   channelBlogger: string | null;
+  bloggerPageLink?: string | null;
   platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | null;
   slotsCount: number | null;
   paidSlotsCount: number | null;

@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Project, 
   Integration,
+  SlotConfig,
   BloggerSubmission
 } from '../data/mockData';
 import { 
@@ -86,6 +87,7 @@ export default function DashboardView({
 
   // New / Editing Integration Form state
   const [bloggerName, setBloggerName] = useState('');
+  const [bloggerPageLink, setBloggerPageLink] = useState('');
   const [startDate, setStartDate] = useState('2026-07-10');
   const [endDate, setEndDate] = useState('2026-07-17');
   const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
@@ -128,11 +130,18 @@ export default function DashboardView({
     setSlotGroups([]);
   }, [slotsCount]);
 
-  // Set form defaults when opening modal for editing or creating
+  // Helper trigger to reset add modal
   const openAddIntegration = () => {
+    setEditingIntegration(null);
     setBloggerName('');
-    setStartDate('2026-07-10');
-    setEndDate('2026-07-17');
+    setBloggerPageLink('');
+    setStartDate(new Date().toISOString().split('T')[0]);
+    
+    // Set standard 14 days campaign window
+    const defaultEnd = new Date();
+    defaultEnd.setDate(defaultEnd.getDate() + 14);
+    setEndDate(defaultEnd.toISOString().split('T')[0]);
+
     setPlatform('Telegram');
     setReferralLink('');
     setPricePerSlot(150);
@@ -146,6 +155,7 @@ export default function DashboardView({
   const openEditIntegration = (integration: Integration) => {
     setEditingIntegration(integration);
     setBloggerName(integration.bloggerName);
+    setBloggerPageLink(integration.bloggerPageLink || '');
     setStartDate(integration.startDate);
     setEndDate(integration.endDate);
     setPlatform(integration.platform);
@@ -188,7 +198,7 @@ export default function DashboardView({
 
   const handleSubmitIntegration = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!bloggerName.trim() || !startDate || !endDate) return;
+    if (!bloggerName.trim() || !bloggerPageLink.trim() || !startDate || !endDate) return;
 
     let finalSlotsConfig: SlotConfig[] = [];
     if (customizeSlots) {
@@ -219,6 +229,7 @@ export default function DashboardView({
     if (editingIntegration) {
       onEditIntegration(editingIntegration.id, {
         bloggerName,
+        bloggerPageLink,
         startDate,
         endDate,
         platform,
@@ -233,6 +244,7 @@ export default function DashboardView({
       onAddIntegration({
         projectId: selectedProjectId,
         bloggerName,
+        bloggerPageLink,
         startDate,
         endDate,
         platform,
@@ -821,17 +833,33 @@ export default function DashboardView({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.referralLinkField}
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://saas-ai.com/join?utm_source=alex_fit"
-                  value={referralLink}
-                  onChange={(e) => setReferralLink(e.target.value)}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                    {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера *' : lang === 'uz' ? 'Blogger sahifasi havolasi *' : 'Blogger Page Link *')}
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://instagram.com/alex_fit"
+                    value={bloggerPageLink}
+                    onChange={(e) => setBloggerPageLink(e.target.value)}
+                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                    {t.referralLinkField}
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://saas-ai.com/join?utm_source=alex_fit"
+                    value={referralLink}
+                    onChange={(e) => setReferralLink(e.target.value)}
+                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1190,6 +1218,26 @@ export default function DashboardView({
 
               {/* Links */}
               <div className="space-y-3">
+                {selectedIntegrationForDetails.bloggerPageLink && (
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                      {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера' : lang === 'uz' ? 'Blogger sahifasi havolasi' : 'Blogger Page Link')}
+                    </p>
+                    <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
+                      <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{selectedIntegrationForDetails.bloggerPageLink}</span>
+                      <a
+                        href={selectedIntegrationForDetails.bloggerPageLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
+                        title="Open link"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                )}
+
                 {selectedIntegrationForDetails.referralLink && (
                   <div className="space-y-1">
                     <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.referralLinkField || 'UTM Link'}</p>

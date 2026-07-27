@@ -162,6 +162,7 @@ export default function ReportsView({
   const [projectId, setProjectId] = useState<string>('');
   const [destination, setDestination] = useState<string>('');
   const [channelBlogger, setChannelBlogger] = useState<string>('');
+  const [bloggerPageLink, setBloggerPageLink] = useState<string>('');
   const [bloggerType, setBloggerType] = useState<'existing' | 'new'>('existing');
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
@@ -177,7 +178,6 @@ export default function ReportsView({
       }
     }
   }, [initialState]);
-
 
   const [slotsCount, setSlotsCount] = useState<number>(5);
   const [paidSlotsCount, setPaidSlotsCount] = useState<number>(3);
@@ -225,6 +225,12 @@ export default function ReportsView({
       i.bloggerName.toLowerCase().replace(/[@#]/g, '').trim() === channelBlogger.toLowerCase().replace(/[@#]/g, '').trim() &&
       i.status === 'active'
   );
+
+  useEffect(() => {
+    if (activeIntegration?.bloggerPageLink) {
+      setBloggerPageLink(activeIntegration.bloggerPageLink);
+    }
+  }, [activeIntegration]);
 
   const unpaidSlots = activeIntegration
     ? Math.max(0, activeIntegration.slotsCount - (activeIntegration.paidSlotsCount || 0))
@@ -356,8 +362,8 @@ export default function ReportsView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    if (!destination.trim()) return;
-    if (paymentType !== 'other' && (!isMultiProject && !projectId || !channelBlogger.trim())) return;
+    if (paymentType === 'other' && !destination.trim()) return;
+    if (paymentType !== 'other' && ((!isMultiProject && !projectId) || !channelBlogger.trim() || !bloggerPageLink.trim())) return;
 
     if (paymentType !== 'other' && customizeSlots) {
       const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
@@ -385,6 +391,7 @@ export default function ReportsView({
       payload.projectId = projectId || null;
       payload.amount = otherAmount === '' ? 0 : otherAmount;
       payload.channelBlogger = null;
+      payload.bloggerPageLink = null;
       payload.platform = null;
       payload.slotsCount = null;
       payload.paidSlotsCount = null;
@@ -393,6 +400,7 @@ export default function ReportsView({
     } else {
       payload.projectId = isMultiProject ? null : (projectId || null);
       payload.channelBlogger = channelBlogger;
+      payload.bloggerPageLink = bloggerPageLink || null;
       payload.platform = platform;
       payload.slotsCount = slotsCount;
       payload.paidSlotsCount = paidSlotsCount;
@@ -447,6 +455,7 @@ export default function ReportsView({
       // Reset inputs but preserve some logical constants
       setDestination('');
       setChannelBlogger('');
+      setBloggerPageLink('');
       setSlotsCount(5);
       setPaidSlotsCount(3);
       setPricePerSlot(0);
@@ -861,14 +870,28 @@ export default function ReportsView({
                             </div>
                           </div>
 
+                          {/* Blogger Page Link */}
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера *' : lang === 'uz' ? 'Blogger sahifasi havolasi *' : 'Blogger Page Link *')}
+                            </label>
+                            <input
+                              type="url"
+                              required
+                              placeholder={lang === 'ru' ? 'например, https://instagram.com/profile' : lang === 'uz' ? 'masalan, https://instagram.com/profile' : 'e.g. https://instagram.com/profile'}
+                              value={bloggerPageLink}
+                              onChange={(e) => setBloggerPageLink(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                            />
+                          </div>
+
                           {/* Referral Link */}
                           <div>
                             <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                              {t.referralLinkField} *
+                              {t.referralLinkField}
                             </label>
                             <input
                               type="text"
-                              required
                               disabled={paymentType === 'remaining'}
                               placeholder="Ссылка от bulink.io"
                               value={destination}

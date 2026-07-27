@@ -15,6 +15,7 @@ class Integration extends Model
     protected $fillable = [
         'project_id',
         'blogger_name',
+        'blogger_page_link',
         'start_date',
         'platform',
         'referral_link',

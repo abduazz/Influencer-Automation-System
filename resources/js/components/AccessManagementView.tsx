@@ -41,7 +41,8 @@ export default function AccessManagementView({
     total_slots: true,
     slots_published: true,
     slots_remaining: true,
-    financial_metrics: true
+    financial_metrics: true,
+    set_limit: false
   });
 
   // Allowed Pages state
@@ -118,7 +119,8 @@ export default function AccessManagementView({
         total_slots: true,
         slots_published: true,
         slots_remaining: true,
-        financial_metrics: true
+        financial_metrics: true,
+        set_limit: false
       });
       setPagesPermissions({
         super_admin: false,
@@ -305,6 +307,7 @@ export default function AccessManagementView({
                   { key: 'slots_published', labelRu: 'Выполнено слотов', labelUz: 'Bajarilgan slotlar', labelEn: 'Slots Published' },
                   { key: 'slots_remaining', labelRu: 'Осталось выполнить слотов', labelUz: 'Bajarilishi kerak bo‘lgan slotlar', labelEn: 'Slots Remaining' },
                   { key: 'financial_metrics', labelRu: 'Выплаты блогерам (таблица)', labelUz: 'Bloggerlar to‘lovlari (jadval)', labelEn: 'Blogger Payouts (table)' },
+                  { key: 'set_limit', labelRu: 'Установка месячного лимита', labelUz: 'Oylik limitni o‘rnatish', labelEn: 'Set Campaign Monthly Limit' },
                 ].map((m) => {
                   const isChecked = metricsPermissions[m.key];
                   const label = lang === 'ru' ? m.labelRu : lang === 'uz' ? m.labelUz : m.labelEn;
@@ -412,7 +415,8 @@ export default function AccessManagementView({
                       total_slots: true,
                       slots_published: true,
                       slots_remaining: true,
-                      financial_metrics: true
+                      financial_metrics: true,
+                      set_limit: false
                     });
                     setPagesPermissions({
                       super_admin: false,
@@ -514,6 +518,7 @@ export default function AccessManagementView({
                                 slots_published: userMetrics.includes('slots_published'),
                                 slots_remaining: userMetrics.includes('slots_remaining'),
                                 financial_metrics: userMetrics.includes('financial_metrics'),
+                                set_limit: userMetrics.includes('set_limit'),
                               });
 
                               // Load pages

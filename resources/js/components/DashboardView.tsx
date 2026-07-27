@@ -499,56 +499,65 @@ export default function DashboardView({
                   <span className="px-2.5 py-1 rounded bg-black text-white">
                     {t.spend}: {integrations.filter(i => i.projectId === selectedProject.id).reduce((acc, curr) => acc + curr.totalAmount, 0).toLocaleString()}
                   </span>
-                  {selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null ? (
-                    <button
-                      onClick={() => {
-                        const val = prompt(t.enterMonthlyLimitPrompt, String(selectedProject.monthlyLimit));
-                        if (val !== null) {
-                          const parsed = val.trim() === '' ? null : parseInt(val, 10);
-                          if (parsed === null || !isNaN(parsed)) {
-                            if (onEditProject) {
-                              onEditProject(
-                                selectedProject.id,
-                                selectedProject.name,
-                                selectedProject.description || '',
-                                selectedProject.telegramThreadId,
-                                parsed
-                              );
+                  {allowedMetrics.includes('set_limit') || userRole === 'super_admin' ? (
+                    selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null ? (
+                      <button
+                        onClick={() => {
+                          const val = prompt(t.enterMonthlyLimitPrompt, String(selectedProject.monthlyLimit));
+                          if (val !== null) {
+                            const parsed = val.trim() === '' ? null : parseInt(val, 10);
+                            if (parsed === null || !isNaN(parsed)) {
+                              if (onEditProject) {
+                                onEditProject(
+                                  selectedProject.id,
+                                  selectedProject.name,
+                                  selectedProject.description || '',
+                                  selectedProject.telegramThreadId,
+                                  parsed
+                                );
+                              }
                             }
                           }
-                        }
-                      }}
-                      className="px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center gap-1 transition cursor-pointer"
-                      title={t.setMonthlyLimit}
-                    >
-                      <Coins className="w-3.5 h-3.5 text-amber-600" />
-                      <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
-                    </button>
+                        }}
+                        className="px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center gap-1 transition cursor-pointer"
+                        title={t.setMonthlyLimit}
+                      >
+                        <Coins className="w-3.5 h-3.5 text-amber-600" />
+                        <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const val = prompt(t.enterMonthlyLimitPrompt, '');
+                          if (val !== null) {
+                            const parsed = val.trim() === '' ? null : parseInt(val, 10);
+                            if (parsed === null || !isNaN(parsed)) {
+                              if (onEditProject) {
+                                onEditProject(
+                                  selectedProject.id,
+                                  selectedProject.name,
+                                  selectedProject.description || '',
+                                  selectedProject.telegramThreadId,
+                                  parsed
+                                );
+                              }
+                            }
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-600 flex items-center gap-1 transition cursor-pointer"
+                        title={t.setMonthlyLimit}
+                      >
+                        <Coins className="w-3.5 h-3.5 text-neutral-500" />
+                        <span>{t.setMonthlyLimit}</span>
+                      </button>
+                    )
                   ) : (
-                    <button
-                      onClick={() => {
-                        const val = prompt(t.enterMonthlyLimitPrompt, '');
-                        if (val !== null) {
-                          const parsed = val.trim() === '' ? null : parseInt(val, 10);
-                          if (parsed === null || !isNaN(parsed)) {
-                            if (onEditProject) {
-                              onEditProject(
-                                selectedProject.id,
-                                selectedProject.name,
-                                selectedProject.description || '',
-                                selectedProject.telegramThreadId,
-                                parsed
-                              );
-                            }
-                          }
-                        }
-                      }}
-                      className="px-2.5 py-1 rounded bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-600 flex items-center gap-1 transition cursor-pointer"
-                      title={t.setMonthlyLimit}
-                    >
-                      <Coins className="w-3.5 h-3.5 text-neutral-500" />
-                      <span>{t.setMonthlyLimit}</span>
-                    </button>
+                    selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null && (
+                      <span className="px-2.5 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 flex items-center gap-1">
+                        <Coins className="w-3.5 h-3.5 text-amber-600" />
+                        <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
+                      </span>
+                    )
                   )}
                 </div>
               </div>

@@ -59,9 +59,9 @@ class ProjectController extends Controller
             }
         }
 
-        if (!$user || $user->role !== \App\Enums\UserRole::SuperAdmin) {
+        if (!$user || ($user->role !== \App\Enums\UserRole::SuperAdmin && !in_array('set_limit', $user->allowed_metrics ?? []))) {
             return response()->json([
-                'error' => 'Forbidden. Only Super Admin can edit projects.'
+                'error' => 'Forbidden. Only Super Admin or users with monthly limit setting permission can edit projects.'
             ], 403);
         }
 

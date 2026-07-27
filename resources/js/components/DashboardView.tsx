@@ -35,7 +35,7 @@ interface DashboardViewProps {
   integrations: Integration[];
   submissions: BloggerSubmission[];
   onAddProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
-  onEditProject?: (id: string, name: string, description: string, telegramThreadId?: string) => void;
+  onEditProject?: (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null) => void;
   onDeleteProject: (id: string) => void;
   onAddIntegration: (integration: Omit<Integration, 'id' | 'totalAmount'>) => void;
   onEditIntegration: (id: string, integration: Partial<Integration>) => void;
@@ -78,12 +78,14 @@ export default function DashboardView({
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [newProjectThreadId, setNewProjectThreadId] = useState('');
+  const [newProjectMonthlyLimit, setNewProjectMonthlyLimit] = useState('');
 
   // Edit Project Form state
   const [showEditProjectModal, setShowEditProjectModal] = useState(false);
   const [editProjectName, setEditProjectName] = useState('');
   const [editProjectDesc, setEditProjectDesc] = useState('');
   const [editProjectThreadId, setEditProjectThreadId] = useState('');
+  const [editProjectMonthlyLimit, setEditProjectMonthlyLimit] = useState('');
 
   // New / Editing Integration Form state
   const [bloggerName, setBloggerName] = useState('');
@@ -180,10 +182,12 @@ export default function DashboardView({
       name: newProjectName,
       description: newProjectDesc,
       telegramThreadId: newProjectThreadId,
+      monthlyLimit: newProjectMonthlyLimit ? parseInt(newProjectMonthlyLimit, 10) : null,
     });
     setNewProjectName('');
     setNewProjectDesc('');
     setNewProjectThreadId('');
+    setNewProjectMonthlyLimit('');
     setShowAddProjectModal(false);
   };
 
@@ -191,7 +195,13 @@ export default function DashboardView({
     e.preventDefault();
     if (!selectedProject || !editProjectName.trim()) return;
     if (onEditProject) {
-      onEditProject(selectedProject.id, editProjectName, editProjectDesc, editProjectThreadId);
+      onEditProject(
+        selectedProject.id, 
+        editProjectName, 
+        editProjectDesc, 
+        editProjectThreadId, 
+        editProjectMonthlyLimit ? parseInt(editProjectMonthlyLimit, 10) : null
+      );
     }
     setShowEditProjectModal(false);
   };
@@ -274,6 +284,9 @@ export default function DashboardView({
   // Selected Project Statistics Calculators (filtered by date)
   const totalSpend = filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
+  const remainingLimit = selectedProject && (selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null)
+    ? selectedProject.monthlyLimit - totalSpend
+    : null;
   const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
   const totalPublishedSlots = filteredIntegrations.reduce((sum, item) => {
     const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
@@ -397,6 +410,14 @@ export default function DashboardView({
             <p className="text-xl font-black text-rose-600">{totalRemainingToPay.toLocaleString()}</p>
           </div>
         )}
+        {allowedMetrics.includes('financial_metrics') && (
+          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.remainingLimit}</p>
+            <p className={`text-xl font-black ${remainingLimit !== null && remainingLimit < 0 ? 'text-rose-600 animate-pulse' : 'text-neutral-900'}`}>
+              {remainingLimit !== null ? remainingLimit.toLocaleString() : t.limitNotSet}
+            </p>
+          </div>
+        )}
         {allowedMetrics.includes('total_slots') && (
           <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.totalSlotsLabel}</p>
@@ -435,12 +456,36 @@ export default function DashboardView({
                             setEditProjectName(selectedProject.name);
                             setEditProjectDesc(selectedProject.description || '');
                             setEditProjectThreadId(selectedProject.telegramThreadId || '');
+                            setEditProjectMonthlyLimit(selectedProject.monthlyLimit ? String(selectedProject.monthlyLimit) : '');
                             setShowEditProjectModal(true);
                           }}
                           className="text-neutral-400 hover:text-black p-1 rounded transition duration-150 cursor-pointer"
                           title={lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
                         >
                           <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const val = prompt(t.enterMonthlyLimitPrompt, selectedProject.monthlyLimit ? String(selectedProject.monthlyLimit) : '');
+                            if (val !== null) {
+                              const parsed = val.trim() === '' ? null : parseInt(val, 10);
+                              if (parsed === null || !isNaN(parsed)) {
+                                if (onEditProject) {
+                                  onEditProject(
+                                    selectedProject.id,
+                                    selectedProject.name,
+                                    selectedProject.description || '',
+                                    selectedProject.telegramThreadId,
+                                    parsed
+                                  );
+                                }
+                              }
+                            }
+                          }}
+                          className="text-neutral-400 hover:text-black p-1 rounded transition duration-150 cursor-pointer"
+                          title={t.setMonthlyLimit}
+                        >
+                          <Coins className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={(e) => {
@@ -477,6 +522,11 @@ export default function DashboardView({
                   <span className="px-2.5 py-1 rounded bg-black text-white">
                     {t.spend}: {integrations.filter(i => i.projectId === selectedProject.id).reduce((acc, curr) => acc + curr.totalAmount, 0).toLocaleString()}
                   </span>
+                  {selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null && (
+                    <span className="px-2.5 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800">
+                      {t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -684,6 +734,19 @@ export default function DashboardView({
                 />
               </div>
 
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {t.monthlyLimit}
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 12131000"
+                  value={newProjectMonthlyLimit}
+                  onChange={(e) => setNewProjectMonthlyLimit(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+              </div>
+
               <div className="pt-2 flex gap-3">
                 <button
                   type="button"
@@ -757,6 +820,19 @@ export default function DashboardView({
                   placeholder="e.g. 12345"
                   value={editProjectThreadId}
                   onChange={(e) => setEditProjectThreadId(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {t.monthlyLimit}
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 12131000"
+                  value={editProjectMonthlyLimit}
+                  onChange={(e) => setEditProjectMonthlyLimit(e.target.value)}
                   className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
                 />
               </div>

@@ -52,6 +52,11 @@ export const translations = {
     // Selected Project Details Bar
     selectedCampaignDetails: 'Selected Campaign Details',
     deleteProjectTooltip: 'Delete project',
+    monthlyLimit: 'Monthly Limit',
+    remainingLimit: 'Remaining Limit',
+    limitNotSet: 'Not set',
+    setMonthlyLimit: 'Set Monthly Limit',
+    enterMonthlyLimitPrompt: 'Enter monthly limit for this project (leave empty or set to 0 to remove):',
 
     // Modals
     addProjectTitle: 'Create New Campaign Project',
@@ -262,6 +267,11 @@ export const translations = {
     // Selected Project Details Bar
     selectedCampaignDetails: 'Детали выбранной кампании',
     deleteProjectTooltip: 'Удалить проект',
+    monthlyLimit: 'Месячный лимит',
+    remainingLimit: 'Остаток лимита',
+    limitNotSet: 'Не установлен',
+    setMonthlyLimit: 'Задать месячный лимит',
+    enterMonthlyLimitPrompt: 'Введите месячный лимит для этого проекта (оставьте пустым или введите 0, чтобы сбросить):',
 
     // Modals
     addProjectTitle: 'Создать новый проект кампании',
@@ -472,6 +482,11 @@ export const translations = {
     // Selected Project Details Bar
     selectedCampaignDetails: 'Tanlangan kampaniya tafsilotlari',
     deleteProjectTooltip: 'Loyihani o‘chirish',
+    monthlyLimit: 'Oylik limit',
+    remainingLimit: 'Limit qoldig‘i',
+    limitNotSet: 'O‘rnatilmagan',
+    setMonthlyLimit: 'Oylik limitni o‘rnatish',
+    enterMonthlyLimitPrompt: 'Ushbu loyiha uchun oylik limitni kiriting (o‘chirish uchun bo‘sh qoldiring yoki 0 kiriting):',
 
     // Modals
     addProjectTitle: 'Yangi kampaniya loyihasini yaratish',

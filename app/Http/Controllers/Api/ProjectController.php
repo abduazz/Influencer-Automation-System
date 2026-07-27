@@ -16,6 +16,7 @@ class ProjectController extends Controller
                 'name' => $project->name,
                 'description' => $project->description ?? '',
                 'telegramThreadId' => $project->telegram_thread_id ?? '',
+                'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
                 'createdAt' => $project->created_at->format('Y-m-d'),
             ];
         }));
@@ -27,12 +28,14 @@ class ProjectController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'telegramThreadId' => 'nullable|string',
+            'monthlyLimit' => 'nullable|integer|min:0',
         ]);
 
         $project = Project::create([
             'name' => $request->name,
             'description' => $request->description,
             'telegram_thread_id' => $request->telegramThreadId,
+            'monthly_limit' => $request->monthlyLimit,
         ]);
 
         return response()->json([
@@ -40,6 +43,7 @@ class ProjectController extends Controller
             'name' => $project->name,
             'description' => $project->description ?? '',
             'telegramThreadId' => $project->telegram_thread_id ?? '',
+            'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
             'createdAt' => $project->created_at->format('Y-m-d'),
         ], 201);
     }
@@ -65,12 +69,14 @@ class ProjectController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'telegramThreadId' => 'nullable|string',
+            'monthlyLimit' => 'nullable|integer|min:0',
         ]);
 
         $project->update([
             'name' => $request->name,
             'description' => $request->description,
             'telegram_thread_id' => $request->telegramThreadId,
+            'monthly_limit' => $request->monthlyLimit,
         ]);
 
         return response()->json([
@@ -78,6 +84,7 @@ class ProjectController extends Controller
             'name' => $project->name,
             'description' => $project->description ?? '',
             'telegramThreadId' => $project->telegram_thread_id ?? '',
+            'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
             'createdAt' => $project->created_at->format('Y-m-d'),
         ]);
     }

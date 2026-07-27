@@ -9,6 +9,7 @@ export interface Project {
   description: string;
   telegramThreadId?: string;
   createdAt: string;
+  monthlyLimit?: number | null;
 }
 
 export interface SlotConfig {

@@ -252,12 +252,12 @@ export default function App() {
 
   // State manipulation handlers
   const handleAddProject = async (newProj: Omit<Project, 'id' | 'createdAt'>) => {
-    const project = await createProject(newProj.name, newProj.description, newProj.telegramThreadId);
+    const project = await createProject(newProj.name, newProj.description, newProj.telegramThreadId, newProj.monthlyLimit);
     setProjects((prev) => [...prev, project]);
   };
 
-  const handleEditProject = async (id: string, name: string, description: string, telegramThreadId?: string) => {
-    const updated = await updateProject(id, name, description, telegramThreadId, currentUserEmail || undefined);
+  const handleEditProject = async (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null) => {
+    const updated = await updateProject(id, name, description, telegramThreadId, monthlyLimit, currentUserEmail || undefined);
     setProjects((prev) => prev.map(p => p.id === id ? updated : p));
   };
 

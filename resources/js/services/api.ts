@@ -33,18 +33,18 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export function fetchProjects(): Promise<Project[]> {
   return request<Project[]>('/api/projects');
 }
-export function createProject(name: string, description: string, telegramThreadId?: string): Promise<Project> {
+export function createProject(name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify({ name, description, telegramThreadId }),
+    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit }),
   });
 }
-export function updateProject(id: string, name: string, description: string, telegramThreadId?: string, userEmail?: string): Promise<Project> {
+export function updateProject(id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, userEmail?: string): Promise<Project> {
   const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
   return request<Project>(`/api/projects/${id}`, {
     method: 'PUT',
     headers,
-    body: JSON.stringify({ name, description, telegramThreadId }),
+    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit }),
   });
 }
 export function deleteProject(id: string, userEmail?: string): Promise<void> {

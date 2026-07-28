@@ -47,7 +47,7 @@ class ReportController extends Controller
             'paymentType' => 'nullable|string|in:prepaid,full,other,remaining',
             'date' => 'required|date',
             'projectId' => 'nullable|exists:projects,id',
-            'destination' => 'nullable|string|max:255',
+            'destination' => 'required_if:paymentType,other|nullable|string|max:255',
             'channelBlogger' => 'required_unless:paymentType,other|nullable|string|max:255',
             'bloggerPageLink' => 'required_unless:paymentType,other|nullable|string',
             'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX',

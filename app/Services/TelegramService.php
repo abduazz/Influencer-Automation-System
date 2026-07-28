@@ -107,6 +107,7 @@ class TelegramService
                 'price_per_slot' => '💵 <b>Цена за слот:</b>',
                 'total_amount' => '💰 <b>Итоговая сумма:</b>',
                 'created_by' => '✍️ <b>Создан кем:</b>',
+                'purpose' => '🎯 <b>Назначение:</b>',
                 'comments' => '💬 <b>Комментарии:</b>',
             ],
             'en' => [
@@ -119,6 +120,7 @@ class TelegramService
                 'price_per_slot' => '💵 <b>Price per Slot:</b>',
                 'total_amount' => '💰 <b>Total Amount:</b>',
                 'created_by' => '✍️ <b>Created by:</b>',
+                'purpose' => '🎯 <b>Purpose:</b>',
                 'comments' => '💬 <b>Comments:</b>',
             ],
             'uz' => [
@@ -131,6 +133,7 @@ class TelegramService
                 'price_per_slot' => '💵 <b>Slot narxi:</b>',
                 'total_amount' => '💰 <b>Jami summa:</b>',
                 'created_by' => '✍️ <b>Kim tomonidan yaratildi:</b>',
+                'purpose' => '🎯 <b>Maqsadi:</b>',
                 'comments' => '💬 <b>Izohlar:</b>',
             ]
         ];
@@ -180,6 +183,10 @@ class TelegramService
                 $text .= "{$t['slots_count']} " . ($report->slots_count ?? '0') . "\n";
             }
             $text .= "{$t['price_per_slot']} " . number_format($report->price_per_slot ?? 0, 0, '.', ' ') . " UZS\n";
+        } else {
+            if (!empty($report->destination)) {
+                $text .= "{$t['purpose']} " . self::escape($report->destination) . "\n";
+            }
         }
 
         $text .= "{$t['total_amount']} " . number_format($report->total_amount ?? 0, 0, '.', ' ') . " UZS";
@@ -187,10 +194,6 @@ class TelegramService
             $text .= " - {$paymentTypeSuffix}";
         }
         $text .= "\n";
-
-        if (!empty(trim($report->comments ?? ''))) {
-            $text .= "\n{$t['comments']} " . self::escape(trim($report->comments)) . "\n";
-        }
 
         // If a Base64 receipt is provided, send it as photo or document directly
         if ($receiptBase64 && preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $receiptBase64, $matches)) {

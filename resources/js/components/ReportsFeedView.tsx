@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText } from 'lucide-react';
+import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet } from 'lucide-react';
 import { Project, Report, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
 
@@ -17,6 +17,8 @@ interface ReportsFeedViewProps {
 export default function ReportsFeedView({ projects, integrations, reports, lang, userRole, onDeleteReport, title, description }: ReportsFeedViewProps) {
   const t = translations[lang];
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>(() => {
     const saved = localStorage.getItem('reports_feed_view_mode');
@@ -28,7 +30,212 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
     localStorage.setItem('reports_feed_view_mode', mode);
   };
 
-  // Filtering reports based on search query
+  const handleExportExcel = () => {
+    const hasOther = filteredReports.some(r => r.paymentType === 'other');
+    let headers: string[] = [];
+    let rows: string[][] = [];
+
+    if (hasOther) {
+      // Other expenses columns
+      headers = [
+        '№',
+        lang === 'ru' ? 'Назначение' : lang === 'uz' ? 'Vazifasi' : 'Purpose / Destination',
+        lang === 'ru' ? 'Получатель / Расход' : lang === 'uz' ? 'Qabul qiluvchi / Xarajat' : 'Recipient / Expense Type',
+        lang === 'ru' ? 'Платформа' : lang === 'uz' ? 'Platforma' : 'Platform',
+        lang === 'ru' ? 'Сумма (UZS)' : lang === 'uz' ? 'Summa (UZS)' : 'Amount (UZS)',
+        lang === 'ru' ? 'Дата' : lang === 'uz' ? 'Sana' : 'Date',
+        lang === 'ru' ? 'Комментарии' : lang === 'uz' ? 'Izohlar' : 'Comments',
+        lang === 'ru' ? 'Проект' : lang === 'uz' ? 'Loyiha' : 'Project',
+        lang === 'ru' ? 'Создан кем' : lang === 'uz' ? 'Kim tomonidan' : 'Created By'
+      ];
+
+      rows = filteredReports.map((rep, idx) => {
+        const resolvedProject = projects.find(p => String(p.id) === String(rep.projectId));
+        const projName = resolvedProject ? resolvedProject.name : '—';
+        return [
+          String(idx + 1),
+          rep.destination || '—',
+          rep.channelBlogger || '—',
+          '—',
+          String(rep.totalAmount || 0),
+          rep.date,
+          rep.comments || '',
+          projName,
+          rep.createdBy || ''
+        ];
+      });
+    } else {
+      // Blogger integrations columns
+      headers = [
+        '№',
+        lang === 'ru' ? 'Назначение / Реф. ссылка' : lang === 'uz' ? 'Vazifasi / Referal havola' : 'Purpose / Referral Link',
+        lang === 'ru' ? 'Канал / Блогер' : lang === 'uz' ? 'Kanal / Blogger' : 'Channel / Blogger',
+        lang === 'ru' ? 'Платформа' : lang === 'uz' ? 'Platforma' : 'Platform',
+        lang === 'ru' ? 'Сумма (UZS)' : lang === 'uz' ? 'Jami summa (UZS)' : 'Total Amount (UZS)',
+        lang === 'ru' ? 'Дата отчета' : lang === 'uz' ? 'Hisobot sanasi' : 'Report Date',
+        lang === 'ru' ? 'Комментарии' : lang === 'uz' ? 'Izohlar' : 'Comments',
+        lang === 'ru' ? 'Проект' : lang === 'uz' ? 'Loyiha' : 'Project',
+        lang === 'ru' ? 'Тип оплаты' : lang === 'uz' ? 'To\'lov turi' : 'Payment Type',
+        lang === 'ru' ? 'Всего слотов' : lang === 'uz' ? 'Jami slotlar' : 'Total Slots',
+        lang === 'ru' ? 'Оплачено слотов' : lang === 'uz' ? 'To\'langan slotlar' : 'Paid Slots',
+        lang === 'ru' ? 'Цена за слот (UZS)' : lang === 'uz' ? 'Slot narxi (UZS)' : 'Price per Slot (UZS)',
+        lang === 'ru' ? 'Оплачено (UZS)' : lang === 'uz' ? 'To\'langan summa (UZS)' : 'Paid Amount (UZS)',
+        lang === 'ru' ? 'Создан кем' : lang === 'uz' ? 'Kim tomonidan' : 'Created By',
+        lang === 'ru' ? 'Ссылка на кабинет' : lang === 'uz' ? 'Kabinet havolasi' : 'Cabinet Link'
+      ];
+
+      rows = filteredReports.map((rep, idx) => {
+        let projName = '—';
+        if (rep.projectId) {
+          const p = projects.find(proj => String(proj.id) === String(rep.projectId));
+          projName = p ? p.name : '—';
+        } else if (rep.slotsConfig && rep.slotsConfig.length > 0) {
+          const counts: { [name: string]: number } = {};
+          rep.slotsConfig.forEach((s) => {
+            if (s.projectId) {
+              const p = projects.find(proj => String(proj.id) === String(s.projectId));
+              const name = p ? p.name : `Proj #${s.projectId}`;
+              counts[name] = (counts[name] || 0) + 1;
+            }
+          });
+          projName = Object.entries(counts).map(([name, cnt]) => `${name}: ${cnt}`).join(', ');
+        }
+
+        const isOther = rep.paymentType === 'other';
+        const paymentTypeText = rep.paymentType === 'prepaid' ? (lang === 'ru' ? 'Предоплата' : lang === 'uz' ? 'Bo\'nak' : 'Prepayment')
+          : rep.paymentType === 'full' ? (lang === 'ru' ? 'Полная оплата' : lang === 'uz' ? 'To\'liq to\'lov' : 'Full Payment')
+          : rep.paymentType === 'remaining' ? (lang === 'ru' ? 'Доплата' : lang === 'uz' ? 'Qoldiq to\'lov' : 'Remaining Pay')
+          : (lang === 'ru' ? 'Прочее' : lang === 'uz' ? 'Boshqa' : 'Other');
+
+        const matchingInt = isOther ? null : (
+          integrations.find(i => 
+            String(i.projectId) === String(rep.projectId) &&
+            i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase() &&
+            i.platform.toLowerCase() === rep.platform?.toLowerCase()
+          ) || integrations.find(i => 
+            i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase()
+          )
+        );
+        const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
+        const cabinetUrl = token ? `${window.location.origin}/c/${token}` : '';
+
+        return [
+          String(idx + 1),
+          rep.destination || '—',
+          rep.channelBlogger || '—',
+          rep.platform || '—',
+          String(rep.totalAmount || 0),
+          rep.date,
+          rep.comments || '',
+          projName,
+          paymentTypeText,
+          String(rep.slotsCount || 0),
+          String(rep.paidSlotsCount || 0),
+          String(rep.pricePerSlot || 0),
+          String(rep.paidAmount || 0),
+          rep.createdBy || '—',
+          cabinetUrl || '—'
+        ];
+      });
+    }
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    const fileTitle = hasOther ? `Other_Expenses_Report_${dateStr}` : `Blogger_Integrations_Report_${dateStr}`;
+
+    const excelContent = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Sheet1</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayGridlines/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          body { font-family: 'Nunito', Arial, sans-serif; font-size: 11pt; }
+          table { border-collapse: collapse; width: 100%; }
+          th { font-weight: bold; border: 1px solid #D1D5DB; padding: 8px; text-align: left; font-size: 11pt; color: #000000; }
+          td { border: 1px solid #E5E7EB; padding: 8px; text-align: left; font-size: 11pt; color: #000000; }
+          .currency { text-align: right; mso-number-format: "#,##0"; }
+          .number { text-align: center; mso-number-format: "0"; }
+          .date { mso-number-format: "yyyy-mm-dd"; text-align: center; }
+          .title-row { font-size: 14pt; font-weight: bold; color: #000000; padding-bottom: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="title-row">${hasOther ? (lang === 'ru' ? 'Отчет по прочим расходам' : lang === 'uz' ? 'Boshqa xarajatlar hisoboti' : 'Other Expenses Report') : (lang === 'ru' ? 'Отчет по интеграциям с блогерами' : lang === 'uz' ? 'Blogger integratsiyalari hisoboti' : 'Blogger Integrations Report')} (${dateStr})</div>
+        <table>
+          <thead>
+            <tr>
+              ${headers.map(h => `<th>${h}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr>
+                ${row.map((cell, idx) => {
+                  let cellClass = '';
+                  let formattedCell = cell;
+
+                  if (hasOther) {
+                    if (idx === 0) {
+                      cellClass = 'class="number"';
+                      formattedCell = Number(cell) || 0;
+                    }
+                    if (idx === 4) {
+                      cellClass = 'class="currency"';
+                      formattedCell = Number(cell) || 0;
+                    }
+                    if (idx === 5) {
+                      cellClass = 'class="date"';
+                    }
+                  } else {
+                    if (idx === 0 || idx === 9 || idx === 10) {
+                      cellClass = 'class="number"';
+                      formattedCell = Number(cell) || 0;
+                    }
+                    if (idx === 4 || idx === 11 || idx === 12) {
+                      cellClass = 'class="currency"';
+                      formattedCell = Number(cell) || 0;
+                    }
+                    if (idx === 5) {
+                      cellClass = 'class="date"';
+                    }
+                  }
+
+                  const safeVal = typeof formattedCell === 'string' 
+                    ? formattedCell.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") 
+                    : formattedCell;
+                  return `<td ${cellClass}>${safeVal}</td>`;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${fileTitle}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filtering reports based on search query and date period
   const filteredReports = reports.filter(rep => {
     const resolvedProject = projects.find(p => String(p.id) === String(rep.projectId));
     const multiProjectNames = rep.slotsConfig
@@ -40,12 +247,17 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
     const comments = rep.comments || '';
     const searchLower = searchQuery.toLowerCase();
 
-    return (
+    const matchesSearch = (
       projectName.toLowerCase().includes(searchLower) ||
       blogger.toLowerCase().includes(searchLower) ||
       destination.toLowerCase().includes(searchLower) ||
       comments.toLowerCase().includes(searchLower)
     );
+
+    const matchesDate = (!filterStartDate || rep.date >= filterStartDate) &&
+                        (!filterEndDate || rep.date <= filterEndDate);
+
+    return matchesSearch && matchesDate;
   });
 
   const renderProjectCell = (rep: Report) => {
@@ -94,19 +306,8 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
     <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
       {/* Page Header */}
       <div className="border-b border-neutral-200 pb-5 text-left flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black text-black tracking-tight">{title || t.reportsListTab}</h2>
-          <p className="text-xs text-neutral-500">
-            {description || (
-             lang === 'ru' ? 'Просматривайте все сохраненные финансовые отчеты. Нажмите на отчет для просмотра деталей.' : 
-             lang === 'uz' ? 'Barcha saqlangan moliyaviy hisobotlarni ko‘ring. Batafsil ma’lumot olish uchun hisobot ustiga bosing.' : 
-             'Browse all saved financial reports. Click on any report to view full details.'
-            )}
-          </p>
-        </div>
-
         {/* Search Bar & View Toggle */}
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           <div className="relative w-full md:w-72">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
               <Search className="h-4 w-4 text-neutral-400" />
@@ -119,6 +320,51 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
               className="w-full pl-9 pr-4 py-2 bg-white border border-neutral-200 focus:bg-white rounded-xl text-xs focus:outline-none focus:border-black text-black shadow-3xs transition"
             />
           </div>
+
+          {/* Date range filters */}
+          <div className="flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs text-neutral-600 shadow-3xs shrink-0">
+            <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider hidden lg:inline">
+              {lang === 'ru' ? 'Период:' : lang === 'uz' ? 'Davr:' : 'Period:'}
+            </span>
+            <input
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="bg-transparent border-none p-0 text-[11px] font-medium w-[95px] text-neutral-700 focus:outline-none"
+              title={t.startDateColumn}
+            />
+            <span className="text-neutral-300 select-none text-[10px]">—</span>
+            <input
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="bg-transparent border-none p-0 text-[11px] font-medium w-[95px] text-neutral-700 focus:outline-none"
+              title={t.endDateColumn}
+            />
+            {(filterStartDate || filterEndDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                }}
+                className="p-0.5 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition cursor-pointer shrink-0"
+                title={lang === 'ru' ? 'Сбросить даты' : lang === 'uz' ? 'Sanalarni tozalash' : 'Clear dates'}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Export to Excel Button */}
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 hover:text-emerald-800 rounded-xl text-xs font-bold transition cursor-pointer shadow-3xs hover:shadow-2xs shrink-0"
+            title={t.exportExcel}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">{t.exportExcel}</span>
+          </button>
 
           <div className="hidden md:flex bg-neutral-100 p-0.5 rounded-xl border border-neutral-200 shrink-0">
             <button

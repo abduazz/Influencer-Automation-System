@@ -26,7 +26,8 @@ import {
   AlertCircle,
   Sparkles,
   X,
-  Link
+  Link,
+  Send
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
@@ -1392,8 +1393,27 @@ export default function DashboardView({
               {/* Slots deliverables / submissions list */}
               {selectedIntegrationForDetails.slotsConfig && Array.isArray(selectedIntegrationForDetails.slotsConfig) && selectedIntegrationForDetails.slotsConfig.length > 0 && (
                 <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
-                  <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5">
-                    Публикации / Deliverables
+                  <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5 flex justify-between items-center">
+                    <span>Публикации / Deliverables</span>
+                    {(() => {
+                      const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
+                      const threadId = parentProj?.telegramThreadId;
+                      const tgGroupUrl = threadId 
+                        ? (threadId.startsWith('http') ? threadId : `https://t.me/c/4329107459/${threadId}`)
+                        : 'https://t.me/c/4329107459';
+                      return (
+                        <a
+                          href={tgGroupUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 hover:text-sky-700 transition"
+                          title="Открыть Telegram"
+                        >
+                          <Send className="w-3 h-3 text-sky-500" />
+                          <span>Telegram Группа</span>
+                        </a>
+                      );
+                    })()}
                   </h4>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {selectedIntegrationForDetails.slotsConfig.map((slot, index) => {
@@ -1401,6 +1421,12 @@ export default function DashboardView({
                       const sub = (Array.isArray(submissions) ? submissions : []).find(s => String(s.integrationId) === String(selectedIntegrationForDetails.id));
                       const slotKey = `slot_${index + 1}`;
                       const submissionUrl = (sub && sub.data) ? sub.data[slotKey] : undefined;
+
+                      const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
+                      const threadId = parentProj?.telegramThreadId;
+                      const tgUrl = threadId 
+                        ? (threadId.startsWith('http') ? threadId : `https://t.me/c/4329107459/${threadId}`)
+                        : 'https://t.me/c/4329107459';
 
                       return (
                         <div key={index} className="flex justify-between items-center py-1.5 border-b border-neutral-50 last:border-b-0">
@@ -1410,7 +1436,7 @@ export default function DashboardView({
                               {slot.platform || ''} {slot.format || ''}
                             </span>
                           </div>
-                          <div>
+                          <div className="flex items-center gap-2">
                             {submissionUrl ? (
                               <a
                                 href={submissionUrl}
@@ -1422,7 +1448,19 @@ export default function DashboardView({
                                 <ExternalLink className="w-3 h-3 text-blue-500" />
                               </a>
                             ) : (
-                              <span className="text-[10px] text-neutral-400 italic font-medium">{t.notPublishedLabel || 'Not published'}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-neutral-400 italic font-medium">{t.notPublishedLabel || 'Not published'}</span>
+                                <a
+                                  href={tgUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold text-[9px] border border-sky-150 transition cursor-pointer"
+                                  title="Перейти в Telegram"
+                                >
+                                  <Send className="w-2.5 h-2.5 text-sky-500" />
+                                  <span>Telegram</span>
+                                </a>
+                              </div>
                             )}
                           </div>
                         </div>

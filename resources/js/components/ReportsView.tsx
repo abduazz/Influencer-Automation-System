@@ -675,10 +675,10 @@ export default function ReportsView({
                           <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg space-y-2.5">
                             <p className="text-[9px] text-neutral-600 font-medium">
                               {lang === 'ru'
-                                ? `Выберите проект для каждого из ${slotsCount} купленных слотов (цена слота: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)} $):`
+                                ? `Выберите проект для каждого из ${slotsCount} купленных слотов (цена слота: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)}):`
                                 : lang === 'uz'
-                                ? `Sotib olingan ${slotsCount} ta slotning har biri uchun loyihani tanlang (1 slot: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)} $):`
-                                : `Specify project for each of the ${slotsCount} slots (price/slot: $${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)}):`}
+                                ? `Sotib olingan ${slotsCount} ta slotning har biri uchun loyihani tanlang (1 slot: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)}):`
+                                : `Specify project for each of the ${slotsCount} slots (price/slot: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)}):`}
                             </p>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
@@ -689,7 +689,7 @@ export default function ReportsView({
                                   <div key={idx} className="p-2 bg-white border border-neutral-200 rounded-md flex flex-col gap-1 shadow-3xs">
                                     <div className="flex justify-between items-center text-[9px] font-bold">
                                       <span className="text-black">Слот #{idx + 1}</span>
-                                      <span className="text-neutral-500">${formatPrice(unitPrice)}</span>
+                                      <span className="text-neutral-500">{formatPrice(unitPrice)}</span>
                                     </div>
                                     <select
                                       value={currentVal}
@@ -741,13 +741,13 @@ export default function ReportsView({
                                     {Object.entries(summary).map(([pName, data]) => (
                                       <div key={pName} className="flex justify-between items-center text-black">
                                         <span>{pName}: <strong>{data.slots} слотов</strong></span>
-                                        <span className="font-bold">${formatPrice(data.amount)}</span>
+                                        <span className="font-bold">{formatPrice(data.amount)}</span>
                                       </div>
                                     ))}
                                     {reserveSlots > 0 && (
                                       <div className="flex justify-between items-center text-neutral-500 italic">
                                         <span>{lang === 'ru' ? 'Не распределено (Резерв)' : lang === 'uz' ? 'Zahira' : 'Reserve'}: <strong>{reserveSlots} слотов</strong></span>
-                                        <span>${formatPrice(reserveSlots * unitPrice)}</span>
+                                        <span>{formatPrice(reserveSlots * unitPrice)}</span>
                                       </div>
                                     )}
                                   </div>

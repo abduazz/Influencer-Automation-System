@@ -49,6 +49,7 @@ export default function AccessManagementView({
   const [pagesPermissions, setPagesPermissions] = useState<Record<string, boolean>>({
     super_admin: false,
     projects: true,
+    bloggers: true,
     reports: true,
     bulk_purchases: true,
     reports_feed: true,
@@ -349,6 +350,7 @@ export default function AccessManagementView({
                 {[
                   { key: 'super_admin', label: t.pageSuperAdmin },
                   { key: 'projects', label: t.pageProjects },
+                  { key: 'bloggers', label: t.pageBloggers },
                   { key: 'reports', label: t.pageReports },
                   { key: 'bulk_purchases', label: lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases' },
                   { key: 'reports_feed', label: t.pageReportsFeed },

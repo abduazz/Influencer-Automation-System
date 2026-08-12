@@ -15,6 +15,7 @@ import {
   Shield,
   LogOut,
   User,
+  Users,
   ChevronLeft,
   ChevronRight,
   Terminal,
@@ -23,8 +24,8 @@ import {
 import { Language, translations } from '../translations';
 
 interface SidebarProps {
-  activeTab: 'projects' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
-  setActiveTab: (tab: 'projects' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
+  activeTab: 'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
+  setActiveTab: (tab: 'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
   projectsCount: number;
   integrationsCount: number;
   lang: Language;
@@ -55,8 +56,8 @@ export default function Sidebar({
 
   const hasAccess = (pageKey: string) => {
     if (userRole === 'super_admin') return true;
-    if (pageKey === 'bulk_purchases') return true;
-    return (allowedPages || ['projects', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
+    if (pageKey === 'bulk_purchases' || pageKey === 'bloggers') return true;
+    return (allowedPages || ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
   };
 
   return (
@@ -194,6 +195,24 @@ export default function Sidebar({
               <div className="flex items-center gap-3.5">
                 <Receipt className="w-4 h-4" />
                 {!isCollapsed && <span>{t.otherExpensesTab}</span>}
+              </div>
+            </button>
+          )}
+
+          {hasAccess('bloggers') && (
+            <button
+              id="nav-bloggers-btn"
+              onClick={() => setActiveTab('bloggers')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'bloggers'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={t.bloggersTab || (lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers')}
+            >
+              <div className="flex items-center gap-3.5">
+                <Users className="w-4 h-4" />
+                {!isCollapsed && <span>{t.bloggersTab || (lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers')}</span>}
               </div>
             </button>
           )}

@@ -11,6 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
+import BloggersView from './components/BloggersView';
 import ReportsView from './components/ReportsView';
 import ReportsFeedView from './components/ReportsFeedView';
 import BulkPurchasesView from './components/BulkPurchasesView';
@@ -51,7 +52,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users } from 'lucide-react';
 
 export default function App() {
   // Language state (Uzbek by default)
@@ -82,7 +83,7 @@ export default function App() {
   });
 
   // Navigation Tabs State
-  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs'>('projects');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
   const [reportsInitialState, setReportsInitialState] = useState<{
@@ -235,8 +236,8 @@ export default function App() {
   useEffect(() => {
     if (allowedUsersLoading || !currentUserEmail) return;
 
-    const found = allowedUsers.find(
-      (u) => u.email.toLowerCase() === currentUserEmail.toLowerCase()
+    const found = (allowedUsers || []).find(
+      (u) => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase()
     );
 
     if (!found) {
@@ -349,7 +350,7 @@ export default function App() {
           integrationId: integrationId
         });
         setActiveTab('blogger');
-      } else if (page && ['projects', 'reports', 'reports_feed', 'other_expenses', 'blogger', 'code', 'access', 'logs'].includes(page)) {
+      } else if (page && ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'blogger', 'code', 'access', 'logs'].includes(page)) {
         setActiveTab(page as any);
       } else if (!isTg) {
         setActiveTab('projects');
@@ -389,15 +390,15 @@ export default function App() {
   }, [activeTab, isBloggerCabinetRoute]);
 
   // Resolve allowed pages for the active user
-  const activeUser = allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase());
-  const allowedPages = activeUser?.allowedPages || ['projects', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
+  const activeUser = (allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase());
+  const allowedPages = activeUser?.allowedPages || ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
 
   // Enforce page-level access control: redirect user to their first allowed page if active tab is forbidden
   useEffect(() => {
     if (isBloggerCabinetRoute) return;
     if (!currentUserRole || currentUserRole === 'super_admin') return;
 
-    const isAllowedTab = activeTab === 'bulk_purchases' ? true : allowedPages.includes(activeTab);
+    const isAllowedTab = (activeTab === 'bulk_purchases' || activeTab === 'bloggers') ? true : allowedPages.includes(activeTab);
     const isSystemTab = ['access', 'logs', 'blogger'].includes(activeTab);
 
     if (!isAllowedTab && !isSystemTab) {
@@ -527,7 +528,7 @@ export default function App() {
                 onEditIntegration={handleEditIntegration}
                 onDeleteIntegration={handleDeleteIntegration}
                 lang={lang}
-                allowedMetrics={allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
+                allowedMetrics={(allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
                 userRole={currentUserRole}
                 onNavigateToReports={(projectId, bloggerName, paymentType) => {
                   setReportsInitialState({
@@ -537,6 +538,15 @@ export default function App() {
                   });
                   setActiveTab('reports');
                 }}
+              />
+            )}
+
+            {activeTab === 'bloggers' && (
+              <BloggersView
+                projects={projects}
+                integrations={integrations}
+                lang={lang}
+                userRole={currentUserRole}
               />
             )}
 
@@ -639,6 +649,19 @@ export default function App() {
             <FolderKanban className="w-5 h-5" />
             <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
               {lang === 'ru' ? 'Проекты' : lang === 'uz' ? 'Loyihalar' : 'Projects'}
+            </span>
+          </button>
+
+          {/* Bloggers Tab */}
+          <button
+            onClick={() => setActiveTab('bloggers')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+              activeTab === 'bloggers' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+              {lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers'}
             </span>
           </button>
 

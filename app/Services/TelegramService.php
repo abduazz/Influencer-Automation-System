@@ -12,6 +12,30 @@ class TelegramService
         return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8');
     }
 
+    public static function buildTelegramMessageUrl($resData, $fallbackChatId = null)
+    {
+        if (!is_array($resData) || !isset($resData['result']['message_id'])) {
+            return null;
+        }
+        $messageId = $resData['result']['message_id'];
+        $chatId = $resData['result']['chat']['id'] ?? $fallbackChatId;
+
+        if (!$chatId) {
+            return null;
+        }
+
+        $chatIdStr = (string)$chatId;
+        if (str_starts_with($chatIdStr, '-100')) {
+            $cleanChatId = substr($chatIdStr, 4);
+            return "https://t.me/c/{$cleanChatId}/{$messageId}";
+        } elseif (str_starts_with($chatIdStr, '-')) {
+            $cleanChatId = substr($chatIdStr, 1);
+            return "https://t.me/c/{$cleanChatId}/{$messageId}";
+        } else {
+            return "https://t.me/c/{$chatIdStr}/{$messageId}";
+        }
+    }
+
     public static function sendMessage($chatId, $text, $threadId = null)
     {
         $token = config('services.telegram.bot_token');
@@ -34,7 +58,7 @@ class TelegramService
             $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $params);
 
             if ($response->successful()) {
-                return true;
+                return $response->json();
             }
 
             $body = $response->body();
@@ -45,7 +69,7 @@ class TelegramService
                 $params['chat_id'] = $newChatId;
                 $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $params);
                 if ($response->successful()) {
-                    return true;
+                    return $response->json();
                 }
                 $body = $response->body();
             }
@@ -65,7 +89,7 @@ class TelegramService
             $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
 
             if ($response2->successful()) {
-                return true;
+                return $response2->json();
             }
 
             $body2 = $response2->body();
@@ -76,7 +100,7 @@ class TelegramService
                 $plainParams['chat_id'] = $newChatId;
                 $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
                 if ($response2->successful()) {
-                    return true;
+                    return $response2->json();
                 }
                 $body2 = $response2->body();
             }
@@ -368,6 +392,8 @@ class TelegramService
             $text .= "{$t['total_purchased']} {$totalSlots}\n";
             $text .= "{$t['remaining_slots']} {$remaining}\n";
 
+            $responseJson = null;
+
             if ($isScreenshot) {
                 try {
                     $base64Data = $matches[2];
@@ -386,7 +412,9 @@ class TelegramService
                     $response = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
                         ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
 
-                    if (!$response->successful()) {
+                    if ($response->successful()) {
+                        $responseJson = $response->json();
+                    } else {
                         $body = $response->body();
                         $resData = json_decode($body, true);
                         if (isset($resData['parameters']['migrate_to_chat_id'])) {
@@ -397,43 +425,40 @@ class TelegramService
                             $response = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
                                 ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
                             if ($response->successful()) {
-                                continue;
+                                $responseJson = $response->json();
+                            } else {
+                                $body = $response->body();
                             }
-                            $body = $response->body();
                         }
 
-                        Log::error("Telegram sendPhoto failed, retrying plain text: " . $body);
-                        // Fallback: send text message first, then photo separately
-                        self::sendMessage($chatId, $text, $threadId);
-
-                        $fallbackPhotoParams = [
-                            'chat_id' => $chatId,
-                            'caption' => "🖼️ Screenshot Proof for Slot #{$slotNumber}",
-                        ];
-                        if ($threadId) {
-                            $fallbackPhotoParams['message_thread_id'] = $threadId;
-                        }
-
-                        $response2 = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
-                            ->post("https://api.telegram.org/bot{$token}/sendPhoto", $fallbackPhotoParams);
-
-                        if (!$response2->successful()) {
-                            $body2 = $response2->body();
-                            $resData2 = json_decode($body2, true);
-                            if (isset($resData2['parameters']['migrate_to_chat_id'])) {
-                                $newChatId = $resData2['parameters']['migrate_to_chat_id'];
-                                $fallbackPhotoParams['chat_id'] = $newChatId;
-                                Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
-                                    ->post("https://api.telegram.org/bot{$token}/sendPhoto", $fallbackPhotoParams);
-                            }
+                        if (!$responseJson) {
+                            Log::error("Telegram sendPhoto failed, retrying plain text: " . $body);
+                            $responseJson = self::sendMessage($chatId, $text, $threadId);
                         }
                     }
                 } catch (\Throwable $e) {
                     Log::error("Telegram sendPhoto exception: " . $e->getMessage());
-                    self::sendMessage($chatId, $text, $threadId);
+                    $responseJson = self::sendMessage($chatId, $text, $threadId);
                 }
             } else {
-                self::sendMessage($chatId, $text, $threadId);
+                $responseJson = self::sendMessage($chatId, $text, $threadId);
+            }
+
+            if ($responseJson) {
+                $tgMessageUrl = self::buildTelegramMessageUrl($responseJson, $chatId);
+                if ($tgMessageUrl) {
+                    try {
+                        $sub = \App\Models\BloggerSubmission::where('integration_id', $integration->id)->first();
+                        if ($sub) {
+                            $subData = $sub->data ?? [];
+                            $subData["{$key}_tg_url"] = $tgMessageUrl;
+                            $sub->update(['data' => $subData]);
+                            Log::info("Saved telegram message url for {$key}: {$tgMessageUrl}");
+                        }
+                    } catch (\Throwable $ex) {
+                        Log::error("Failed to save tg_url to submission: " . $ex->getMessage());
+                    }
+                }
             }
         }
 

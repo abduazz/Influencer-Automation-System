@@ -1421,12 +1421,14 @@ export default function DashboardView({
                       const sub = (Array.isArray(submissions) ? submissions : []).find(s => String(s.integrationId) === String(selectedIntegrationForDetails.id));
                       const slotKey = `slot_${index + 1}`;
                       const submissionUrl = (sub && sub.data) ? sub.data[slotKey] : undefined;
+                      const slotTgUrl = (sub && sub.data) ? sub.data[`${slotKey}_tg_url`] : undefined;
 
                       const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
                       const threadId = parentProj?.telegramThreadId;
-                      const tgUrl = threadId 
+                      const defaultTgUrl = threadId 
                         ? (threadId.startsWith('http') ? threadId : `https://t.me/c/4329107459/${threadId}`)
                         : 'https://t.me/c/4329107459';
+                      const tgUrl = slotTgUrl || defaultTgUrl;
 
                       return (
                         <div key={index} className="flex justify-between items-center py-1.5 border-b border-neutral-50 last:border-b-0">
@@ -1438,15 +1440,29 @@ export default function DashboardView({
                           </div>
                           <div className="flex items-center gap-2">
                             {submissionUrl ? (
-                              <a
-                                href={submissionUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-600 hover:underline"
-                              >
-                                <span>{t.publicationLinkLabel || 'Link'}</span>
-                                <ExternalLink className="w-3 h-3 text-blue-500" />
-                              </a>
+                              <div className="flex items-center gap-1.5">
+                                <a
+                                  href={submissionUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-600 hover:underline"
+                                >
+                                  <span>{t.publicationLinkLabel || 'Link'}</span>
+                                  <ExternalLink className="w-3 h-3 text-blue-500" />
+                                </a>
+                                {slotTgUrl && (
+                                  <a
+                                    href={slotTgUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold text-[9px] border border-sky-150 transition cursor-pointer"
+                                    title="Открыть сообщение отчета в Telegram"
+                                  >
+                                    <Send className="w-2.5 h-2.5 text-sky-500" />
+                                    <span>Telegram</span>
+                                  </a>
+                                )}
+                              </div>
                             ) : (
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] text-neutral-400 italic font-medium">{t.notPublishedLabel || 'Not published'}</span>

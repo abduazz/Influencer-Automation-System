@@ -93,24 +93,25 @@ export default function DashboardView({
   const [bloggerPageLink, setBloggerPageLink] = useState('');
   const [startDate, setStartDate] = useState('2026-07-10');
   const [endDate, setEndDate] = useState('2026-07-17');
-  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
+  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Telegram');
   const [referralLink, setReferralLink] = useState('');
   const [pricePerSlot, setPricePerSlot] = useState<number>(150);
   const [slotsCount, setSlotsCount] = useState<number>(1);
   const [calculatedTotal, setCalculatedTotal] = useState<number>(150);
 
   const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
-  const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[]>([]);
+  const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'; format: string }[]>([]);
 
-  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX') => {
+  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok') => {
     if (plat === 'Instagram') return 'Stories';
     if (plat === 'Telegram') return 'Post';
-    if (plat === 'YouTube') return 'Release';
+    if (plat === 'YouTube') return 'Shorts';
+    if (plat === 'TikTok') return 'VideoPost';
     return 'Post';
   };
 
-  const groupSlots = (flatConfigs: SlotConfig[]): { quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[] => {
-    const groups: { quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[] = [];
+  const groupSlots = (flatConfigs: SlotConfig[]): { quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'; format: string }[] => {
+    const groups: { quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'; format: string }[] = [];
     flatConfigs.forEach(slot => {
       const existing = groups.find(g => g.platform === slot.platform && g.format === slot.format);
       if (existing) {
@@ -938,6 +939,7 @@ export default function DashboardView({
                     <option value="Instagram">Instagram</option>
                     <option value="YouTube">YouTube</option>
                     <option value="MAX">MAX</option>
+                    <option value="TikTok">TikTok</option>
                   </select>
                 </div>
               </div>
@@ -1107,7 +1109,7 @@ export default function DashboardView({
                         <select
                           value={group.platform}
                           onChange={(e) => {
-                            const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
+                            const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
                             const nextGroups = [...slotGroups];
                             nextGroups[index] = {
                               ...nextGroups[index],
@@ -1122,6 +1124,7 @@ export default function DashboardView({
                           <option value="Instagram">Instagram</option>
                           <option value="YouTube">YouTube</option>
                           <option value="MAX">MAX</option>
+                          <option value="TikTok">TikTok</option>
                         </select>
 
                         {/* Format Selector */}
@@ -1136,9 +1139,9 @@ export default function DashboardView({
                         >
                           {group.platform === 'Instagram' && (
                             <>
-                              <option value="Reels">Instagram Reels</option>
                               <option value="Stories">Instagram Stories</option>
-                              <option value="Post">Instagram Post</option>
+                              <option value="Reels">Instagram Reels</option>
+                              <option value="VideoBadge">{lang === 'ru' ? 'Плашка на видео' : lang === 'uz' ? 'Videodagi plashka' : 'Video badge'}</option>
                             </>
                           )}
                           {group.platform === 'Telegram' && (
@@ -1149,7 +1152,6 @@ export default function DashboardView({
                           )}
                           {group.platform === 'YouTube' && (
                             <>
-                              <option value="Release">YouTube Release</option>
                               <option value="Shorts">YouTube Shorts</option>
                               <option value="Integration">YouTube Integration</option>
                             </>
@@ -1157,7 +1159,11 @@ export default function DashboardView({
                           {group.platform === 'MAX' && (
                             <>
                               <option value="Post">MAX Post</option>
-                              <option value="Integration">MAX Integration</option>
+                            </>
+                          )}
+                          {group.platform === 'TikTok' && (
+                            <>
+                              <option value="VideoPost">{lang === 'ru' ? 'TikTok Видео-Пост' : lang === 'uz' ? 'TikTok Video-Post' : 'TikTok Video Post'}</option>
                             </>
                           )}
                         </select>

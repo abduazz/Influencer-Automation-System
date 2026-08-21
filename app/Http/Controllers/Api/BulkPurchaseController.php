@@ -48,7 +48,7 @@ class BulkPurchaseController extends Controller
     {
         $validated = $request->validate([
             'bloggerName' => 'required|string|max:255',
-            'platform' => 'nullable|string|in:Telegram,Instagram,YouTube,MAX',
+            'platform' => 'nullable|string|in:Telegram,Instagram,YouTube,MAX,TikTok',
             'totalSlots' => 'required|integer|min:1',
             'pricePerSlot' => 'required|numeric|min:0',
             'paidAmount' => 'nullable|numeric|min:0',

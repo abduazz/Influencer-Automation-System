@@ -41,7 +41,7 @@ export default function BulkPurchasesView({
 
   // Form State for New Bulk Purchase
   const [bloggerName, setBloggerName] = useState('');
-  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
+  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Telegram');
   const [totalSlots, setTotalSlots] = useState<number>(10);
   const [pricePerSlot, setPricePerSlot] = useState<number | ''>(0);
   const [totalAmount, setTotalAmount] = useState<number | ''>(0);

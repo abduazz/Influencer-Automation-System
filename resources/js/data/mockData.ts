@@ -13,7 +13,7 @@ export interface Project {
 }
 
 export interface SlotConfig {
-  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
+  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
   format: string; // "Reels", "Stories", "Post", "Release", etc.
   projectId?: string | null;
 }
@@ -24,7 +24,7 @@ export interface Integration {
   bloggerName: string;
   bloggerPageLink?: string;
   startDate: string;
-  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
+  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
   referralLink: string;
   pricePerSlot: number;
   slotsCount: number;
@@ -45,7 +45,7 @@ export interface Report {
   destination: string;
   channelBlogger: string | null;
   bloggerPageLink?: string | null;
-  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | null;
+  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok' | null;
   slotsCount: number | null;
   paidSlotsCount: number | null;
   pricePerSlot: number | null;
@@ -64,7 +64,7 @@ export interface Report {
 export interface BulkPurchase {
   id: string;
   bloggerName: string;
-  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
+  platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
   totalSlots: number;
   allocatedSlots: number;
   remainingSlots: number;

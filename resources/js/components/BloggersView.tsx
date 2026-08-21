@@ -351,6 +351,7 @@ export default function BloggersView({
               <option value="Instagram">Instagram</option>
               <option value="YouTube">YouTube</option>
               <option value="MAX">MAX</option>
+              <option value="TikTok">TikTok</option>
             </select>
           </div>
 

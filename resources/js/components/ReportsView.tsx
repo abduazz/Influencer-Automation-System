@@ -165,7 +165,7 @@ export default function ReportsView({
   const [bloggerPageLink, setBloggerPageLink] = useState<string>('');
   const [bloggerType, setBloggerType] = useState<'existing' | 'new'>('existing');
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
-  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
+  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Telegram');
 
   useEffect(() => {
     if (initialState) {
@@ -192,7 +192,7 @@ export default function ReportsView({
   const [slotProjects, setSlotProjects] = useState<{ [slotIndex: number]: string }>({});
 
   const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
-  const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[]>([]);
+  const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'; format: string }[]>([]);
   const [receipt, setReceipt] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState<number>(0);
   const [isBloggerModalOpen, setIsBloggerModalOpen] = useState(false);
@@ -256,10 +256,11 @@ export default function ReportsView({
     }
   }, [paymentType, paidSlotsCount, pricePerSlot]);
 
-  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX') => {
+  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok') => {
     if (plat === 'Instagram') return 'Stories';
     if (plat === 'Telegram') return 'Post';
-    if (plat === 'YouTube') return 'Release';
+    if (plat === 'YouTube') return 'Shorts';
+    if (plat === 'TikTok') return 'VideoPost';
     return 'Post';
   };
 
@@ -281,7 +282,7 @@ export default function ReportsView({
       for (let i = 0; i < slotsCount; i++) {
         next.push({
           platform: platform,
-          format: platform === 'Instagram' ? 'Stories' : platform === 'Telegram' ? 'Post' : 'Release',
+          format: getDefaultFormat(platform),
           projectId: isMultiProject ? (slotProjects[i] || null) : (projectId || null),
         });
       }
@@ -293,7 +294,7 @@ export default function ReportsView({
           for (let i = next.length; i < slotsCount; i++) {
             next.push({
               platform: platform,
-              format: platform === 'Instagram' ? 'Stories' : platform === 'Telegram' ? 'Post' : 'Release',
+              format: getDefaultFormat(platform),
               projectId: isMultiProject ? (slotProjects[i] || null) : (projectId || null),
             });
           }
@@ -911,7 +912,7 @@ export default function ReportsView({
                               onChange={(e) => setPlatform(e.target.value as any)}
                               className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-not-allowed"
                             >
-                              {(['Telegram', 'Instagram', 'YouTube', 'MAX'] as const).map((plat) => (
+                              {(['Telegram', 'Instagram', 'YouTube', 'MAX', 'TikTok'] as const).map((plat) => (
                                 <option
                                   key={plat}
                                   value={plat}
@@ -1041,7 +1042,7 @@ export default function ReportsView({
                                         <select
                                           value={group.platform}
                                           onChange={(e) => {
-                                            const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
+                                            const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
                                             const nextGroups = [...slotGroups];
                                             nextGroups[index] = {
                                               ...nextGroups[index],
@@ -1056,6 +1057,7 @@ export default function ReportsView({
                                           <option value="Instagram">Instagram</option>
                                           <option value="YouTube">YouTube</option>
                                           <option value="MAX">MAX</option>
+                                          <option value="TikTok">TikTok</option>
                                         </select>
 
                                         {/* Format Selector */}
@@ -1070,9 +1072,9 @@ export default function ReportsView({
                                         >
                                           {group.platform === 'Instagram' && (
                                             <>
-                                              <option value="Reels">Reels</option>
                                               <option value="Stories">Stories</option>
-                                              <option value="Post">Post</option>
+                                              <option value="Reels">Reels</option>
+                                              <option value="VideoBadge">{lang === 'ru' ? 'Плашка на видео' : lang === 'uz' ? 'Videodagi plashka' : 'Video badge'}</option>
                                             </>
                                           )}
                                           {group.platform === 'Telegram' && (
@@ -1083,7 +1085,6 @@ export default function ReportsView({
                                           )}
                                           {group.platform === 'YouTube' && (
                                             <>
-                                              <option value="Release">Release</option>
                                               <option value="Shorts">Shorts</option>
                                               <option value="Integration">Integration</option>
                                             </>
@@ -1091,7 +1092,11 @@ export default function ReportsView({
                                           {group.platform === 'MAX' && (
                                             <>
                                               <option value="Post">Post</option>
-                                              <option value="Integration">Integration</option>
+                                            </>
+                                          )}
+                                          {group.platform === 'TikTok' && (
+                                            <>
+                                              <option value="VideoPost">{lang === 'ru' ? 'Видео-Пост' : lang === 'uz' ? 'Video-Post' : 'Video Post'}</option>
                                             </>
                                           )}
                                         </select>

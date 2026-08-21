@@ -95,7 +95,7 @@ export default function BloggerCabinetView({
   const t = translations[lang];
 
   // Controller State (allows interactive configuration in the preview)
-  const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Instagram');
+  const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Instagram');
   const [activeSlotsCount, setActiveSlotsCount] = useState<number>(4);
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>('int-2');
 
@@ -404,7 +404,13 @@ export default function BloggerCabinetView({
                       const slotKey = `slot_${slotNum}`;
                       const slotConfig = selectedIntegration?.slotsConfig?.[index];
                       const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
-                      const slotFormat = slotConfig ? slotConfig.format : (activePlatform === 'Instagram' ? 'Stories' : activePlatform === 'Telegram' ? 'Post' : 'Release');
+                      const slotFormat = slotConfig ? slotConfig.format : (
+                        activePlatform === 'Instagram' ? 'Stories' :
+                        activePlatform === 'Telegram' ? 'Post' :
+                        activePlatform === 'YouTube' ? 'Shorts' :
+                        activePlatform === 'TikTok' ? 'VideoPost' :
+                        'Post'
+                      );
                       const isPaid = selectedIntegration 
                         ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
                         : true;
@@ -512,7 +518,13 @@ export default function BloggerCabinetView({
                       // Retrieve individual slot configuration if set in Report Form
                       const slotConfig = selectedIntegration?.slotsConfig?.[index];
                       const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
-                      const slotFormat = slotConfig ? slotConfig.format : (activePlatform === 'Instagram' ? 'Stories' : activePlatform === 'Telegram' ? 'Post' : 'Release');
+                      const slotFormat = slotConfig ? slotConfig.format : (
+                        activePlatform === 'Instagram' ? 'Stories' :
+                        activePlatform === 'Telegram' ? 'Post' :
+                        activePlatform === 'YouTube' ? 'Shorts' :
+                        activePlatform === 'TikTok' ? 'VideoPost' :
+                        'Post'
+                      );
 
                       // Check if slot is prepaid based on selectedIntegration
                       const isPaid = selectedIntegration 

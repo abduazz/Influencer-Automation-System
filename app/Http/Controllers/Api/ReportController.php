@@ -50,7 +50,7 @@ class ReportController extends Controller
             'destination' => 'required_if:paymentType,other|nullable|string|max:255',
             'channelBlogger' => 'required_unless:paymentType,other|nullable|string|max:255',
             'bloggerPageLink' => 'required_unless:paymentType,other|nullable|string',
-            'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX',
+            'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX,TikTok',
             'slotsCount' => 'required_unless:paymentType,other|nullable|integer|min:0',
             'paidSlotsCount' => 'required_unless:paymentType,other|nullable|integer|min:0',
             'pricePerSlot' => 'required_unless:paymentType,other|nullable|numeric|min:0',

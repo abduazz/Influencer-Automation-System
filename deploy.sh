@@ -8,7 +8,7 @@ git reset --hard && git pull
 
 echo "📦 Installing composer dependencies"
 export COMPOSER_HOME="/tmp"
-php composer.phar install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
 # Assets are pre-compiled locally and committed to the repository, npm is not needed on the server.
 

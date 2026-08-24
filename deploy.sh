@@ -6,16 +6,13 @@ export COMPOSER_HOME="/tmp"
 
 echo "🚚 Deploying application"
 
-# Ensure git safe directory for deployment user
+# Ensure git safe directory and ignore filemode changes
 git config --global --add safe.directory /var/www/influencer-laravel 2>/dev/null || true
 git config --global --add safe.directory '*' 2>/dev/null || true
+git config core.fileMode false 2>/dev/null || true
 
 echo "🚀 Pulling latest changes..."
 git reset --hard && git pull
-
-echo "📦 Installing composer dependencies"
-export COMPOSER_HOME="/tmp"
-composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
 # Assets are pre-compiled locally and committed to the repository, npm is not needed on the server.
 

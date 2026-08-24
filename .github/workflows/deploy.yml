@@ -1,0 +1,25 @@
+name: Auto Deploy on Push
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to VPS Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH and Deploy Application
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }} # bo'lsa
+          password: ${{ secrets.SSH_PASSWORD }}     # agar SSH key emas, parol ishlatilsa
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            cd /var/www/influencer-laravel
+            bash deploy.sh

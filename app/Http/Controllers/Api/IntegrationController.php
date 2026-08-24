@@ -15,6 +15,7 @@ class IntegrationController extends Controller
                 'id' => (string) $integration->id,
                 'projectId' => (string) $integration->project_id,
                 'bloggerName' => $integration->blogger_name,
+                'bloggerPageLink' => $integration->blogger_page_link ?? '',
                 'startDate' => $integration->start_date->format('Y-m-d'),
                 'platform' => $integration->platform,
                 'referralLink' => $integration->referral_link ?? '',
@@ -36,8 +37,9 @@ class IntegrationController extends Controller
         $request->validate([
             'projectId' => 'required|exists:projects,id',
             'bloggerName' => 'required|string|max:255',
+            'bloggerPageLink' => 'required|string',
             'startDate' => 'required|date',
-            'platform' => 'required|in:Telegram,Instagram,YouTube,MAX',
+            'platform' => 'required|in:Telegram,Instagram,YouTube,MAX,TikTok',
             'referralLink' => 'nullable|string',
             'pricePerSlot' => 'required|numeric|min:0',
             'slotsCount' => 'required|integer|min:1',
@@ -50,6 +52,7 @@ class IntegrationController extends Controller
         $integration = Integration::create([
             'project_id' => $request->projectId,
             'blogger_name' => $request->bloggerName,
+            'blogger_page_link' => $request->bloggerPageLink,
             'start_date' => $request->startDate,
             'platform' => $request->platform,
             'referral_link' => $request->referralLink,
@@ -68,6 +71,7 @@ class IntegrationController extends Controller
             'id' => (string) $integration->id,
             'projectId' => (string) $integration->project_id,
             'bloggerName' => $integration->blogger_name,
+            'bloggerPageLink' => $integration->blogger_page_link ?? '',
             'startDate' => $integration->start_date->format('Y-m-d'),
             'platform' => $integration->platform,
             'referralLink' => $integration->referral_link ?? '',
@@ -87,8 +91,9 @@ class IntegrationController extends Controller
     {
         $request->validate([
             'bloggerName' => 'sometimes|required|string|max:255',
+            'bloggerPageLink' => 'nullable|string',
             'startDate' => 'sometimes|required|date',
-            'platform' => 'sometimes|required|in:Telegram,Instagram,YouTube,MAX',
+            'platform' => 'sometimes|required|in:Telegram,Instagram,YouTube,MAX,TikTok',
             'referralLink' => 'nullable|string',
             'pricePerSlot' => 'sometimes|required|numeric|min:0',
             'slotsCount' => 'sometimes|required|integer|min:1',
@@ -100,6 +105,7 @@ class IntegrationController extends Controller
 
         $updateData = [];
         if ($request->has('bloggerName')) $updateData['blogger_name'] = $request->bloggerName;
+        if ($request->has('bloggerPageLink')) $updateData['blogger_page_link'] = $request->bloggerPageLink;
         if ($request->has('startDate')) $updateData['start_date'] = $request->startDate;
         if ($request->has('platform')) $updateData['platform'] = $request->platform;
         if ($request->has('referralLink')) $updateData['referral_link'] = $request->referralLink;
@@ -116,6 +122,7 @@ class IntegrationController extends Controller
             'id' => (string) $integration->id,
             'projectId' => (string) $integration->project_id,
             'bloggerName' => $integration->blogger_name,
+            'bloggerPageLink' => $integration->blogger_page_link ?? '',
             'startDate' => $integration->start_date->format('Y-m-d'),
             'platform' => $integration->platform,
             'referralLink' => $integration->referral_link ?? '',

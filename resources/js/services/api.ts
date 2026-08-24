@@ -1,4 +1,4 @@
-import { Project, Integration, Report, BloggerSubmission, AllowedUser } from '../data/mockData';
+import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase } from '../data/mockData';
 
 // Fetch helper that handles errors
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -12,11 +12,13 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    let errMsg = res.statusText;
+    let errMsg = '';
     try {
       const data = await res.json();
-      errMsg = data.message || data.error || res.statusText;
-    } catch {}
+      errMsg = data.message || data.error || res.statusText || 'Unknown Server Error';
+    } catch {
+      errMsg = res.statusText || `Server Error (Status ${res.status})`;
+    }
     throw new Error(errMsg);
   }
 
@@ -31,14 +33,23 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export function fetchProjects(): Promise<Project[]> {
   return request<Project[]>('/api/projects');
 }
-export function createProject(name: string, description: string): Promise<Project> {
+export function createProject(name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit }),
   });
 }
-export function deleteProject(id: string): Promise<void> {
-  return request<void>(`/api/projects/${id}`, { method: 'DELETE' });
+export function updateProject(id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, userEmail?: string): Promise<Project> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
+  return request<Project>(`/api/projects/${id}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit }),
+  });
+}
+export function deleteProject(id: string, userEmail?: string): Promise<void> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
+  return request<void>(`/api/projects/${id}`, { method: 'DELETE', headers });
 }
 
 // Integrations API
@@ -65,11 +76,16 @@ export function deleteIntegration(id: string): Promise<void> {
 export function fetchReports(): Promise<Report[]> {
   return request<Report[]>('/api/reports');
 }
-export function createReport(data: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>): Promise<Report> {
+export function createReport(data: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>, userEmail?: string): Promise<Report> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
   return request<Report>('/api/reports', {
     method: 'POST',
+    headers,
     body: JSON.stringify(data),
   });
+}
+export function deleteReport(id: string): Promise<void> {
+  return request<void>(`/api/reports/${id}`, { method: 'DELETE' });
 }
 
 // Submissions API
@@ -87,12 +103,77 @@ export function createSubmission(integrationId: string, data: Record<string, str
 export function fetchAllowedUsers(): Promise<AllowedUser[]> {
   return request<AllowedUser[]>('/api/allowed-users');
 }
-export function createAllowedUser(email: string, role: AllowedUser['role'], allowedMetrics?: string[]): Promise<AllowedUser> {
+export function createAllowedUser(name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[]): Promise<AllowedUser> {
   return request<AllowedUser>('/api/allowed-users', {
     method: 'POST',
-    body: JSON.stringify({ email, role, allowedMetrics }),
+    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages }),
   });
 }
 export function deleteAllowedUser(id: string): Promise<void> {
   return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
 }
+export function updateAllowedUser(id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[]): Promise<AllowedUser> {
+  return request<AllowedUser>(`/api/allowed-users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name, role, allowedMetrics, allowedPages }),
+  });
+}
+
+export async function shortenUrl(longUrl: string): Promise<string> {
+  try {
+    const data = await request<{ short_url: string }>(`/api/shorten-url?url=${encodeURIComponent(longUrl)}`);
+    return data.short_url;
+  } catch (e) {
+    console.error("Shorten API failed, fallback to original", e);
+    return longUrl;
+  }
+}
+
+// System Logs API
+export interface LogEntry {
+  timestamp: string;
+  environment: string;
+  level: string;
+  message: string;
+}
+
+export function fetchLogs(): Promise<LogEntry[]> {
+  return request<LogEntry[]>('/api/logs');
+}
+
+export function clearLogs(): Promise<void> {
+  return request<void>('/api/logs', { method: 'DELETE' });
+}
+
+// Bulk Purchases API
+export function fetchBulkPurchases(): Promise<BulkPurchase[]> {
+  return request<BulkPurchase[]>('/api/bulk-purchases');
+}
+export function createBulkPurchase(data: {
+  bloggerName: string;
+  platform: string;
+  totalSlots: number;
+  pricePerSlot: number;
+  paidAmount?: number;
+  purchaseDate: string;
+  referralLink?: string;
+  receipt?: string | null;
+  comments?: string;
+}, userEmail?: string): Promise<BulkPurchase> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
+  return request<BulkPurchase>('/api/bulk-purchases', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  });
+}
+export function allocateBulkPurchaseSlots(bulkPurchaseId: string, projectId: string, slotsCount: number): Promise<BulkPurchase> {
+  return request<BulkPurchase>(`/api/bulk-purchases/${bulkPurchaseId}/allocate`, {
+    method: 'POST',
+    body: JSON.stringify({ projectId, slotsCount }),
+  });
+}
+export function deleteBulkPurchase(id: string): Promise<void> {
+  return request<void>(`/api/bulk-purchases/${id}`, { method: 'DELETE' });
+}
+

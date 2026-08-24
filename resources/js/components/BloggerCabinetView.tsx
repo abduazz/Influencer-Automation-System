@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BloggerSubmission, Integration } from '../data/mockData';
+import { BloggerSubmission, Integration, Project } from '../data/mockData';
 import { 
   Upload, 
   Link, 
@@ -19,36 +19,113 @@ import {
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
+
 interface BloggerCabinetViewProps {
+  projects: Project[];
   integrations: Integration[];
   submissions: BloggerSubmission[];
   onAddSubmission: (submission: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => void;
   urlParams?: { platform?: string; slotsCount?: string; integrationId?: string };
   lang: Language;
   userRole?: string | null;
+  setLang?: (lang: Language) => void;
 }
+const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.7): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+      return;
+    }
 
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedBase64);
+      };
+      img.onerror = () => {
+        resolve(event.target?.result as string);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 export default function BloggerCabinetView({
+  projects,
   integrations,
   submissions,
   onAddSubmission,
   urlParams,
   lang,
-  userRole
+  userRole,
+  setLang
 }: BloggerCabinetViewProps) {
   const t = translations[lang];
 
   // Controller State (allows interactive configuration in the preview)
-  const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Instagram');
+  const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Instagram');
   const [activeSlotsCount, setActiveSlotsCount] = useState<number>(4);
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>('int-2');
 
+
   const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId);
+  const resolvedProject = projects.find(p => p.id === selectedIntegration?.projectId);
+  const projectName = resolvedProject?.name || '';
+
+  const getSlotSummaryString = () => {
+    if (selectedIntegration?.slotsConfig && selectedIntegration.slotsConfig.length > 0) {
+      const counts: Record<string, number> = {};
+      selectedIntegration.slotsConfig.forEach((cfg) => {
+        const plat = cfg.platform || selectedIntegration.platform || activePlatform;
+        counts[plat] = (counts[plat] || 0) + 1;
+      });
+      return Object.entries(counts)
+        .map(([plat, count]) => `${count} ${plat}`)
+        .join(' | ');
+    }
+    return `${activeSlotsCount} ${activePlatform}`;
+  };
+
+  const visibleSubmissions = userRole === 'super_admin'
+    ? submissions
+    : submissions.filter(sub => String(sub.integrationId) === String(selectedIntegrationId));
 
   // Load state from URL parameters if present
   useEffect(() => {
     if (urlParams?.integrationId) {
-      const matched = integrations.find(i => i.id === urlParams.integrationId || i.bloggerCabinetToken === urlParams.integrationId);
+      const matched = integrations.find(i => String(i.id) === String(urlParams.integrationId) || i.bloggerCabinetToken === urlParams.integrationId);
       if (matched) {
         setSelectedIntegrationId(matched.id);
         setActivePlatform(matched.platform);
@@ -71,6 +148,18 @@ export default function BloggerCabinetView({
     }
   }, [urlParams, integrations]);
 
+  // Auto-select first integration on load if default 'int-2' is not found
+  useEffect(() => {
+    if (integrations.length > 0) {
+      const exists = integrations.some(i => i.id === selectedIntegrationId);
+      if (!exists && !urlParams?.integrationId) {
+        setSelectedIntegrationId(integrations[0].id);
+        setActivePlatform(integrations[0].platform);
+        setActiveSlotsCount(integrations[0].slotsCount);
+      }
+    }
+  }, [integrations, selectedIntegrationId, urlParams]);
+
   // Form Field States
   // Dynamic state object mapping slot keys (e.g. "slot_1") to text link or mock file name
   const [formData, setFormData] = useState<Record<string, string>>({});
@@ -84,7 +173,7 @@ export default function BloggerCabinetView({
     const initialData: Record<string, string> = {};
     const initialPreviews: Record<string, string> = {};
 
-    const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
+    const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
     const submittedData = existingSub?.data || {};
 
     for (let i = 1; i <= activeSlotsCount; i++) {
@@ -101,9 +190,8 @@ export default function BloggerCabinetView({
     setFilePreviews(initialPreviews);
 
     // Determine if form is completely submitted (locked)
-    const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
     let hasUnfilled = false;
-    for (let i = 1; i <= maxPaid; i++) {
+    for (let i = 1; i <= activeSlotsCount; i++) {
       const key = `slot_${i}`;
       if (!submittedData[key]) {
         hasUnfilled = true;
@@ -115,20 +203,36 @@ export default function BloggerCabinetView({
     setShowConfirm(false);
   }, [activePlatform, activeSlotsCount, selectedIntegrationId, submissions, integrations]);
 
-  // Handle file picker simulation
-  const handleFileChangeSim = (slotKey: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle file picker simulation (converting screenshot to base64 with compression)
+  const handleFileChangeSim = async (slotKey: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Create a local URL for visual feedback
-      const previewUrl = URL.createObjectURL(file);
-      setFilePreviews(prev => ({
-        ...prev,
-        [slotKey]: previewUrl
-      }));
-      setFormData(prev => ({
-        ...prev,
-        [slotKey]: file.name
-      }));
+      try {
+        const compressedBase64 = await compressImage(file);
+        setFilePreviews(prev => ({
+          ...prev,
+          [slotKey]: compressedBase64
+        }));
+        setFormData(prev => ({
+          ...prev,
+          [slotKey]: compressedBase64
+        }));
+      } catch (err) {
+        console.error('Image compression failed:', err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = reader.result as string;
+          setFilePreviews(prev => ({
+            ...prev,
+            [slotKey]: base64String
+          }));
+          setFormData(prev => ({
+            ...prev,
+            [slotKey]: base64String
+          }));
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -142,15 +246,22 @@ export default function BloggerCabinetView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Check if only paid/prepaid slots are filled
-    const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
-    const unfilledPaid = Array.from({ length: maxPaid }).some((_, idx) => {
+    const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
+    const submittedData = existingSub?.data || {};
+
+    // Check if at least one new slot is being filled in this turn
+    const hasNewInput = Array.from({ length: activeSlotsCount }).some((_, idx) => {
       const key = `slot_${idx + 1}`;
-      return !formData[key];
+      return !submittedData[key] && !!formData[key] && formData[key].trim() !== '';
     });
 
-    if (unfilledPaid) {
-      alert(t.unfilledSlotsError);
+    if (!hasNewInput) {
+      alert(lang === 'ru' 
+        ? "Пожалуйста, заполните хотя бы один новый слот перед отправкой!" 
+        : lang === 'uz' 
+        ? "Iltimos, yuborishdan oldin kamida bitta yangi slotni to‘ldiring!" 
+        : "Please fill at least one new slot before submitting!"
+      );
       return;
     }
 
@@ -158,16 +269,25 @@ export default function BloggerCabinetView({
   };
 
   const handleFinalSubmit = () => {
-    const maxPaid = selectedIntegration?.paidSlotsCount ?? activeSlotsCount;
+    const confirmText = lang === 'ru' 
+      ? "Вы уверены, что хотите отправить материалы? Отправленные материалы будут заблокированы и их нельзя будет изменить!" 
+      : lang === 'uz' 
+      ? "Materiallarni yuborishga ishonchingiz komilmi? Yuborilgan materiallar bloklanadi va ularni o‘zgartirib bo‘lmaydi!" 
+      : "Are you sure you want to submit? Submitted materials will be locked and cannot be edited!";
+   
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
     const submittedPayload: Record<string, string> = {};
-    for (let i = 1; i <= maxPaid; i++) {
+    for (let i = 1; i <= activeSlotsCount; i++) {
       const key = `slot_${i}`;
       submittedPayload[key] = formData[key] || '';
     }
 
     onAddSubmission({
-      integrationId: selectedIntegrationId,
-      status: 'pending',
+      integrationId: selectedIntegration?.id || selectedIntegrationId,
+      status: 'approved',
       data: submittedPayload,
       lang: lang
     });
@@ -177,142 +297,57 @@ export default function BloggerCabinetView({
   };
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
-      {/* View Header */}
-      <div className="border-b border-neutral-200 pb-5 text-left">
-        <h2 className="text-xl font-black text-black tracking-tight">{t.bloggerCabinetTitle}</h2>
-        <p className="text-xs text-neutral-500">
-          {t.bloggerCabinetDesc}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* LEFT COLUMN: URL Parameters / Form Controller (Manager Tool) */}
-        {userRole === 'super_admin' && (
-          <div className="lg:col-span-4 space-y-4 text-left">
-            <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-2xs">
-              <div className="flex items-center gap-2 border-b border-neutral-100 pb-2.5">
-                <Settings className="w-4 h-4 text-black" />
-                <h3 className="font-bold text-xs text-black uppercase tracking-wider">
-                  {t.interactiveControls}
-                </h3>
-              </div>
-              
-              <p className="text-[11px] text-neutral-500 leading-relaxed">
-                {t.interactiveControlsDesc}
-              </p>
-
-              {/* Platform Select */}
-              <div>
-                <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.platformColumn}
-                </label>
-                <div className="grid grid-cols-3 gap-1">
-                  {(['Telegram', 'Instagram', 'YouTube'] as const).map((plat) => (
-                    <button
-                      key={plat}
-                      onClick={() => {
-                        setActivePlatform(plat);
-                        // Auto pick an integration of this platform type
-                        const match = integrations.find(i => i.platform === plat);
-                        if (match) setSelectedIntegrationId(match.id);
-                      }}
-                      className={`py-1 rounded text-[10px] font-bold border transition ${
-                        activePlatform === plat
-                          ? 'bg-black border-black text-white'
-                          : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                      }`}
-                    >
-                      {plat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Slots count slider */}
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
-                    {t.slotsColumn}
-                  </label>
-                  <span className="text-xs font-black text-black">{activeSlotsCount} {t.slotsColumn.toLowerCase()}</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={6}
-                  value={activeSlotsCount}
-                  onChange={(e) => setActiveSlotsCount(Number(e.target.value))}
-                  className="w-full accent-black cursor-pointer"
-                />
-              </div>
-
-              {/* Integration link dropdown */}
-              <div>
-                <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.selectedProjectLabel}
-                </label>
-                <select
-                  value={selectedIntegrationId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setSelectedIntegrationId(id);
-                    const matched = integrations.find(i => i.id === id);
-                    if (matched) {
-                      setActivePlatform(matched.platform);
-                      setActiveSlotsCount(matched.slotsCount);
-                    }
-                  }}
-                  className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 rounded-md text-[11px] font-medium text-black focus:border-black outline-none"
-                >
-                  {integrations.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.bloggerName} ({i.platform}, {i.slotsCount} {t.slotsColumn.toLowerCase()})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Copy simulation link */}
-              <button
-                onClick={() => {
-                  const url = `${window.location.origin}/?cabinet=true&platform=${activePlatform}&slots_count=${activeSlotsCount}&integrationId=${selectedIntegrationId}`;
-                  navigator.clipboard.writeText(url);
-                  alert(`${t.copiedAlert}\n${url}`);
-                }}
-                className="w-full py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-md transition flex items-center justify-center gap-1.5"
-              >
-                <Link className="w-3.5 h-3.5 text-white" />
-                <span>{t.copyTooltip}</span>
-              </button>
-            </div>
+    <div className="space-y-8 max-w-3xl mx-auto text-neutral-900 w-full pb-12">
+      {/* Quick Blogger Switch Bar (Only visible to managers/super-admins) */}
+      {userRole === 'super_admin' && (
+        <div className="bg-white border border-neutral-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-2xs text-xs text-left">
+          <div className="flex items-center gap-3">
+            <span className="font-extrabold text-neutral-500 uppercase tracking-wider text-[9px]">
+              {lang === 'ru' ? 'Выбор блогера для просмотра:' : lang === 'uz' ? 'Ko‘rish uchun blogger:' : 'Select Blogger to View:'}
+            </span>
+            <select
+              value={selectedIntegrationId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedIntegrationId(id);
+                const matched = integrations.find(i => i.id === id);
+                if (matched) {
+                  setActivePlatform(matched.platform);
+                  setActiveSlotsCount(matched.slotsCount);
+                }
+              }}
+              className="px-2.5 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md font-bold text-black focus:border-black outline-none cursor-pointer"
+            >
+              {integrations.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.bloggerName} ({i.platform}, {i.slotsCount} {t.slotsColumn.toLowerCase()})
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+          
+          <button
+            onClick={async () => {
+              const tokenOrId = selectedIntegration?.bloggerCabinetToken || selectedIntegrationId;
+              const cabinetUrl = `${window.location.origin}/c/${tokenOrId}`;
+              try {
+                await navigator.clipboard.writeText(cabinetUrl);
+                alert(`${t.copiedAlert}\n${cabinetUrl}`);
+              } catch (err) {
+                console.error("Failed to copy cabinet URL", err);
+              }
+            }}
+            className="px-3.5 py-1.5 bg-black hover:bg-neutral-900 text-white font-extrabold rounded-lg transition duration-100 flex items-center gap-1.5 cursor-pointer"
+          >
+            <Link className="w-3.5 h-3.5" />
+            <span>{lang === 'ru' ? 'Копировать ссылку для блогера' : lang === 'uz' ? 'Blogger havolasini nusxalash' : 'Copy Blogger Link'}</span>
+          </button>
+        </div>
+      )}
 
-        {/* RIGHT COLUMN: The Interactive Guest Web Page Frame */}
-        <div className={userRole === 'super_admin' ? "lg:col-span-8 space-y-6" : "lg:col-span-12 space-y-6"}>
-          <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
-            {/* Browser Address Bar Header */}
-            <div className="bg-neutral-50 px-4 py-2 border-b border-neutral-200 flex items-center gap-2">
-              <div className="flex gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-                <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-                <span className="w-2 h-2 rounded-full bg-neutral-200"></span>
-              </div>
-              <div className="flex-1 max-w-xl mx-auto bg-white border border-neutral-200 rounded px-2.5 py-0.5 text-center text-[10px] text-neutral-400 truncate font-mono">
-                <span>fluenceflow.net/submit-job?platform=</span>
-                <span className="font-bold text-black">{activePlatform}</span>
-                <span>&slots_count=</span>
-                <span className="font-bold text-black">{activeSlotsCount}</span>
-                {selectedIntegration && (
-                  <>
-                    <span>&blogger=</span>
-                    <span className="font-bold text-black">{selectedIntegration.bloggerName.toLowerCase().replace(/\s+/g, '')}</span>
-                  </>
-                )}
-              </div>
-            </div>
-
+      {/* The Interactive Guest Web Page Frame */}
+      <div className="space-y-6">
+        <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
             {/* Blogger Portal Inside Content */}
             <div className="p-6 text-left bg-neutral-50 min-h-[420px] flex flex-col justify-between">
               {formSubmitted ? (
@@ -333,7 +368,11 @@ export default function BloggerCabinetView({
                     {Object.entries(formData).map(([key, val]) => (
                       <div key={key} className="flex justify-between py-1 border-b border-neutral-50 last:border-0 font-mono">
                         <span className="text-neutral-400">{key}:</span>
-                        <span className="font-bold text-black truncate max-w-[180px]">{val}</span>
+                        <span className="font-bold text-black truncate max-w-[180px]">
+                          {typeof val === 'string' && val.startsWith('data:image/') 
+                            ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
+                            : val}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -365,12 +404,19 @@ export default function BloggerCabinetView({
                       const slotKey = `slot_${slotNum}`;
                       const slotConfig = selectedIntegration?.slotsConfig?.[index];
                       const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
-                      const slotFormat = slotConfig ? slotConfig.format : (activePlatform === 'Instagram' ? 'Stories' : activePlatform === 'Telegram' ? 'Post' : 'Release');
+                      const slotFormat = slotConfig ? slotConfig.format : (
+                        activePlatform === 'Instagram' ? 'Stories' :
+                        activePlatform === 'Telegram' ? 'Post' :
+                        activePlatform === 'YouTube' ? 'Shorts' :
+                        activePlatform === 'TikTok' ? 'VideoPost' :
+                        'Post'
+                      );
                       const isPaid = selectedIntegration 
                         ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
                         : true;
 
-                      if (!isPaid) return null;
+                      const value = formData[slotKey];
+                      if (!value && !isPaid) return null;
 
                       return (
                         <div key={slotKey} className="flex justify-between items-center py-1.5 border-b border-neutral-100 last:border-0 last:pb-0 text-xs">
@@ -381,7 +427,9 @@ export default function BloggerCabinetView({
                             </span>
                           </div>
                           <span className="font-mono text-black truncate max-w-[240px] select-all font-bold">
-                            {formData[slotKey] || '—'}
+                            {formData[slotKey]?.startsWith('data:image/') 
+                              ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
+                              : formData[slotKey] || '—'}
                           </span>
                         </div>
                       );
@@ -408,12 +456,53 @@ export default function BloggerCabinetView({
               ) : (
                 /* Interactive Submission Form */
                 <form onSubmit={handleSubmit} className="space-y-4 max-w-xl mx-auto w-full">
-                  <div className="text-center">
-                    <h2 className="text-base font-black text-black tracking-tight">{t.bloggerCabinetTitle}</h2>
-                    <p className="text-xs text-neutral-500 mt-0.5">
-                      {t.platformColumn}: <span className="font-bold text-black uppercase">{activePlatform}</span> | 
-                      {t.slotsColumn}: <span className="font-bold text-black">{activeSlotsCount}</span>
-                    </p>
+                  <div className="flex justify-between items-center border-b border-neutral-100 pb-3 mb-4">
+                    <div className="text-left">
+                      <h2 className="text-base font-black text-black tracking-tight flex items-center gap-2">
+                        <span>{t.bloggerCabinetTitle} {projectName ? `— ${projectName}` : ''}</span>
+                      </h2>
+                      {selectedIntegration && (
+                        <div className="flex items-center gap-2 mt-1 text-xs font-bold text-neutral-700">
+                          {selectedIntegration.bloggerName && (
+                            <span>👤 {selectedIntegration.bloggerName}</span>
+                          )}
+                          {selectedIntegration.bloggerPageLink && (
+                            <a
+                              href={selectedIntegration.bloggerPageLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200 text-[10px] text-blue-600 font-extrabold hover:underline"
+                            >
+                              <span>{lang === 'ru' ? 'Страница блогера' : lang === 'uz' ? 'Blogger sahifasi' : 'Blogger Page'}</span>
+                              <ExternalLink className="w-3 h-3 text-blue-500" />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-[10px] text-neutral-500 mt-1">
+                        {lang === 'ru' ? 'Слоты по платформам' : lang === 'uz' ? 'Platformalar bo‘yicha slotlar' : 'Slots by Platform'}:{' '}
+                        <span className="font-bold text-black">{getSlotSummaryString()}</span>
+                      </p>
+                    </div>
+                    {/* Compact Language Switcher */}
+                    {setLang && (
+                      <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-200 shrink-0">
+                        {(['ru', 'uz', 'en'] as const).map((l) => (
+                          <button
+                            key={l}
+                            type="button"
+                            onClick={() => setLang(l)}
+                            className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${
+                              lang === l
+                                ? 'bg-white text-black shadow-sm'
+                                : 'text-neutral-400 hover:text-neutral-600'
+                            }`}
+                          >
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3 pt-4 border-t border-neutral-200">
@@ -422,14 +511,20 @@ export default function BloggerCabinetView({
                       const slotNum = index + 1;
                       const slotKey = `slot_${slotNum}`;
 
-                      const existingSub = submissions.find(s => s.integrationId === selectedIntegrationId);
+                      const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
                       const submittedData = existingSub?.data || {};
                       const isSlotSubmitted = !!(submittedData[slotKey]);
 
                       // Retrieve individual slot configuration if set in Report Form
                       const slotConfig = selectedIntegration?.slotsConfig?.[index];
                       const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
-                      const slotFormat = slotConfig ? slotConfig.format : (activePlatform === 'Instagram' ? 'Stories' : activePlatform === 'Telegram' ? 'Post' : 'Release');
+                      const slotFormat = slotConfig ? slotConfig.format : (
+                        activePlatform === 'Instagram' ? 'Stories' :
+                        activePlatform === 'Telegram' ? 'Post' :
+                        activePlatform === 'YouTube' ? 'Shorts' :
+                        activePlatform === 'TikTok' ? 'VideoPost' :
+                        'Post'
+                      );
 
                       // Check if slot is prepaid based on selectedIntegration
                       const isPaid = selectedIntegration 
@@ -473,13 +568,13 @@ export default function BloggerCabinetView({
                             </span>
                           </div>
 
-                          {slotPlatform === 'Instagram' ? (
-                            /* SCREENSHOT FILE UPLOAD COMPONENT FOR INSTAGRAM STORIES/REELS */
+                          {(slotPlatform === 'Instagram' && slotFormat === 'Stories') ? (
+                            /* SCREENSHOT FILE UPLOAD COMPONENT FOR INSTAGRAM STORIES ONLY */
                             <div className="space-y-2">
                               {isSlotSubmitted ? (
                                 <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl opacity-90 select-none text-left">
                                   <div className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 flex items-center justify-center">
-                                    {formData[slotKey].startsWith('mock') || !filePreviews[slotKey] ? (
+                                    {formData[slotKey]?.startsWith('mock') || !filePreviews[slotKey] ? (
                                       <CheckCircle className="w-5 h-5 text-emerald-600" />
                                     ) : (
                                       <img src={filePreviews[slotKey]} alt="Screenshot" className="w-full h-full object-cover" />
@@ -504,7 +599,6 @@ export default function BloggerCabinetView({
                                     <input
                                       type="file"
                                       accept="image/*"
-                                      required={isPaid}
                                       onChange={(e) => handleFileChangeSim(slotKey, e)}
                                       className="hidden"
                                     />
@@ -518,7 +612,6 @@ export default function BloggerCabinetView({
                                   <input
                                     type="file"
                                     accept="image/*"
-                                    required={isPaid}
                                     onChange={(e) => handleFileChangeSim(slotKey, e)}
                                     className="absolute inset-0 opacity-0 cursor-pointer"
                                   />
@@ -526,17 +619,18 @@ export default function BloggerCabinetView({
                               )}
                             </div>
                           ) : (
-                            /* URL TEXT INPUT FIELD FOR TELEGRAM AND YOUTUBE POSTS/RELEASES */
+                            /* URL TEXT INPUT FIELD FOR ALL POSTS/REELS/RELEASES (INCLUDING INSTAGRAM REELS/POSTS) */
                             <div className="relative">
                               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <Link className="w-3.5 h-3.5 text-neutral-400" />
                               </div>
                               <input
-                                type="url"
-                                required={isPaid}
+                                type="text"
                                 disabled={isSlotSubmitted}
                                 placeholder={
-                                  slotPlatform === 'Telegram' 
+                                  slotPlatform === 'Instagram'
+                                    ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
+                                    : slotPlatform === 'Telegram' 
                                     ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
                                     : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
                                 }
@@ -572,90 +666,106 @@ export default function BloggerCabinetView({
             </div>
           </div>
 
-          {/* ACTIVE SUBMISSIONS LOG TABLE */}
-          <div className="space-y-3 text-left">
-            <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
-              {t.viewSubmissionTitle} ({submissions.length})
-            </h3>
+          {/* ACTIVE SUBMISSIONS LOG TABLE - ONLY FOR MANAGERS */}
+          {userRole === 'super_admin' && (
+            <div className="space-y-3 text-left">
+              <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
+                {t.viewSubmissionTitle} ({visibleSubmissions.length})
+              </h3>
 
-            <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-neutral-200 bg-neutral-50 text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
-                      <th className="py-2.5 px-5">{t.bloggerColumn}</th>
-                      <th className="py-2.5 px-4">{t.startDateColumn}</th>
-                      <th className="py-2.5 px-4">Status</th>
-                      <th className="py-2.5 px-5">Assets</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
-                    {submissions.map((sub) => {
-                      const matchingInt = integrations.find(i => i.id === sub.integrationId);
+              <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-neutral-200 bg-neutral-50 text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
+                        <th className="py-2.5 px-5">{t.bloggerColumn}</th>
+                        <th className="py-2.5 px-4">{t.startDateColumn}</th>
+                        <th className="py-2.5 px-4">Status</th>
+                        <th className="py-2.5 px-5">Assets</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
+                      {visibleSubmissions.map((sub) => {
+                        const matchingInt = integrations.find(i => String(i.id) === String(sub.integrationId));
 
-                      return (
-                        <tr key={sub.id}>
-                          <td className="py-3 px-5 font-bold text-black">
-                            {matchingInt?.bloggerName || 'Simulated Influencer'}
-                            <span className="text-[9px] text-neutral-400 font-normal block mt-0.5">
-                              Platform: {matchingInt?.platform || 'Unknown'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-semibold text-neutral-500 text-[11px]">
-                            {new Date(sub.submittedAt).toLocaleDateString()} {new Date(sub.submittedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded font-bold text-[9px] border uppercase ${
-                              sub.status === 'approved'
-                                ? 'bg-black text-white border-black'
-                                : 'bg-white text-neutral-600 border-neutral-200'
-                            }`}>
-                              {sub.status === 'approved' ? t.statusApproved : t.statusPending}
-                            </span>
-                          </td>
-                          <td className="py-3 px-5 space-y-1">
-                            {Object.entries(sub.data).map(([key, val]) => (
-                              <div key={key} className="flex items-center gap-1.5 font-medium">
-                                <span className="font-mono text-neutral-400 uppercase text-[8px] bg-neutral-50 border border-neutral-200 px-1 py-0.2 rounded">{key}:</span>
-                                {val.startsWith('http') ? (
-                                  <a
-                                    href={val}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[11px] text-black hover:underline font-bold flex items-center gap-0.5 truncate max-w-[200px]"
-                                  >
-                                    <span className="truncate">{val}</span>
-                                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                                  </a>
-                                ) : (
-                                  <div className="text-[11px] text-neutral-700 flex items-center gap-1 truncate max-w-[200px]">
-                                    <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                                    <span className="truncate">{val}</span>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                        return (
+                          <tr key={sub.id}>
+                            <td className="py-3 px-5 font-bold text-black">
+                              {matchingInt?.bloggerName || 'Simulated Influencer'}
+                              <span className="text-[9px] text-neutral-400 font-normal block mt-0.5">
+                                Platform: {matchingInt?.platform || 'Unknown'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-neutral-500 text-[11px]">
+                              {new Date(sub.submittedAt).toLocaleDateString()} {new Date(sub.submittedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-0.5 rounded font-bold text-[9px] border uppercase ${
+                                sub.status === 'approved'
+                                  ? 'bg-black text-white border-black'
+                                  : 'bg-white text-neutral-600 border-neutral-200'
+                              }`}>
+                                {sub.status === 'approved' ? t.statusApproved : t.statusPending}
+                              </span>
+                            </td>
+                            <td className="py-3 px-5 space-y-1">
+                              {Object.entries(sub.data).map(([key, val]) => (
+                                <div key={key} className="flex items-center gap-1.5 font-medium">
+                                  <span className="font-mono text-neutral-400 uppercase text-[8px] bg-neutral-50 border border-neutral-200 px-1 py-0.2 rounded">{key}:</span>
+                                  {typeof val === 'string' && val.startsWith('data:image/') ? (
+                                    <div className="flex items-center gap-2">
+                                      <img 
+                                        src={val} 
+                                        alt="Screenshot" 
+                                        onClick={() => {
+                                          const w = window.open();
+                                          if (w) w.document.write(`<img src="${val}" style="max-width:100%; height:auto;" />`);
+                                        }}
+                                        className="w-8 h-8 object-cover rounded border border-neutral-250 cursor-pointer hover:border-black transition" 
+                                      />
+                                      <span className="text-[10px] text-neutral-500 font-bold">
+                                        {lang === 'ru' ? 'Скриншот' : lang === 'uz' ? 'Skrinshot' : 'Screenshot'}
+                                      </span>
+                                    </div>
+                                  ) : typeof val === 'string' && val.startsWith('http') ? (
+                                    <a
+                                      href={val}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[11px] text-black hover:underline font-bold flex items-center gap-0.5 truncate max-w-[200px]"
+                                    >
+                                      <span className="truncate">{val}</span>
+                                      <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                    </a>
+                                  ) : (
+                                    <div className="text-[11px] text-neutral-700 flex items-center gap-1 truncate max-w-[200px]">
+                                      <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                                      <span className="truncate">{val || ''}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {visibleSubmissions.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="py-8 px-5 text-center text-neutral-400">
+                            <AlertCircle className="w-5 h-5 text-neutral-300 mx-auto mb-1" />
+                            <p className="font-bold text-xs text-neutral-500">No Submissions Recorded</p>
+                            <p className="text-[10px] text-neutral-400 mt-0.5">Submit integration coordinates above to log them.</p>
                           </td>
                         </tr>
-                      );
-                    })}
-
-                    {submissions.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="py-8 px-5 text-center text-neutral-400">
-                          <AlertCircle className="w-5 h-5 text-neutral-300 mx-auto mb-1" />
-                          <p className="font-bold text-xs text-neutral-500">No Submissions Recorded</p>
-                          <p className="text-[10px] text-neutral-400 mt-0.5">Submit integration coordinates above to log them.</p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
-    </div>
   );
 }

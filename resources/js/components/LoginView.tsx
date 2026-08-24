@@ -38,7 +38,7 @@ export default function LoginView({
     if (allowedUsersLoading) return;
 
     // Search email in the whitelist
-    const foundUser = allowedUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    const foundUser = allowedUsers.find((u) => u && u.email && u.email.toLowerCase() === cleanEmail);
 
     if (foundUser) {
       onLoginSuccess(foundUser.email, foundUser.role);

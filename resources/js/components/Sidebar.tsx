@@ -15,14 +15,17 @@ import {
   Shield,
   LogOut,
   User,
+  Users,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Terminal,
+  Receipt
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
 interface SidebarProps {
-  activeTab: 'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access';
-  setActiveTab: (tab: 'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access') => void;
+  activeTab: 'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
+  setActiveTab: (tab: 'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
   projectsCount: number;
   integrationsCount: number;
   lang: Language;
@@ -32,6 +35,7 @@ interface SidebarProps {
   onLogout: () => void;
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
+  allowedPages?: string[];
 }
 
 export default function Sidebar({ 
@@ -45,12 +49,19 @@ export default function Sidebar({
   userRole,
   onLogout,
   isCollapsed,
-  setIsCollapsed
+  setIsCollapsed,
+  allowedPages
 }: SidebarProps) {
   const t = translations[lang];
 
+  const hasAccess = (pageKey: string) => {
+    if (userRole === 'super_admin') return true;
+    if (pageKey === 'bulk_purchases' || pageKey === 'bloggers') return true;
+    return (allowedPages || ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
+  };
+
   return (
-    <aside className={`bg-white border-r border-neutral-200 flex flex-col justify-between h-screen sticky top-0 text-neutral-800 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-80'}`}>
+    <aside className={`hidden md:flex bg-white border-r border-neutral-200 flex-col justify-between h-screen sticky top-0 text-neutral-800 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-80'}`}>
       {/* Upper Brand */}
       <div className={`p-6 ${isCollapsed ? 'flex flex-col items-center' : ''}`}>
         <div className={`flex ${isCollapsed ? 'flex-col gap-4' : 'items-center justify-between'} mb-8 w-full`}>
@@ -82,7 +93,7 @@ export default function Sidebar({
             {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
         </div>
-
+ 
         {/* Main Navigation Menu */}
         <nav className="space-y-1.5 w-full">
           {!isCollapsed && (
@@ -91,81 +102,155 @@ export default function Sidebar({
             </p>
           )}
 
-          <button
-            id="nav-projects-btn"
-            onClick={() => setActiveTab('projects')}
-            className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
-              activeTab === 'projects'
-                ? 'bg-black text-white'
-                : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-            }`}
-            title={t.projectsAndIntegrations}
-          >
-            <div className="flex items-center gap-3.5">
-              <FolderKanban className="w-4 h-4" />
-              {!isCollapsed && <span>{t.projectsAndIntegrations}</span>}
-            </div>
-            {!isCollapsed && (
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                activeTab === 'projects' ? 'bg-neutral-800 text-white' : 'bg-neutral-100 text-neutral-600'
-              }`}>
-                {projectsCount}
-              </span>
-            )}
-          </button>
-
-          {userRole !== 'product_manager' && (
-            <>
-              <button
-                id="nav-reports-btn"
-                onClick={() => setActiveTab('reports')}
-                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
-                  activeTab === 'reports'
-                    ? 'bg-black text-white'
-                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-                }`}
-                title={t.createReport}
-              >
-                <div className="flex items-center gap-3.5">
-                  <FilePlus className="w-4 h-4" />
-                  {!isCollapsed && <span>{t.createReport}</span>}
-                </div>
-              </button>
-
-              <button
-                id="nav-reports-feed-btn"
-                onClick={() => setActiveTab('reports_feed')}
-                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
-                  activeTab === 'reports_feed'
-                    ? 'bg-black text-white'
-                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-                }`}
-                title={t.reportsListTab || 'Reports List'}
-              >
-                <div className="flex items-center gap-3.5">
-                  <FileText className="w-4 h-4" />
-                  {!isCollapsed && <span>{t.reportsListTab || 'Reports List'}</span>}
-                </div>
-              </button>
-            </>
-          )}
-
-          {userRole === 'super_admin' && (
+          {hasAccess('projects') && (
             <button
-              id="nav-access-btn"
-              onClick={() => setActiveTab('access')}
+              id="nav-projects-btn"
+              onClick={() => setActiveTab('projects')}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
-                activeTab === 'access'
+                activeTab === 'projects'
                   ? 'bg-black text-white'
                   : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
               }`}
-              title={t.accessTab}
+              title={t.projectsAndIntegrations}
             >
               <div className="flex items-center gap-3.5">
-                <Shield className="w-4 h-4" />
-                {!isCollapsed && <span>{t.accessTab}</span>}
+                <FolderKanban className="w-4 h-4" />
+                {!isCollapsed && <span>{t.projectsAndIntegrations}</span>}
+              </div>
+              {!isCollapsed && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  activeTab === 'projects' ? 'bg-neutral-800 text-white' : 'bg-neutral-100 text-neutral-600'
+                }`}>
+                  {projectsCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {userRole !== 'product_manager' && hasAccess('reports') && (
+            <button
+              id="nav-reports-btn"
+              onClick={() => setActiveTab('reports')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'reports'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={t.createReport}
+            >
+              <div className="flex items-center gap-3.5">
+                <FilePlus className="w-4 h-4" />
+                {!isCollapsed && <span>{t.createReport}</span>}
               </div>
             </button>
+          )}
+
+          {hasAccess('bulk_purchases') && (
+            <button
+              id="nav-bulk-purchases-btn"
+              onClick={() => setActiveTab('bulk_purchases')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'bulk_purchases'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases'}
+            >
+              <div className="flex items-center gap-3.5">
+                <Layers className="w-4 h-4" />
+                {!isCollapsed && <span>{lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases'}</span>}
+              </div>
+            </button>
+          )}
+
+          {userRole !== 'product_manager' && hasAccess('reports_feed') && (
+            <button
+              id="nav-reports-feed-btn"
+              onClick={() => setActiveTab('reports_feed')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'reports_feed'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={t.reportsListTab || 'Reports List'}
+            >
+              <div className="flex items-center gap-3.5">
+                <FileText className="w-4 h-4" />
+                {!isCollapsed && <span>{t.reportsListTab || 'Reports List'}</span>}
+              </div>
+            </button>
+          )}
+
+          {userRole !== 'product_manager' && hasAccess('other_expenses') && (
+            <button
+              id="nav-other-expenses-btn"
+              onClick={() => setActiveTab('other_expenses')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'other_expenses'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={t.otherExpensesTab}
+            >
+              <div className="flex items-center gap-3.5">
+                <Receipt className="w-4 h-4" />
+                {!isCollapsed && <span>{t.otherExpensesTab}</span>}
+              </div>
+            </button>
+          )}
+
+          {hasAccess('bloggers') && (
+            <button
+              id="nav-bloggers-btn"
+              onClick={() => setActiveTab('bloggers')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'bloggers'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={t.bloggersTab || (lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers')}
+            >
+              <div className="flex items-center gap-3.5">
+                <Users className="w-4 h-4" />
+                {!isCollapsed && <span>{t.bloggersTab || (lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers')}</span>}
+              </div>
+            </button>
+          )}
+
+          {userRole === 'super_admin' && (
+            <>
+              <button
+                id="nav-access-btn"
+                onClick={() => setActiveTab('access')}
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                  activeTab === 'access'
+                    ? 'bg-black text-white'
+                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+                }`}
+                title={t.accessTab}
+              >
+                <div className="flex items-center gap-3.5">
+                  <Shield className="w-4 h-4" />
+                  {!isCollapsed && <span>{t.accessTab}</span>}
+                </div>
+              </button>
+
+              <button
+                id="nav-logs-btn"
+                onClick={() => setActiveTab('logs')}
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                  activeTab === 'logs'
+                    ? 'bg-black text-white'
+                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+                }`}
+                title={lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'System Logs'}
+              >
+                <div className="flex items-center gap-3.5">
+                  <Terminal className="w-4 h-4" />
+                  {!isCollapsed && <span>{lang === 'ru' ? 'Системные логи' : lang === 'uz' ? 'Tizim loglari' : 'System Logs'}</span>}
+                </div>
+              </button>
+            </>
           )}
 
           {userRole === 'super_admin' && (

@@ -8,4 +8,5 @@ enum Platform: string
     case Instagram = 'Instagram';
     case YouTube = 'YouTube';
     case MAX = 'MAX';
+    case TikTok = 'TikTok';
 }

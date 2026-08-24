@@ -11,19 +11,24 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
+import BloggersView from './components/BloggersView';
 import ReportsView from './components/ReportsView';
 import ReportsFeedView from './components/ReportsFeedView';
+import BulkPurchasesView from './components/BulkPurchasesView';
 import BloggerCabinetView from './components/BloggerCabinetView';
 import AccessManagementView from './components/AccessManagementView';
+import LogsView from './components/LogsView';
 import LoginView from './components/LoginView';
 import CodeViewer from './components/CodeViewer';
-import { Language } from './translations';
+import { Language, translations } from './translations';
 import {
   fetchAllowedUsers,
   createAllowedUser,
   deleteAllowedUser,
+  updateAllowedUser,
   fetchProjects,
   createProject,
+  updateProject,
   deleteProject,
   fetchIntegrations,
   createIntegration,
@@ -31,8 +36,10 @@ import {
   deleteIntegration,
   fetchReports,
   createReport,
+  deleteReport,
   fetchSubmissions,
   createSubmission,
+  fetchBulkPurchases,
 } from './services/api';
 
 import {
@@ -41,16 +48,17 @@ import {
   Report,
   BloggerSubmission,
   AllowedUser,
+  BulkPurchase,
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users } from 'lucide-react';
 
 export default function App() {
-  // Language state (Russian by default)
+  // Language state (Uzbek by default)
   const [lang, setLang] = useState<Language>(() => {
     const cached = localStorage.getItem('ff_lang');
-    return (cached as Language) || 'ru';
+    return (cached as Language) || 'uz';
   });
 
   const handleSetLang = (newLang: Language) => {
@@ -75,13 +83,24 @@ export default function App() {
   });
 
   // Navigation Tabs State
-  const [activeTab, setActiveTab] = useState<'projects' | 'reports' | 'reports_feed' | 'blogger' | 'code' | 'access'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs'>('projects');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
+  const [reportsInitialState, setReportsInitialState] = useState<{
+    projectId?: string;
+    bloggerName?: string;
+    paymentType?: 'prepaid' | 'full' | 'other' | 'remaining';
+  } | null>(null);
 
-  const handleAddUser = async (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[]) => {
-    const newUser = await createAllowedUser(email, role, allowedMetrics);
+
+  const handleAddUser = async (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => {
+    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages);
     setAllowedUsers((prev) => [...prev, newUser]);
+  };
+
+  const handleEditUser = async (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => {
+    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics, allowedPages);
+    setAllowedUsers((prev) => prev.map((u) => u.id === id ? updatedUser : u));
   };
 
   const handleRemoveUser = async (id: string) => {
@@ -104,6 +123,39 @@ export default function App() {
     localStorage.removeItem('ff_user_role');
   };
 
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        setIsInputFocused(true);
+        setTimeout(() => {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 200);
+      }
+    };
+
+    const handleFocusOut = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        setTimeout(() => {
+          const activeEl = document.activeElement;
+          if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA' && activeEl.tagName !== 'SELECT')) {
+            setIsInputFocused(false);
+          }
+        }, 100);
+      }
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+    };
+  }, []);
+
   // Mapped URL simulated routing parameters state
   const [simulatedUrlParams, setSimulatedUrlParams] = useState<{
     platform?: string;
@@ -111,11 +163,34 @@ export default function App() {
     integrationId?: string;
   }>({});
 
+  // Check if current URL route matches a blogger cabinet guest access pattern (and user is not logged in)
+  const isBloggerCabinetRoute = (new URLSearchParams(window.location.search).get('cabinet') === 'true' ||
+                                 window.location.pathname.startsWith('/c/')) && 
+                                 !currentUserRole;
+
   // Core Persistent State Hook (Persisting data to server database)
   const [projects, setProjects] = useState<Project[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [submissions, setSubmissions] = useState<BloggerSubmission[]>([]);
+  const [bulkPurchases, setBulkPurchases] = useState<BulkPurchase[]>([]);
+
+  const handleRefreshAllData = async () => {
+    try {
+      const [projs, ints, reps, bulks] = await Promise.all([
+        fetchProjects(),
+        fetchIntegrations(),
+        fetchReports(),
+        fetchBulkPurchases(),
+      ]);
+      setProjects(projs);
+      setIntegrations(ints);
+      setReports(reps);
+      setBulkPurchases(bulks);
+    } catch (err) {
+      console.error("Failed to refresh data", err);
+    }
+  };
 
   // Load all data from server
   useEffect(() => {
@@ -123,12 +198,13 @@ export default function App() {
 
     async function loadData() {
       try {
-        const [users, projs, ints, reps, subs] = await Promise.all([
+        const [users, projs, ints, reps, subs, bulks] = await Promise.all([
           fetchAllowedUsers(),
           fetchProjects(),
           fetchIntegrations(),
           fetchReports(),
-          fetchSubmissions()
+          fetchSubmissions(),
+          fetchBulkPurchases(),
         ]);
 
         if (!cancelled) {
@@ -137,6 +213,7 @@ export default function App() {
           setIntegrations(ints);
           setReports(reps);
           setSubmissions(subs);
+          setBulkPurchases(bulks);
         }
       } catch (err) {
         console.error("Failed to load backend data", err);
@@ -159,8 +236,8 @@ export default function App() {
   useEffect(() => {
     if (allowedUsersLoading || !currentUserEmail) return;
 
-    const found = allowedUsers.find(
-      (u) => u.email.toLowerCase() === currentUserEmail.toLowerCase()
+    const found = (allowedUsers || []).find(
+      (u) => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase()
     );
 
     if (!found) {
@@ -176,12 +253,17 @@ export default function App() {
 
   // State manipulation handlers
   const handleAddProject = async (newProj: Omit<Project, 'id' | 'createdAt'>) => {
-    const project = await createProject(newProj.name, newProj.description);
+    const project = await createProject(newProj.name, newProj.description, newProj.telegramThreadId, newProj.monthlyLimit);
     setProjects((prev) => [...prev, project]);
   };
 
+  const handleEditProject = async (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null) => {
+    const updated = await updateProject(id, name, description, telegramThreadId, monthlyLimit, currentUserEmail || undefined);
+    setProjects((prev) => prev.map(p => p.id === id ? updated : p));
+  };
+
   const handleDeleteProject = async (projectId: string) => {
-    await deleteProject(projectId);
+    await deleteProject(projectId, currentUserEmail || undefined);
     const projs = await fetchProjects();
     const ints = await fetchIntegrations();
     setProjects(projs);
@@ -204,19 +286,25 @@ export default function App() {
   };
 
   const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => {
-    const report = await createReport(newRep);
+    const report = await createReport(newRep, currentUserEmail || undefined);
     setReports((prev) => [report, ...prev]);
     const ints = await fetchIntegrations();
     setIntegrations(ints);
     return report;
   };
 
+  const handleDeleteReport = async (id: string) => {
+    if (!window.confirm(lang === 'ru' ? 'Вы уверены, что хотите удалить этот отчет?' : lang === 'uz' ? 'Ushbu hisobotni o\'chirishni xohlaysizmi?' : 'Are you sure you want to delete this report?')) return;
+    await deleteReport(id);
+    setReports((prev) => prev.filter((r) => r.id !== id));
+  };
+
   const handleAddSubmission = async (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => {
     const submission = await createSubmission(newSub.integrationId, newSub.data, newSub.lang);
     setSubmissions((prev) => {
-      const exists = prev.some(s => s.integrationId === newSub.integrationId);
+      const exists = prev.some(s => String(s.integrationId) === String(newSub.integrationId));
       if (exists) {
-        return prev.map(s => s.integrationId === newSub.integrationId ? submission : s);
+        return prev.map(s => String(s.integrationId) === String(newSub.integrationId) ? submission : s);
       }
       return [submission, ...prev];
     });
@@ -248,17 +336,21 @@ export default function App() {
 
     const parseUrlRoute = () => {
       const params = new URLSearchParams(window.location.search);
-      const isCabinet = params.get('cabinet') === 'true';
+      const hasCabinetParam = params.get('cabinet') === 'true' || window.location.pathname.startsWith('/c/');
       const page = params.get('page');
 
-      if (isCabinet) {
+      if (hasCabinetParam) {
+        let integrationId = params.get('integrationId') || params.get('id') || undefined;
+        if (window.location.pathname.startsWith('/c/')) {
+          integrationId = window.location.pathname.substring(3); // remove "/c/"
+        }
         setSimulatedUrlParams({
           platform: params.get('platform') || undefined,
           slotsCount: params.get('slots_count') || undefined,
-          integrationId: params.get('id') || undefined
+          integrationId: integrationId
         });
         setActiveTab('blogger');
-      } else if (page && ['projects', 'reports', 'reports_feed', 'blogger', 'code', 'access'].includes(page)) {
+      } else if (page && ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'blogger', 'code', 'access', 'logs'].includes(page)) {
         setActiveTab(page as any);
       } else if (!isTg) {
         setActiveTab('projects');
@@ -275,6 +367,8 @@ export default function App() {
 
   // Update browser URL query string whenever activeTab changes
   useEffect(() => {
+    if (isBloggerCabinetRoute) return;
+
     const params = new URLSearchParams(window.location.search);
     
     if (activeTab === 'blogger') {
@@ -293,12 +387,28 @@ export default function App() {
         window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
       }
     }
-  }, [activeTab]);
+  }, [activeTab, isBloggerCabinetRoute]);
 
+  // Resolve allowed pages for the active user
+  const activeUser = (allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase());
+  const allowedPages = activeUser?.allowedPages || ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
+
+  // Enforce page-level access control: redirect user to their first allowed page if active tab is forbidden
+  useEffect(() => {
+    if (isBloggerCabinetRoute) return;
+    if (!currentUserRole || currentUserRole === 'super_admin') return;
+
+    const isAllowedTab = (activeTab === 'bulk_purchases' || activeTab === 'bloggers') ? true : allowedPages.includes(activeTab);
+    const isSystemTab = ['access', 'logs', 'blogger'].includes(activeTab);
+
+    if (!isAllowedTab && !isSystemTab) {
+      if (allowedPages.length > 0) {
+        setActiveTab(allowedPages[0] as any);
+      }
+    }
+  }, [activeTab, allowedPages, currentUserRole, isBloggerCabinetRoute]);
 
   // White-list Gate (bypass if it's the guest blogger cabinet page)
-  const isBloggerCabinetRoute = new URLSearchParams(window.location.search).get('cabinet') === 'true';
-
   if (!isBloggerCabinetRoute && (!currentUserEmail || !currentUserRole)) {
     return (
       <LoginView
@@ -314,7 +424,7 @@ export default function App() {
   return (
     <div className={`flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans ${isSidebarCollapsed ? 'sidebar-collapsed' : ''} ${isTelegramWebApp ? 'telegram-webapp-view' : ''}`}>
       {/* Dynamic Navigation Rail Sidebar */}
-      {!isTelegramWebApp && (
+      {!isTelegramWebApp && !isBloggerCabinetRoute && (
         <Sidebar 
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
@@ -324,16 +434,55 @@ export default function App() {
           integrationsCount={integrations.length}
           lang={lang}
           setLang={handleSetLang}
-          userEmail={currentUserEmail}
+          userEmail={currentUserEmail || ''}
           userRole={currentUserRole}
           onLogout={handleLogout}
+          allowedPages={allowedPages}
         />
       )}
 
+      {/* Mobile Top Header */}
+      {!isTelegramWebApp && !isBloggerCabinetRoute && (
+        <header className="fixed top-0 left-0 right-0 bg-white/90 border-b border-neutral-200/85 h-14 flex items-center justify-between px-4 z-50 md:hidden shadow-sm backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span className="font-black text-xs tracking-wider uppercase text-neutral-800">
+              FluenceFlow
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Language switcher */}
+            <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
+              {(['ru', 'uz', 'en'] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => handleSetLang(l)}
+                  className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${
+                    lang === l
+                      ? 'bg-white text-black shadow-sm'
+                      : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {/* Logout button */}
+            <button
+              onClick={handleLogout}
+              className="text-neutral-400 hover:text-red-500 transition-colors p-1"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </header>
+      )}
+
       {/* Main Core View Area */}
-      <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'p-8 lg:p-12'}`}>
+      <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'pt-18 p-4 pb-24 md:p-8 lg:p-12 md:pt-8'}`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
-        {simulatedUrlParams.platform && (
+        {simulatedUrlParams.platform && currentUserRole === 'super_admin' && (
           <div className="mb-6 p-4 bg-white border-2 border-black rounded-lg flex items-center justify-between text-left text-xs text-black shadow-sm">
             <div className="flex items-start gap-2.5">
               <Info className="w-4 h-4 text-black mt-0.5 shrink-0" />
@@ -353,63 +502,258 @@ export default function App() {
           </div>
         )}
 
-        {/* Active Tab Router */}
-        {activeTab === 'projects' && (
-          <DashboardView
-            projects={projects}
-            integrations={integrations}
-            submissions={submissions}
-            onAddProject={handleAddProject}
-            onDeleteProject={handleDeleteProject}
-            onAddIntegration={handleAddIntegration}
-            onEditIntegration={handleEditIntegration}
-            onDeleteIntegration={handleDeleteIntegration}
-            lang={lang}
-            allowedMetrics={allowedUsers.find(u => u.email.toLowerCase() === currentUserEmail?.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
-          />
-        )}
-
-        {activeTab === 'reports' && currentUserRole !== 'product_manager' && (
-          <ReportsView
-            projects={projects}
-            integrations={integrations}
-            reports={reports}
-            onAddReport={handleAddReport}
-            lang={lang}
-            userRole={currentUserRole}
-            isWebApp={isTelegramWebApp}
-          />
-        )}
-
-        {activeTab === 'reports_feed' && currentUserRole !== 'product_manager' && (
-          <ReportsFeedView
-            projects={projects}
-            reports={reports}
-            lang={lang}
-          />
-        )}
-
-        {activeTab === 'blogger' && (
+        {/* Active Tab Router / Guest Blogger Route Gate */}
+        {isBloggerCabinetRoute ? (
           <BloggerCabinetView
+            projects={projects}
             integrations={integrations}
             submissions={submissions}
             onAddSubmission={handleAddSubmission}
             urlParams={simulatedUrlParams}
             lang={lang}
             userRole={currentUserRole}
+            setLang={handleSetLang}
           />
-        )}
+        ) : (
+          <>
+            {activeTab === 'projects' && (
+              <DashboardView
+                projects={projects}
+                integrations={integrations}
+                submissions={submissions}
+                onAddProject={handleAddProject}
+                onEditProject={handleEditProject}
+                onDeleteProject={handleDeleteProject}
+                onAddIntegration={handleAddIntegration}
+                onEditIntegration={handleEditIntegration}
+                onDeleteIntegration={handleDeleteIntegration}
+                lang={lang}
+                allowedMetrics={(allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
+                userRole={currentUserRole}
+                onNavigateToReports={(projectId, bloggerName, paymentType) => {
+                  setReportsInitialState({
+                    projectId,
+                    bloggerName,
+                    paymentType
+                  });
+                  setActiveTab('reports');
+                }}
+              />
+            )}
 
-        {activeTab === 'access' && currentUserRole === 'super_admin' && (
-          <AccessManagementView
-            allowedUsers={allowedUsers}
-            onAddUser={handleAddUser}
-            onRemoveUser={handleRemoveUser}
-            currentUserEmail={currentUserEmail}
-            lang={lang}
-          />
+            {activeTab === 'bloggers' && (
+              <BloggersView
+                projects={projects}
+                integrations={integrations}
+                lang={lang}
+                userRole={currentUserRole}
+              />
+            )}
+
+            {activeTab === 'reports' && currentUserRole !== 'product_manager' && (
+              <ReportsView
+                projects={projects}
+                integrations={integrations}
+                reports={reports}
+                onAddReport={handleAddReport}
+                lang={lang}
+                userRole={currentUserRole}
+                isWebApp={isTelegramWebApp}
+                initialState={reportsInitialState}
+                onClearInitialState={() => setReportsInitialState(null)}
+              />
+            )}
+
+            {activeTab === 'bulk_purchases' && (
+              <BulkPurchasesView
+                projects={projects}
+                bulkPurchases={bulkPurchases}
+                onRefreshData={handleRefreshAllData}
+                lang={lang}
+                userEmail={currentUserEmail || undefined}
+                userRole={currentUserRole}
+              />
+            )}
+
+            {activeTab === 'reports_feed' && currentUserRole !== 'product_manager' && (
+              <ReportsFeedView
+                projects={projects}
+                integrations={integrations}
+                reports={reports.filter((r) => r.paymentType !== 'other')}
+                lang={lang}
+                userRole={currentUserRole}
+                onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
+              />
+            )}
+
+            {activeTab === 'other_expenses' && currentUserRole !== 'product_manager' && (
+              <ReportsFeedView
+                projects={projects}
+                integrations={integrations}
+                reports={reports.filter((r) => r.paymentType === 'other')}
+                lang={lang}
+                userRole={currentUserRole}
+                onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
+                title={translations[lang].otherExpensesTab}
+                description={
+                  lang === 'ru' ? 'Просматривайте все созданные прочие расходы.' : 
+                  lang === 'uz' ? 'Barcha yaratilgan boshqa xarajatlarni ko‘ring.' : 
+                  'View all created other expenses.'
+                }
+              />
+            )}
+
+            {activeTab === 'blogger' && (
+              <BloggerCabinetView
+                projects={projects}
+                integrations={integrations}
+                submissions={submissions}
+                onAddSubmission={handleAddSubmission}
+                urlParams={simulatedUrlParams}
+                lang={lang}
+                userRole={currentUserRole}
+                setLang={handleSetLang}
+              />
+            )}
+
+            {activeTab === 'access' && currentUserRole === 'super_admin' && (
+              <AccessManagementView
+                allowedUsers={allowedUsers}
+                onAddUser={handleAddUser}
+                onEditUser={handleEditUser}
+                onRemoveUser={handleRemoveUser}
+                currentUserEmail={currentUserEmail}
+                lang={lang}
+              />
+            )}
+
+            {activeTab === 'logs' && currentUserRole === 'super_admin' && (
+              <LogsView
+                lang={lang}
+              />
+            )}
+          </>
         )}
       </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      {!isTelegramWebApp && !isBloggerCabinetRoute && !isInputFocused && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200/80 h-16 flex items-center justify-around px-2 z-50 md:hidden shadow-lg backdrop-blur-md">
+          {/* Projects Tab */}
+          <button
+            onClick={() => setActiveTab('projects')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+              activeTab === 'projects' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+            }`}
+          >
+            <FolderKanban className="w-5 h-5" />
+            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+              {lang === 'ru' ? 'Проекты' : lang === 'uz' ? 'Loyihalar' : 'Projects'}
+            </span>
+          </button>
+
+          {/* Bloggers Tab */}
+          <button
+            onClick={() => setActiveTab('bloggers')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+              activeTab === 'bloggers' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+              {lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers'}
+            </span>
+          </button>
+
+          {/* Create Report Tab */}
+          {currentUserRole !== 'product_manager' && (
+            <button
+              onClick={() => setActiveTab('reports')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'reports' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <FilePlus className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Отчет' : lang === 'uz' ? 'Hisobot' : 'Report'}
+              </span>
+            </button>
+          )}
+
+          {/* Bulk Purchases Tab */}
+          <button
+            onClick={() => setActiveTab('bulk_purchases')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+              activeTab === 'bulk_purchases' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+            }`}
+          >
+            <Layers className="w-5 h-5" />
+            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+              {lang === 'ru' ? 'Оптовая' : lang === 'uz' ? 'Ommaviy' : 'Bulk'}
+            </span>
+          </button>
+
+          {/* Reports Feed Tab */}
+          {currentUserRole !== 'product_manager' && (
+            <button
+              onClick={() => setActiveTab('reports_feed')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'reports_feed' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <FileText className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Лента' : lang === 'uz' ? 'Lenta' : 'Feed'}
+              </span>
+            </button>
+          )}
+
+          {/* Blogger Cabinet Tab */}
+          {currentUserRole === 'super_admin' && (
+            <button
+              onClick={() => setActiveTab('blogger')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'blogger' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <UserSquare2 className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Кабинет' : lang === 'uz' ? 'Kabinet' : 'Cabinet'}
+              </span>
+            </button>
+          )}
+
+          {/* Access Management Tab */}
+          {currentUserRole === 'super_admin' && (
+            <button
+              onClick={() => setActiveTab('access')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'access' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <Shield className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Доступ' : lang === 'uz' ? 'Ruxsat' : 'Access'}
+              </span>
+            </button>
+          )}
+
+          {/* System Logs Tab */}
+          {currentUserRole === 'super_admin' && (
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'logs' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <Terminal className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'Logs'}
+              </span>
+            </button>
+          )}
+        </nav>
+      )}
     </div>
   );
 }

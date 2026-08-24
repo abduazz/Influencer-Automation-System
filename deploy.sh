@@ -12,8 +12,12 @@ composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
 # Assets are pre-compiled locally and committed to the repository, npm is not needed on the server.
 
-echo "🗃️ Running migrations"
+echo "🗃️ Running migrations and seeding"
 php artisan migrate --force
+php artisan db:seed --force
+
+echo "🔄 Syncing unsent reports to Telegram & Google Sheets"
+php artisan reports:sync
 
 echo "⚡ Optimizing application caches"
 php artisan optimize

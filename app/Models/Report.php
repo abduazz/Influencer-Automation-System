@@ -16,6 +16,7 @@ class Report extends Model
         'project_id',
         'destination',
         'channel_blogger',
+        'blogger_page_link',
         'platform',
         'slots_count',
         'paid_slots_count',
@@ -25,6 +26,9 @@ class Report extends Model
         'comments',
         'slots_config',
         'receipt',
+        'telegram_sent',
+        'sheets_sent',
+        'created_by',
     ];
 
     protected $casts = [
@@ -35,12 +39,17 @@ class Report extends Model
         'slots_count' => 'integer',
         'paid_slots_count' => 'integer',
         'slots_config' => 'array',
+        'telegram_sent' => 'boolean',
+        'sheets_sent' => 'boolean',
     ];
 
     protected static function booted(): void
     {
         static::saving(function (Report $report): void {
-            if ($report->payment_type !== 'other') {
+            if ($report->payment_type === 'remaining') {
+                $report->total_amount = $report->price_per_slot * $report->paid_slots_count;
+                $report->paid_amount = $report->price_per_slot * $report->paid_slots_count;
+            } else if ($report->payment_type !== 'other') {
                 $report->total_amount = $report->price_per_slot * $report->slots_count;
                 $report->paid_amount = $report->price_per_slot * $report->paid_slots_count;
             }

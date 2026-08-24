@@ -40,7 +40,17 @@ class Login extends BaseLogin
         $data = $this->form->getState();
         $email = strtolower(trim($data['email']));
 
+        \Illuminate\Support\Facades\Log::info('Login attempt', [
+            'input_email' => $data['email'],
+            'cleaned_email' => $email,
+        ]);
+
         $user = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
+
+        \Illuminate\Support\Facades\Log::info('Login user result', [
+            'found' => $user !== null,
+            'user' => $user ? ['id' => $user->id, 'email' => $user->email] : null,
+        ]);
 
         if (! $user) {
             throw ValidationException::withMessages([

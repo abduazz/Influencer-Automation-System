@@ -5,16 +5,62 @@
 
 import React, { useState, useEffect } from 'react';
 import { Project, Report, SlotConfig, Integration } from '../data/mockData';
-import { 
-  Send, 
-  CheckCircle2, 
+import {
+  Send,
+  CheckCircle2,
   Calendar,
   ChevronLeft,
   MoreVertical,
   Clock,
-  MessageSquare
+  MessageSquare,
+  ChevronDown,
+  Search,
+  X
 } from 'lucide-react';
 import { Language, translations } from '../translations';
+
+interface StepperInputProps {
+  value: number;
+  onChange: (val: number) => void;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+}
+
+function StepperInput({ value, onChange, min = 0, max, disabled }: StepperInputProps) {
+  return (
+    <div className={`flex items-center border border-neutral-200 rounded-md bg-white overflow-hidden h-7 ${disabled ? 'opacity-40' : ''}`}>
+      <button
+        type="button"
+        disabled={disabled || value <= min}
+        onClick={() => onChange(value - 1)}
+        className="w-7 h-full bg-neutral-50 hover:bg-neutral-100 active:bg-neutral-200 flex items-center justify-center font-bold text-xs text-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed select-none border-r border-neutral-200"
+      >
+        −
+      </button>
+      <input
+        type="number"
+        disabled={disabled}
+        value={value}
+        onChange={(e) => {
+          let val = Number(e.target.value);
+          if (isNaN(val)) return;
+          if (max !== undefined) val = Math.min(max, val);
+          onChange(Math.max(min, val));
+        }}
+        className="w-full h-full text-center text-[10px] font-bold text-black focus:outline-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      />
+      <button
+        type="button"
+        disabled={disabled || (max !== undefined && value >= max)}
+        onClick={() => onChange(value + 1)}
+        className="w-7 h-full bg-neutral-50 hover:bg-neutral-100 active:bg-neutral-200 flex items-center justify-center font-bold text-xs text-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed select-none border-l border-neutral-200"
+      >
+        +
+      </button>
+    </div>
+  );
+}
 
 interface ReportsViewProps {
   projects: Project[];
@@ -24,50 +70,197 @@ interface ReportsViewProps {
   lang: Language;
   userRole?: 'super_admin' | 'pr_manager' | 'product_manager';
   isWebApp?: boolean;
+  initialState?: {
+    projectId?: string;
+    bloggerName?: string;
+    paymentType?: 'prepaid' | 'full' | 'other' | 'remaining';
+  } | null;
+  onClearInitialState?: () => void;
 }
 
-export default function ReportsView({ projects, integrations, reports, onAddReport, lang, userRole, isWebApp }: ReportsViewProps) {
+const formatPrice = (val: number | ''): string => {
+  if (val === '' || val === undefined || val === null) return '';
+  return new Intl.NumberFormat('ru-RU').format(val);
+};
+
+const parsePrice = (str: string): number | '' => {
+  const clean = str.replace(/\s/g, '').replace(/ /g, ''); // strip regular spaces and non-breaking spaces
+  if (clean === '') return '';
+  const num = Number(clean);
+  return isNaN(num) ? '' : num;
+};
+
+const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.7): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedBase64);
+      };
+      img.onerror = () => {
+        resolve(event.target?.result as string);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+export default function ReportsView({
+  projects,
+  integrations,
+  reports,
+  onAddReport,
+  lang,
+  userRole,
+  isWebApp,
+  initialState,
+  onClearInitialState
+}: ReportsViewProps) {
   const t = translations[lang];
 
   // Form State
-  const [paymentType, setPaymentType] = useState<'prepaid' | 'full' | 'other'>('prepaid');
+  const [paymentType, setPaymentType] = useState<'prepaid' | 'full' | 'other' | 'remaining'>('prepaid');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [projectId, setProjectId] = useState<string>(projects[0]?.id || '');
+  const [projectId, setProjectId] = useState<string>('');
   const [destination, setDestination] = useState<string>('');
   const [channelBlogger, setChannelBlogger] = useState<string>('');
+  const [bloggerPageLink, setBloggerPageLink] = useState<string>('');
   const [bloggerType, setBloggerType] = useState<'existing' | 'new'>('existing');
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
-  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX'>('Telegram');
+  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Telegram');
 
-  // If userRole is pr_manager, force platform to Telegram
   useEffect(() => {
-    if (userRole === 'pr_manager') {
-      setPlatform('Telegram');
+    if (initialState) {
+      if (initialState.paymentType) setPaymentType(initialState.paymentType);
+      if (initialState.projectId) setProjectId(initialState.projectId);
+      if (initialState.bloggerName) setChannelBlogger(initialState.bloggerName);
+      
+      if (onClearInitialState) {
+        onClearInitialState();
+      }
     }
-  }, [userRole]);
+  }, [initialState]);
+
   const [slotsCount, setSlotsCount] = useState<number>(5);
   const [paidSlotsCount, setPaidSlotsCount] = useState<number>(3);
-  const [pricePerSlot, setPricePerSlot] = useState<number>(200);
-  const [otherAmount, setOtherAmount] = useState<number>(100);
+  const [pricePerSlot, setPricePerSlot] = useState<number | ''>(0);
+  const [otherAmount, setOtherAmount] = useState<number | ''>(0);
   const [comments, setComments] = useState<string>('');
-  const [totalAmount, setTotalAmount] = useState<number>(1000);
-  const [paidAmount, setPaidAmount] = useState<number>(600);
+  const [totalAmount, setTotalAmount] = useState<number | ''>(0);
+  const [paidAmount, setPaidAmount] = useState<number | ''>(0);
   const [slotsConfig, setSlotsConfig] = useState<SlotConfig[]>([]);
 
+  const [isMultiProject, setIsMultiProject] = useState<boolean>(false);
+  const [slotProjects, setSlotProjects] = useState<{ [slotIndex: number]: string }>({});
+
   const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
-  const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX'; format: string }[]>([]);
+  const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'; format: string }[]>([]);
   const [receipt, setReceipt] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState<number>(0);
+  const [isBloggerModalOpen, setIsBloggerModalOpen] = useState(false);
+  const [bloggerSearch, setBloggerSearch] = useState('');
 
-  const existingBloggers = Array.from(new Set(integrations.map(i => i.bloggerName).filter(Boolean)));
+  const existingBloggers = Array.from(
+    new Set(
+      integrations
+        .filter((i) => {
+          if (paymentType === 'remaining') {
+            const unpaid = i.slotsCount > (i.paidSlotsCount || 0);
+            return String(i.projectId) === String(projectId) && unpaid && i.status === 'active';
+          }
+          return true;
+        })
+        .map((i) => i.bloggerName)
+        .filter(Boolean)
+    )
+  );
+  const filteredExistingBloggers = existingBloggers.filter(name =>
+    name.toLowerCase().includes(bloggerSearch.toLowerCase())
+  );
   const suggestions = channelBlogger.trim() !== ''
     ? existingBloggers.filter(name => name.toLowerCase().includes(channelBlogger.toLowerCase()))
     : existingBloggers;
 
-  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX') => {
+  const activeIntegration = integrations.find(
+    (i) =>
+      String(i.projectId) === String(projectId) &&
+      i.bloggerName.toLowerCase().replace(/[@#]/g, '').trim() === channelBlogger.toLowerCase().replace(/[@#]/g, '').trim() &&
+      i.status === 'active'
+  );
+
+  useEffect(() => {
+    if (activeIntegration?.bloggerPageLink) {
+      setBloggerPageLink(activeIntegration.bloggerPageLink);
+    }
+  }, [activeIntegration]);
+
+  const unpaidSlots = activeIntegration
+    ? Math.max(0, activeIntegration.slotsCount - (activeIntegration.paidSlotsCount || 0))
+    : 0;
+
+  useEffect(() => {
+    if (paymentType === 'remaining' && activeIntegration) {
+      setPlatform(activeIntegration.platform);
+      setPricePerSlot(activeIntegration.pricePerSlot);
+      setDestination(activeIntegration.referralLink || '');
+      setSlotsCount(0);
+      const unpaid = Math.max(0, activeIntegration.slotsCount - (activeIntegration.paidSlotsCount || 0));
+      setPaidSlotsCount(unpaid > 0 ? unpaid : 1);
+    }
+  }, [paymentType, activeIntegration]);
+
+  useEffect(() => {
+    if (paymentType === 'remaining') {
+      const p = pricePerSlot === '' ? 0 : pricePerSlot;
+      const amt = paidSlotsCount * p;
+      setTotalAmount(amt);
+      setPaidAmount(amt);
+    }
+  }, [paymentType, paidSlotsCount, pricePerSlot]);
+
+  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok') => {
     if (plat === 'Instagram') return 'Stories';
     if (plat === 'Telegram') return 'Post';
-    if (plat === 'YouTube') return 'Release';
+    if (plat === 'YouTube') return 'Shorts';
+    if (plat === 'TikTok') return 'VideoPost';
     return 'Post';
   };
 
@@ -80,56 +273,107 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
   // Success state for toast
   const [successToast, setSuccessToast] = useState<{ message: string; link?: string | null } | null>(null);
   const [createdReportResult, setCreatedReportResult] = useState<Report | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Sync slotsConfig size with slotsCount
+  // Sync slotsConfig size and platform/format with slotsCount and platform
   useEffect(() => {
-    setSlotsConfig((prev) => {
-      const next = [...prev];
-      if (next.length < slotsCount) {
-        for (let i = next.length; i < slotsCount; i++) {
-          next.push({
-            platform: platform,
-            format: platform === 'Instagram' ? 'Stories' : platform === 'Telegram' ? 'Post' : 'Release',
-          });
-        }
-      } else if (next.length > slotsCount) {
-        next.splice(slotsCount);
+    if (!customizeSlots) {
+      const next: SlotConfig[] = [];
+      for (let i = 0; i < slotsCount; i++) {
+        next.push({
+          platform: platform,
+          format: getDefaultFormat(platform),
+          projectId: isMultiProject ? (slotProjects[i] || null) : (projectId || null),
+        });
       }
-      return next;
-    });
-  }, [slotsCount, platform]);
+      setSlotsConfig(next);
+    } else {
+      setSlotsConfig((prev) => {
+        const next = [...prev];
+        if (next.length < slotsCount) {
+          for (let i = next.length; i < slotsCount; i++) {
+            next.push({
+              platform: platform,
+              format: getDefaultFormat(platform),
+              projectId: isMultiProject ? (slotProjects[i] || null) : (projectId || null),
+            });
+          }
+        } else if (next.length > slotsCount) {
+          next.splice(slotsCount);
+        }
+        return next.map((s, idx) => ({
+          ...s,
+          projectId: isMultiProject ? (slotProjects[idx] || null) : (projectId || null),
+        }));
+      });
+    }
+  }, [slotsCount, platform, customizeSlots, isMultiProject, slotProjects, projectId]);
 
-  // Calculate total and paid amount "on the fly" mimicking ->live() and ->afterStateUpdated()
-  useEffect(() => {
-    setTotalAmount(slotsCount * pricePerSlot);
-  }, [slotsCount, pricePerSlot]);
+  const handlePricePerSlotChange = (newPrice: number | '') => {
+    setPricePerSlot(newPrice);
+    const p = newPrice === '' ? 0 : newPrice;
+    setTotalAmount(slotsCount * p);
+    setPaidAmount(paidSlotsCount * p);
+  };
 
-  useEffect(() => {
-    setPaidAmount(paidSlotsCount * pricePerSlot);
-  }, [paidSlotsCount, pricePerSlot]);
+  const handleTotalAmountChange = (newTotal: number | '') => {
+    setTotalAmount(newTotal);
+    const t = newTotal === '' ? 0 : newTotal;
+    const computedPrice = slotsCount > 0 ? (t / slotsCount) : 0;
+    const roundedPrice = Math.round(computedPrice * 100) / 100;
+    setPricePerSlot(roundedPrice);
+    setPaidAmount(Math.round(paidSlotsCount * roundedPrice * 100) / 100);
+  };
+
+  const handleSlotsCountChange = (newSlots: number) => {
+    setSlotsCount(newSlots);
+    const p = pricePerSlot === '' ? 0 : pricePerSlot;
+    setTotalAmount(newSlots * p);
+
+    let nextPaidSlots = paidSlotsCount;
+    if (paymentType === 'full') {
+      nextPaidSlots = newSlots;
+      setPaidSlotsCount(newSlots);
+    } else if (paidSlotsCount > newSlots) {
+      nextPaidSlots = newSlots;
+      setPaidSlotsCount(newSlots);
+    }
+    setPaidAmount(nextPaidSlots * p);
+  };
+
+  const handlePaidSlotsCountChange = (newPaidSlots: number) => {
+    setPaidSlotsCount(newPaidSlots);
+    const p = pricePerSlot === '' ? 0 : pricePerSlot;
+    setPaidAmount(newPaidSlots * p);
+  };
 
   // Ensure paid slots match when full payment or don't exceed total slots
   useEffect(() => {
-    if (paymentType === 'full') {
+    if (paymentType === 'full' && paidSlotsCount !== slotsCount) {
       setPaidSlotsCount(slotsCount);
+      const p = pricePerSlot === '' ? 0 : pricePerSlot;
+      setPaidAmount(slotsCount * p);
     } else if (paidSlotsCount > slotsCount) {
       setPaidSlotsCount(slotsCount);
+      const p = pricePerSlot === '' ? 0 : pricePerSlot;
+      setPaidAmount(slotsCount * p);
     }
-  }, [paymentType, slotsCount, paidSlotsCount]);
+  }, [paymentType, slotsCount, paidSlotsCount, pricePerSlot]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!destination.trim()) return;
-    if (paymentType !== 'other' && (!projectId || !channelBlogger.trim())) return;
+    if (isSubmitting) return;
+    if (paymentType === 'other' && !destination.trim()) return;
+    if (paymentType !== 'other' && ((!isMultiProject && !projectId) || !channelBlogger.trim() || !bloggerPageLink.trim())) return;
 
     if (paymentType !== 'other' && customizeSlots) {
       const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
       if (currentSum !== slotsCount) {
-        alert(lang === 'ru' 
-          ? `Пожалуйста, настройте все слоты. Настроено ${currentSum} из ${slotsCount}.` 
-          : lang === 'uz' 
-          ? `Iltimos, barcha slotlarni sozlang. Sozlangan: ${currentSum} ta (${slotsCount} tadan).` 
-          : `Please configure all slots. Configured ${currentSum} out of ${slotsCount}.`
+        alert(lang === 'ru'
+          ? `Пожалуйста, настройте все слоты. Настроено ${currentSum} из ${slotsCount}.`
+          : lang === 'uz'
+            ? `Iltimos, barcha slotlarni sozlang. Sozlangan: ${currentSum} ta (${slotsCount} tadan).`
+            : `Please configure all slots. Configured ${currentSum} out of ${slotsCount}.`
         );
         return;
       }
@@ -145,73 +389,100 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
     };
 
     if (paymentType === 'other') {
-      payload.projectId = null;
-      payload.amount = otherAmount;
+      payload.projectId = projectId || null;
+      payload.amount = otherAmount === '' ? 0 : otherAmount;
       payload.channelBlogger = null;
+      payload.bloggerPageLink = null;
       payload.platform = null;
       payload.slotsCount = null;
       payload.paidSlotsCount = null;
       payload.pricePerSlot = null;
       payload.slotsConfig = [];
     } else {
-      payload.projectId = projectId;
+      payload.projectId = isMultiProject ? null : (projectId || null);
       payload.channelBlogger = channelBlogger;
+      payload.bloggerPageLink = bloggerPageLink || null;
       payload.platform = platform;
       payload.slotsCount = slotsCount;
       payload.paidSlotsCount = paidSlotsCount;
-      payload.pricePerSlot = pricePerSlot;
-      
+      payload.pricePerSlot = pricePerSlot === '' ? 0 : pricePerSlot;
+
       let finalSlotsConfig = slotsConfig;
       if (customizeSlots) {
         finalSlotsConfig = [];
+        let slotIdx = 0;
         slotGroups.forEach(g => {
           for (let i = 0; i < g.quantity; i++) {
-            finalSlotsConfig.push({ platform: g.platform, format: g.format });
+            finalSlotsConfig.push({
+              platform: g.platform,
+              format: g.format,
+              projectId: isMultiProject ? (slotProjects[slotIdx] || null) : (projectId || null),
+            });
+            slotIdx++;
           }
         });
+      } else {
+        finalSlotsConfig = slotsConfig.map((s, idx) => ({
+          ...s,
+          projectId: isMultiProject ? (slotProjects[idx] || null) : (projectId || null),
+        }));
       }
       payload.slotsConfig = finalSlotsConfig;
     }
 
-    const createdReport = await onAddReport(payload);
+    try {
+      setIsSubmitting(true);
+      const createdReport = await onAddReport(payload);
 
-    if (createdReport) {
-      setCreatedReportResult(createdReport);
+      if (createdReport) {
+        setCreatedReportResult(createdReport);
+      }
+
+      // Flash Toast
+      const toastSubject = paymentType === 'other' ? destination : channelBlogger;
+      let cabinetLink: string | null = null;
+      if (createdReport?.bloggerCabinetToken) {
+        cabinetLink = `${window.location.origin}/c/${createdReport.bloggerCabinetToken}`;
+      }
+
+      setSuccessToast({
+        message: `${t.reportCreatedMsg} ${toastSubject}!`,
+        link: cabinetLink
+      });
+      setTimeout(() => {
+        setSuccessToast(null);
+      }, 10000);
+
+      // Reset inputs but preserve some logical constants
+      setDestination('');
+      setChannelBlogger('');
+      setBloggerPageLink('');
+      setSlotsCount(5);
+      setPaidSlotsCount(3);
+      setPricePerSlot(0);
+      setOtherAmount(0);
+      setComments('');
+      setReceipt(null);
+      setFileInputKey(prev => prev + 1);
+      setPaymentType('prepaid');
+    } catch (err: any) {
+      console.error(err);
+      alert(lang === 'ru'
+        ? `Ошибка при сохранении отчета: ${err.message || err}`
+        : lang === 'uz'
+          ? `Hisobotni saqlashda xatolik: ${err.message || err}`
+          : `Error saving report: ${err.message || err}`
+      );
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Flash Toast
-    const toastSubject = paymentType === 'other' ? destination : channelBlogger;
-    let cabinetLink: string | null = null;
-    if (createdReport?.bloggerCabinetToken) {
-      cabinetLink = `${window.location.origin}/?cabinet=true&id=${createdReport.bloggerCabinetToken}`;
-    }
-
-    setSuccessToast({
-      message: `${t.reportCreatedMsg} ${toastSubject}!`,
-      link: cabinetLink
-    });
-    setTimeout(() => {
-      setSuccessToast(null);
-    }, 10000);
-
-    // Reset inputs but preserve some logical constants
-    setDestination('');
-    setChannelBlogger('');
-    setSlotsCount(5);
-    setPaidSlotsCount(3);
-    setPricePerSlot(200);
-    setOtherAmount(100);
-    setComments('');
-    setReceipt(null);
-    setFileInputKey(prev => prev + 1);
-    setPaymentType('prepaid');
   };
 
   return (
     <div className={`space-y-8 max-w-7xl mx-auto text-neutral-900 ${isWebApp ? 'p-0' : ''}`}>
       {/* View Header */}
       {!isWebApp && (
-        <div className="border-b border-neutral-200 pb-5 text-left">
+        <div className="hidden md:block border-b border-neutral-200 pb-5 text-left">
           <h2 className="text-xl font-black text-black tracking-tight">{t.miniAppReportsTitle}</h2>
           <p className="text-xs text-neutral-500">
             {t.miniAppReportsDesc}
@@ -219,54 +490,16 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
         </div>
       )}
 
-      <div className="w-full max-w-[380px] mx-auto p-4 flex justify-center">
-        {/* LEFT COLUMN: Physical phone simulator containing the Mini App */}
+      <div className="w-full">
+        {/* Browser chrome wrapper */}
         <div className="w-full">
-          <div className={isWebApp ? 'w-full' : 'relative mx-auto max-w-[340px] w-full bg-white p-3 rounded-[36px] shadow-sm border border-neutral-200'}>
-            {/* Camera notch */}
-            {!isWebApp && (
-              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-28 h-3.5 bg-neutral-100 rounded-full z-20 flex justify-center items-center border border-neutral-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-neutral-300 mr-1.5"></span>
-                <span className="w-1 h-1 rounded-full bg-neutral-200"></span>
-              </div>
-            )}
-
-            {/* Inner Phone Screen */}
-            <div className={isWebApp ? 'w-full bg-white border border-neutral-250 rounded-xl p-4 shadow-sm' : 'bg-neutral-50 rounded-[28px] overflow-hidden border border-neutral-200 text-left min-h-[580px] flex flex-col justify-between'}>
-              {/* Phone Status Bar */}
-              {!isWebApp && (
-                <div className="bg-neutral-50 text-neutral-400 text-[9px] px-5 pt-3 pb-1.5 flex justify-between items-center font-bold font-mono">
-                  <span>03:18 AM</span>
-                  <div className="flex items-center gap-1">
-                    <span>LTE</span>
-                    <span className="w-3.5 h-2 bg-neutral-300 rounded-xs"></span>
-                  </div>
-                </div>
-              )}
-
-              {/* Telegram App Bar Header */}
-              {!isWebApp && (
-                <div className="bg-white px-4 py-2.5 text-black flex justify-between items-center border-b border-neutral-100">
-                  <div className="flex items-center gap-2">
-                    <ChevronLeft className="w-4 h-4 text-black cursor-pointer" />
-                    <div>
-                      <h4 className="font-bold text-[11px] tracking-tight text-black">FluenceFlow Bot</h4>
-                      <p className="text-[8px] text-neutral-400">Telegram Mini App</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] border border-neutral-200 text-neutral-600 font-bold px-1.5 py-0.2 rounded-md">
-                      close
-                    </span>
-                    <MoreVertical className="w-3.5 h-3.5 text-neutral-400" />
-                  </div>
-                </div>
-              )}
-
-              {/* Mini App Canvas Scroll */}
-              <div className={isWebApp ? 'space-y-3' : 'p-3.5 flex-1 overflow-y-auto max-h-[440px] space-y-3'}>
+          <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
+            {/* Inner content area */}
+            <div className={isWebApp ? 'w-full bg-white p-4' : 'p-6 text-left bg-neutral-50 min-h-[420px] flex flex-col justify-between'}>
+              {/* Form Content */}
+              <div className="space-y-3 w-full max-w-xl mx-auto">
                 {createdReportResult ? (
-                  <div className={isWebApp ? 'bg-white border border-neutral-250 rounded-xl p-6 shadow-sm text-center space-y-4' : 'bg-white border border-neutral-200 rounded-xl p-5 shadow-2xs text-center space-y-4'}>
+                  <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-2xs text-center space-y-4">
                     <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center mx-auto shadow-sm">
                       <CheckCircle2 className="w-5 h-5 text-white" />
                     </div>
@@ -291,7 +524,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                           <input
                             type="text"
                             readOnly
-                            value={`${window.location.origin}/?cabinet=true&id=${createdReportResult.bloggerCabinetToken}`}
+                            value={`${window.location.origin}/c/${createdReportResult.bloggerCabinetToken}`}
                             onClick={(e) => {
                               const target = e.target as HTMLInputElement;
                               target.select();
@@ -302,7 +535,7 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                           <button
                             type="button"
                             onClick={() => {
-                              const url = `${window.location.origin}/?cabinet=true&id=${createdReportResult.bloggerCabinetToken}`;
+                              const url = `${window.location.origin}/c/${createdReportResult.bloggerCabinetToken}`;
                               navigator.clipboard.writeText(url);
                               alert(lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!');
                             }}
@@ -312,9 +545,9 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                           </button>
                         </div>
                         <p className="text-[8px] text-neutral-400">
-                          {lang === 'ru' ? 'Перешлите эту ссылку блогеру для загрузки скриншотов / ссылок.' : 
-                           lang === 'uz' ? 'Bloggerga skrinshotlar / havolalarni yuklashi uchun ushbu havolani yuboring.' : 
-                           'Send this link to the blogger to upload screenshots / links.'}
+                          {lang === 'ru' ? 'Перешлите эту ссылку блогеру для загрузки скриншотов / ссылок.' :
+                            lang === 'uz' ? 'Bloggerga skrinshotlar / havolalarni yuklashi uchun ushbu havolani yuboring.' :
+                              'Send this link to the blogger to upload screenshots / links.'}
                         </p>
                       </div>
                     )}
@@ -328,538 +561,725 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                     </button>
                   </div>
                 ) : (
-                  <div className={isWebApp ? '' : 'bg-white border border-neutral-200 rounded-xl p-3.5 shadow-2xs'}>
-                  <div className="flex items-center gap-2 mb-2.5 border-b border-neutral-100 pb-2">
-                    <span className="text-[9px] uppercase font-bold text-black tracking-wider">
-                      {t.reportForm}
-                    </span>
-                  </div>
-
-                  <form onSubmit={handleSubmit} className="space-y-3">
-                    {/* Payment Type Selection */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {t.paymentTypeLabel} *
-                      </label>
-                      <div className="grid grid-cols-3 gap-1.5 mb-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPaymentType('prepaid');
-                            setPaidSlotsCount(Math.max(1, Math.floor(slotsCount / 2)));
-                          }}
-                          className={`py-1.5 rounded-lg border text-[10px] font-bold transition duration-100 ${
-                            paymentType === 'prepaid'
-                              ? 'bg-black border-black text-white'
-                              : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                          }`}
-                        >
-                          {t.paymentPrepaid}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPaymentType('full');
-                            setPaidSlotsCount(slotsCount);
-                          }}
-                          className={`py-1.5 rounded-lg border text-[10px] font-bold transition duration-100 ${
-                            paymentType === 'full'
-                              ? 'bg-black border-black text-white'
-                              : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                          }`}
-                        >
-                          {t.paymentFull}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPaymentType('other');
-                          }}
-                          className={`py-1.5 rounded-lg border text-[10px] font-bold transition duration-100 ${
-                            paymentType === 'other'
-                              ? 'bg-black border-black text-white'
-                              : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                          }`}
-                        >
-                          {t.paymentOther}
-                        </button>
-                      </div>
+                  <div className="w-full bg-white border border-neutral-200 rounded-xl p-3.5 shadow-2xs">
+                    <div className="flex items-center gap-2 mb-2.5 border-b border-neutral-100 pb-2">
+                      <span className="text-[9px] uppercase font-bold text-black tracking-wider">
+                        {t.reportForm}
+                      </span>
                     </div>
 
-                    {/* Date */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {t.reportDateField} *
-                      </label>
-                      <input
-                        type="date"
-                        required
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                      />
-                    </div>
-
-                    {/* Project Select */}
-                    {paymentType !== 'other' && (
+                    <form onSubmit={handleSubmit} className="space-y-3">
+                      {/* Payment Type Selection */}
                       <div>
                         <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                          {t.targetProjectField} *
+                          {t.paymentTypeLabel} *
                         </label>
-                        <select
-                          value={projectId}
-                          onChange={(e) => setProjectId(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                        >
-                          {projects.map(p => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
+                        <div className="grid grid-cols-4 gap-1 mb-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentType('prepaid');
+                              setPaidSlotsCount(Math.max(1, Math.floor(slotsCount / 2)));
+                            }}
+                            className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'prepaid'
+                                ? 'bg-black border-black text-white'
+                                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                              }`}
+                          >
+                            {t.paymentPrepaid}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentType('full');
+                              setPaidSlotsCount(slotsCount);
+                            }}
+                            className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'full'
+                                ? 'bg-black border-black text-white'
+                                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                              }`}
+                          >
+                            {t.paymentFull}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentType('remaining');
+                              setSlotsCount(0);
+                              setPaidSlotsCount(1);
+                              setBloggerType('existing');
+                            }}
+                            className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'remaining'
+                                ? 'bg-black border-black text-white'
+                                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                              }`}
+                          >
+                            {t.paymentRemaining}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentType('other');
+                            }}
+                            className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'other'
+                                ? 'bg-black border-black text-white'
+                                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                              }`}
+                          >
+                            {t.paymentOther}
+                          </button>
+                        </div>
                       </div>
-                    )}
 
-                    {/* Destination */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {paymentType === 'other' ? t.purposeField : t.referralLinkField} *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder={paymentType === 'other' ? "e.g. Production Expense" : "e.g. Stories Conversion Boost"}
-                        value={destination}
-                        onChange={(e) => setDestination(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                      />
-                    </div>
-
-                    {paymentType === 'other' ? (
-                      /* Fields for "Other" payment type */
+                      {/* Date */}
                       <div>
                         <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                          {t.sumField} *
+                          {t.reportDateField} *
                         </label>
                         <input
-                          type="number"
+                          type="date"
                           required
-                          min={1}
-                          value={otherAmount}
-                          onChange={(e) => setOtherAmount(Number(e.target.value))}
-                          className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                          value={date}
+                          onChange={(e) => setDate(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
                         />
                       </div>
-                    ) : (
-                      /* Fields for standard blogger campaign payment types */
-                      <>
-                        {/* Blogger Type Selection */}
-                        <div>
-                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                            {lang === 'ru' ? 'Тип блогера' : lang === 'uz' ? 'Blogger turi' : 'Blogger Type'} *
-                          </label>
-                          <div className="grid grid-cols-2 gap-1.5 mb-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBloggerType('existing');
-                                setChannelBlogger('');
-                              }}
-                              className={`py-1 rounded-lg border text-[9px] font-bold transition duration-100 ${
-                                bloggerType === 'existing'
-                                  ? 'bg-black border-black text-white'
-                                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                              }`}
-                            >
-                              {lang === 'ru' ? 'Существующий' : lang === 'uz' ? 'Mavjud' : 'Existing'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBloggerType('new');
-                                setChannelBlogger('');
-                              }}
-                              className={`py-1 rounded-lg border text-[9px] font-bold transition duration-100 ${
-                                bloggerType === 'new'
-                                  ? 'bg-black border-black text-white'
-                                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                              }`}
-                            >
-                              {lang === 'ru' ? 'Новый' : lang === 'uz' ? 'Yangi' : 'New'}
-                            </button>
-                          </div>
-                        </div>
 
-                        {/* Blogger Input with Auto-Suggestions */}
-                        <div>
-                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                            {t.bloggerColumn} *
-                          </label>
-                          <div className="relative">
+                      {/* Project Select / Multi-project configurator */}
+                      <div>
+                        {paymentType !== 'other' && (
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                              {t.targetProjectField} *
+                            </label>
+                          </div>
+                        )}
+
+                        {!isMultiProject ? (
+                          <select
+                            value={projectId}
+                            required={paymentType !== 'other'}
+                            onChange={(e) => setProjectId(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                          >
+                            <option value="" disabled={paymentType !== 'other'}>
+                              {paymentType === 'other'
+                                ? (lang === 'ru' ? '(Необязательно) Выберите проект' : lang === 'uz' ? '(Ixtiyoriy) Loyihani tanlang' : '(Optional) Select Project')
+                                : (lang === 'ru' ? 'Выберите проект *' : lang === 'uz' ? 'Loyihani tanlang *' : 'Select Project *')
+                              }
+                            </option>
+                            {projects.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg space-y-2.5">
+                            <p className="text-[9px] text-neutral-600 font-medium">
+                              {lang === 'ru'
+                                ? `Выберите проект для каждого из ${slotsCount} купленных слотов (цена слота: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)}):`
+                                : lang === 'uz'
+                                ? `Sotib olingan ${slotsCount} ta slotning har biri uchun loyihani tanlang (1 slot: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)}):`
+                                : `Specify project for each of the ${slotsCount} slots (price/slot: ${formatPrice(pricePerSlot === '' ? 0 : pricePerSlot)}):`}
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                              {Array.from({ length: slotsCount }).map((_, idx) => {
+                                const currentVal = slotProjects[idx] || '';
+                                const unitPrice = pricePerSlot === '' ? 0 : pricePerSlot;
+                                return (
+                                  <div key={idx} className="p-2 bg-white border border-neutral-200 rounded-md flex flex-col gap-1 shadow-3xs">
+                                    <div className="flex justify-between items-center text-[9px] font-bold">
+                                      <span className="text-black">Слот #{idx + 1}</span>
+                                      <span className="text-neutral-500">{formatPrice(unitPrice)}</span>
+                                    </div>
+                                    <select
+                                      value={currentVal}
+                                      onChange={(e) => {
+                                        const newProj = e.target.value;
+                                        setSlotProjects(prev => ({
+                                          ...prev,
+                                          [idx]: newProj,
+                                        }));
+                                      }}
+                                      className="w-full px-2 py-1 bg-white border border-neutral-200 rounded text-[10px] font-medium text-black focus:outline-none focus:border-black"
+                                    >
+                                      <option value="">-- {lang === 'ru' ? 'Не распределен (Резерв)' : lang === 'uz' ? 'Taqsimlanmagan (Zahira)' : 'Unassigned (Reserve)'} --</option>
+                                      {projects.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Summary breakdown */}
+                            <div className="p-2 bg-white border border-neutral-200 rounded-md text-[9px] space-y-1">
+                              <span className="font-bold text-neutral-400 uppercase tracking-wider block">
+                                {lang === 'ru' ? 'Итоговый бюджет по проектам:' : lang === 'uz' ? 'Loyihalar bo\'yicha yakuniy taqsimot:' : 'Budget per project:'}
+                              </span>
+                              {(() => {
+                                const unitPrice = pricePerSlot === '' ? 0 : pricePerSlot;
+                                const summary: { [name: string]: { slots: number; amount: number } } = {};
+                                let reserveSlots = 0;
+
+                                for (let i = 0; i < slotsCount; i++) {
+                                  const pId = slotProjects[i];
+                                  if (pId) {
+                                    const projName = projects.find(p => String(p.id) === String(pId))?.name || `Project #${pId}`;
+                                    if (!summary[projName]) {
+                                      summary[projName] = { slots: 0, amount: 0 };
+                                    }
+                                    summary[projName].slots += 1;
+                                    summary[projName].amount += unitPrice;
+                                  } else {
+                                    reserveSlots += 1;
+                                  }
+                                }
+
+                                return (
+                                  <div className="space-y-0.5 font-medium">
+                                    {Object.entries(summary).map(([pName, data]) => (
+                                      <div key={pName} className="flex justify-between items-center text-black">
+                                        <span>{pName}: <strong>{data.slots} слотов</strong></span>
+                                        <span className="font-bold">{formatPrice(data.amount)}</span>
+                                      </div>
+                                    ))}
+                                    {reserveSlots > 0 && (
+                                      <div className="flex justify-between items-center text-neutral-500 italic">
+                                        <span>{lang === 'ru' ? 'Не распределено (Резерв)' : lang === 'uz' ? 'Zahira' : 'Reserve'}: <strong>{reserveSlots} слотов</strong></span>
+                                        <span>{formatPrice(reserveSlots * unitPrice)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {paymentType === 'other' ? (
+                        /* Fields for "Other" payment type */
+                        <div className="space-y-4">
+                          {/* Destination / Purpose */}
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.purposeField} *
+                            </label>
                             <input
                               type="text"
                               required
-                              placeholder={bloggerType === 'existing' ? (lang === 'ru' ? 'Выберите блогера...' : lang === 'uz' ? 'Bloggeri tanlang...' : 'Select blogger...') : 'e.g. @tech_geek_tg'}
-                              value={channelBlogger}
-                              onChange={(e) => {
-                                setChannelBlogger(e.target.value);
-                                setShowSuggestions(true);
-                              }}
-                              onFocus={() => setShowSuggestions(true)}
-                              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                              placeholder={lang === 'ru' ? 'например, Расходы на продакшн' : lang === 'uz' ? 'masalan, Ishlab chiqarish xarajatlari' : 'e.g. Production Expense'}
+                              value={destination}
+                              onChange={(e) => setDestination(e.target.value)}
                               className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
                             />
-                            {bloggerType === 'existing' && showSuggestions && suggestions.length > 0 && (
-                              <div className="absolute left-0 right-0 z-50 mt-1 max-h-32 overflow-y-auto bg-white border border-neutral-200 rounded-md shadow-lg text-left">
-                                {suggestions.map((name) => (
-                                  <button
-                                    key={name}
-                                    type="button"
-                                    onClick={() => {
-                                      setChannelBlogger(name);
-                                      setShowSuggestions(false);
-                                      // Auto-detect and pre-fill platform
-                                      const matchedInt = integrations.find(i => i.bloggerName === name);
-                                      if (matchedInt) {
-                                        setPlatform(matchedInt.platform);
-                                      }
-                                    }}
-                                    className="w-full text-left px-3 py-1.5 text-[11px] text-neutral-800 hover:bg-neutral-50 border-b border-neutral-100 last:border-0 font-bold"
-                                  >
-                                    {name}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                          </div>
+
+                          {/* Sum / Amount */}
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.sumField} *
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              value={formatPrice(otherAmount)}
+                              onChange={(e) => {
+                                const val = parsePrice(e.target.value);
+                                setOtherAmount(val);
+                              }}
+                              className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                            />
                           </div>
                         </div>
+                      ) : (
+                        /* Fields for standard blogger campaign payment types */
+                        <>
+                          {/* Blogger Type Selection */}
+                          {paymentType !== 'remaining' && (
+                            <div>
+                              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                                {lang === 'ru' ? 'Тип блогера' : lang === 'uz' ? 'Blogger turi' : 'Blogger Type'} *
+                              </label>
+                              <div className="grid grid-cols-2 gap-1.5 mb-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBloggerType('existing');
+                                    setChannelBlogger('');
+                                  }}
+                                  className={`py-1 rounded-lg border text-[9px] font-bold transition duration-100 ${bloggerType === 'existing'
+                                      ? 'bg-black border-black text-white'
+                                      : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                                    }`}
+                                >
+                                  {lang === 'ru' ? 'Существующий' : lang === 'uz' ? 'Mavjud' : 'Existing'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBloggerType('new');
+                                    setChannelBlogger('');
+                                  }}
+                                  className={`py-1 rounded-lg border text-[9px] font-bold transition duration-100 ${bloggerType === 'new'
+                                      ? 'bg-black border-black text-white'
+                                      : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
+                                    }`}
+                                >
+                                  {lang === 'ru' ? 'Новый' : lang === 'uz' ? 'Yangi' : 'New'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
 
-                        {/* Platform Selector */}
-                        <div>
-                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                            {t.platformColumn} *
-                          </label>
-                          <select
-                            value={platform}
-                            onChange={(e) => setPlatform(e.target.value as any)}
-                            className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                          >
-                            {(['Telegram', 'Instagram', 'YouTube', 'MAX'] as const).map((plat) => {
-                              const isDisabled = userRole === 'pr_manager' && plat !== 'Telegram';
-                              return (
+                          {/* Blogger Input with Auto-Suggestions */}
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.bloggerColumn} *
+                            </label>
+                            <div className="relative">
+                              {bloggerType === 'existing' ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBloggerSearch('');
+                                      setIsBloggerModalOpen(true);
+                                    }}
+                                    className="w-full text-left px-2.5 py-1.5 bg-white border border-neutral-200 focus-within:border-black rounded-md text-[11px] font-medium text-black flex justify-between items-center cursor-pointer"
+                                  >
+                                    <span className={channelBlogger ? 'text-black' : 'text-neutral-400'}>
+                                      {channelBlogger || (lang === 'ru' ? 'Выберите блогера...' : lang === 'uz' ? 'Bloggeri tanlang...' : 'Select blogger...')}
+                                    </span>
+                                    <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
+                                  </button>
+                                  <input type="hidden" required value={channelBlogger} />
+                                </>
+                              ) : (
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. @tech_geek_tg"
+                                  value={channelBlogger}
+                                  onChange={(e) => setChannelBlogger(e.target.value)}
+                                  className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                                />
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Blogger Page Link */}
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера *' : lang === 'uz' ? 'Blogger sahifasi havolasi *' : 'Blogger Page Link *')}
+                            </label>
+                            <input
+                              type="url"
+                              required
+                              placeholder={lang === 'ru' ? 'например, https://instagram.com/profile' : lang === 'uz' ? 'masalan, https://instagram.com/profile' : 'e.g. https://instagram.com/profile'}
+                              value={bloggerPageLink}
+                              onChange={(e) => setBloggerPageLink(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                            />
+                          </div>
+
+                          {/* Referral Link */}
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.referralLinkField}
+                            </label>
+                            <input
+                              type="text"
+                              disabled={paymentType === 'remaining'}
+                              placeholder="Ссылка от bulink.io"
+                              value={destination}
+                              onChange={(e) => setDestination(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-not-allowed"
+                            />
+                          </div>
+
+                          {/* Platform Selector */}
+                          <div>
+                            <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                              {t.platformColumn} *
+                            </label>
+                            <select
+                              value={platform}
+                              disabled={paymentType === 'remaining'}
+                              onChange={(e) => setPlatform(e.target.value as any)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-not-allowed"
+                            >
+                              {(['Telegram', 'Instagram', 'YouTube', 'MAX', 'TikTok'] as const).map((plat) => (
                                 <option
                                   key={plat}
                                   value={plat}
-                                  disabled={isDisabled}
                                 >
                                   {plat}
                                 </option>
-                              );
-                            })}
-                          </select>
-                          {userRole === 'pr_manager' && (
-                            <p className="text-[9px] text-blue-600 font-bold mt-1 text-left">
-                              {lang === 'ru' ? '• Доступ ограничен: только Telegram' : lang === 'uz' ? '• Kirish cheklangan: faqat Telegram' : '• Restricted Access: Telegram only'}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Reactive Grid: Price & Slots */}
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                                {t.slotsCountField} *
-                              </label>
-                              <input
-                                type="number"
-                                required
-                                min={1}
-                                value={slotsCount}
-                                onChange={(e) => setSlotsCount(Math.max(1, Number(e.target.value)))}
-                                className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                                {t.paidSuffix} *
-                              </label>
-                              <input
-                                type="number"
-                                required
-                                min={0}
-                                max={slotsCount}
-                                disabled={paymentType === 'full'}
-                                value={paidSlotsCount}
-                                onChange={(e) => setPaidSlotsCount(Math.min(slotsCount, Math.max(0, Number(e.target.value))))}
-                                className={`w-full px-2.5 py-1 border rounded-md text-[11px] font-bold focus:outline-none ${
-                                  paymentType === 'full'
-                                    ? 'bg-neutral-100 border-neutral-200 text-neutral-400 cursor-not-allowed'
-                                    : 'bg-white border-neutral-200 text-black focus:border-black'
-                                }`}
-                              />
-                            </div>
+                              ))}
+                            </select>
                           </div>
 
+                          {paymentType === 'remaining' ? (
+                            <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-200 text-left space-y-2">
+                              <div className="grid grid-cols-2 gap-2 text-[10px] border-b border-neutral-200 pb-1.5">
+                                <div>
+                                  <span className="text-neutral-400 font-bold uppercase tracking-wider text-[8px]">{lang === 'ru' ? 'Всего слотов:' : (lang === 'uz' ? 'Jami slotlar:' : 'Total Slots:')}</span>
+                                  <div className="font-bold text-black text-xs mt-0.5">{activeIntegration?.slotsCount ?? 0}</div>
+                                </div>
+                                <div>
+                                  <span className="text-neutral-400 font-bold uppercase tracking-wider text-[8px]">{lang === 'ru' ? 'Уже оплачено:' : (lang === 'uz' ? 'To‘langan:' : 'Already Paid:')}</span>
+                                  <div className="font-bold text-black text-xs mt-0.5">{activeIntegration?.paidSlotsCount ?? 0}</div>
+                                </div>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <label className="block text-[9px] font-bold text-neutral-600 uppercase tracking-wide">
+                                  {lang === 'ru' ? 'Доплатить за слотов:' : (lang === 'uz' ? 'Qo‘shimcha to‘lanadigan slotlar:' : 'Pay for remaining slots:')} *
+                                </label>
+                                <div className="w-24">
+                                  <StepperInput
+                                    value={paidSlotsCount}
+                                    min={1}
+                                    max={unpaidSlots}
+                                    onChange={(val) => setPaidSlotsCount(val)}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Reactive Grid: Slots */}
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                                    {t.slotsCountField} *
+                                  </label>
+                                  <StepperInput
+                                    value={slotsCount}
+                                    min={1}
+                                    onChange={(val) => handleSlotsCountChange(val)}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                                    {t.paidSuffix} *
+                                  </label>
+                                  <StepperInput
+                                    value={paidSlotsCount}
+                                    min={0}
+                                    max={slotsCount}
+                                    disabled={paymentType === 'full'}
+                                    onChange={(val) => handlePaidSlotsCountChange(val)}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Checkbox to Toggle Individual Slots Configuration */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <input
+                                  type="checkbox"
+                                  id="customize-slots-checkbox"
+                                  checked={customizeSlots}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setCustomizeSlots(checked);
+                                    if (checked && slotGroups.length === 0) {
+                                      setSlotGroups([{ quantity: slotsCount, platform: platform, format: getDefaultFormat(platform) }]);
+                                    }
+                                  }}
+                                  className="w-3.5 h-3.5 accent-black rounded border-neutral-300 focus:ring-black cursor-pointer"
+                                />
+                                <label htmlFor="customize-slots-checkbox" className="text-[10px] font-bold text-neutral-600 select-none cursor-pointer">
+                                  {t.customizeSlotsLabel}
+                                </label>
+                              </div>
+
+                              {/* Grouped Slots Configurer */}
+                              {customizeSlots && (
+                                <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-200 text-left space-y-2">
+                                  <div className="flex justify-between items-center border-b border-neutral-200 pb-1">
+                                    <label className="block text-[8px] font-black text-neutral-500 uppercase tracking-wider truncate">
+                                      {t.configureSlotsTitle}
+                                    </label>
+                                    <span className="text-[9px] font-bold text-neutral-400 shrink-0 ml-2">
+                                      {slotGroups.reduce((acc, g) => acc + g.quantity, 0)} / {slotsCount}
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                                    {slotGroups.map((group, index) => (
+                                      <div key={index} className="flex items-center gap-1.5 p-1 bg-white border border-neutral-150 rounded text-[10px]">
+                                        {/* Quantity select instead of typing */}
+                                        <select
+                                          value={group.quantity}
+                                          onChange={(e) => {
+                                            const val = Number(e.target.value);
+                                            const otherSum = slotGroups.reduce((acc, g, idx) => idx === index ? acc : acc + g.quantity, 0);
+                                            if (otherSum + val > slotsCount) {
+                                              alert(lang === 'ru'
+                                                ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!`
+                                                : lang === 'uz'
+                                                  ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!`
+                                                  : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                                              );
+                                              return;
+                                            }
+                                            const nextGroups = [...slotGroups];
+                                            nextGroups[index].quantity = val;
+                                            setSlotGroups(nextGroups);
+                                          }}
+                                          className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none"
+                                        >
+                                          {Array.from({ length: slotsCount }, (_, i) => i + 1).map(num => (
+                                            <option key={num} value={num}>{num}</option>
+                                          ))}
+                                        </select>
+
+                                        {/* Platform selector */}
+                                        <select
+                                          value={group.platform}
+                                          onChange={(e) => {
+                                            const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
+                                            const nextGroups = [...slotGroups];
+                                            nextGroups[index] = {
+                                              ...nextGroups[index],
+                                              platform: platVal,
+                                              format: getDefaultFormat(platVal)
+                                            };
+                                            setSlotGroups(nextGroups);
+                                          }}
+                                          className="bg-neutral-50 border border-neutral-200 rounded px-1 py-0.5 text-[9px] font-bold text-black focus:outline-none"
+                                        >
+                                          <option value="Telegram">Telegram</option>
+                                          <option value="Instagram">Instagram</option>
+                                          <option value="YouTube">YouTube</option>
+                                          <option value="MAX">MAX</option>
+                                          <option value="TikTok">TikTok</option>
+                                        </select>
+
+                                        {/* Format Selector */}
+                                        <select
+                                          value={group.format}
+                                          onChange={(e) => {
+                                            const nextGroups = [...slotGroups];
+                                            nextGroups[index].format = e.target.value;
+                                            setSlotGroups(nextGroups);
+                                          }}
+                                          className="bg-neutral-50 border border-neutral-200 rounded px-1 py-0.5 text-[9px] font-bold text-black focus:outline-none flex-1 min-w-[70px] truncate"
+                                        >
+                                          {group.platform === 'Instagram' && (
+                                            <>
+                                              <option value="Stories">Stories</option>
+                                              <option value="Reels">Reels</option>
+                                              <option value="VideoBadge">{lang === 'ru' ? 'Плашка на видео' : lang === 'uz' ? 'Videodagi plashka' : 'Video badge'}</option>
+                                            </>
+                                          )}
+                                          {group.platform === 'Telegram' && (
+                                            <>
+                                              <option value="Post">Post</option>
+                                              <option value="Stories">Stories</option>
+                                            </>
+                                          )}
+                                          {group.platform === 'YouTube' && (
+                                            <>
+                                              <option value="Shorts">Shorts</option>
+                                              <option value="Integration">Integration</option>
+                                            </>
+                                          )}
+                                          {group.platform === 'MAX' && (
+                                            <>
+                                              <option value="Post">Post</option>
+                                            </>
+                                          )}
+                                          {group.platform === 'TikTok' && (
+                                            <>
+                                              <option value="VideoPost">{lang === 'ru' ? 'Видео-Пост' : lang === 'uz' ? 'Video-Post' : 'Video Post'}</option>
+                                            </>
+                                          )}
+                                        </select>
+
+                                        {/* Delete group button */}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSlotGroups(slotGroups.filter((_, idx) => idx !== index));
+                                          }}
+                                          className="text-red-500 hover:bg-neutral-100 p-1 rounded text-[9px] font-bold shrink-0"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {/* Add group button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
+                                      if (currentSum + 1 > slotsCount) {
+                                        alert(lang === 'ru'
+                                          ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!`
+                                          : lang === 'uz'
+                                            ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!`
+                                            : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                                        );
+                                        return;
+                                      }
+                                      setSlotGroups([...slotGroups, { quantity: 1, platform: platform, format: getDefaultFormat(platform) }]);
+                                    }}
+                                    className="w-full py-1 text-[9px] font-extrabold text-neutral-600 hover:text-black border border-dashed border-neutral-300 rounded hover:border-neutral-400 bg-white transition"
+                                  >
+                                    + {lang === 'ru' ? 'Добавить группу слотов' : lang === 'uz' ? 'Slotlar guruhini qo‘shish' : 'Add Slot Group'}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+
+                          {/* Price per slot */}
                           <div>
                             <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
                               {t.pricePerSlotField} *
                             </label>
                             <input
-                              type="number"
+                              type="text"
+                              inputMode="numeric"
                               required
-                              min={0}
-                              value={pricePerSlot}
-                              onChange={(e) => setPricePerSlot(Number(e.target.value))}
-                              className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Checkbox to Toggle Individual Slots Configuration */}
-                        <div className="flex items-center gap-2 mb-2">
-                          <input
-                            type="checkbox"
-                            id="customize-slots-checkbox"
-                            checked={customizeSlots}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setCustomizeSlots(checked);
-                              if (checked && slotGroups.length === 0) {
-                                setSlotGroups([{ quantity: slotsCount, platform: platform, format: getDefaultFormat(platform) }]);
-                              }
-                            }}
-                            className="w-3.5 h-3.5 accent-black rounded border-neutral-300 focus:ring-black cursor-pointer"
-                          />
-                          <label htmlFor="customize-slots-checkbox" className="text-[10px] font-bold text-neutral-600 select-none cursor-pointer">
-                            {t.customizeSlotsLabel}
-                          </label>
-                        </div>
-
-                        {/* Grouped Slots Configurer */}
-                        {customizeSlots && (
-                          <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-200 text-left space-y-2">
-                            <div className="flex justify-between items-center border-b border-neutral-200 pb-1">
-                              <label className="block text-[9px] font-black text-neutral-500 uppercase tracking-wide">
-                                {t.configureSlotsTitle}
-                              </label>
-                              <span className="text-[9px] font-bold text-neutral-400">
-                                {slotGroups.reduce((acc, g) => acc + g.quantity, 0)} / {slotsCount}
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
-                              {slotGroups.map((group, index) => (
-                                <div key={index} className="flex items-center gap-1.5 p-1 bg-white border border-neutral-150 rounded text-[10px]">
-                                  {/* Quantity input */}
-                                  <input
-                                    type="number"
-                                    required
-                                    min={1}
-                                    max={slotsCount}
-                                    value={group.quantity}
-                                    onChange={(e) => {
-                                      const val = Math.max(1, Number(e.target.value));
-                                      const otherSum = slotGroups.reduce((acc, g, idx) => idx === index ? acc : acc + g.quantity, 0);
-                                      if (otherSum + val > slotsCount) {
-                                        alert(lang === 'ru' 
-                                          ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!` 
-                                          : lang === 'uz' 
-                                          ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!` 
-                                          : `Configured slots count cannot exceed total slots count (${slotsCount})!`
-                                        );
-                                        return;
-                                      }
-                                      const nextGroups = [...slotGroups];
-                                      nextGroups[index].quantity = val;
-                                      setSlotGroups(nextGroups);
-                                    }}
-                                    className="w-12 bg-neutral-50 border border-neutral-200 rounded px-1 py-0.5 text-[9px] font-bold text-black focus:outline-none text-center"
-                                    title="Quantity"
-                                  />
-
-                                  {/* Platform selector */}
-                                  <select
-                                    value={group.platform}
-                                    onChange={(e) => {
-                                      const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX';
-                                      const nextGroups = [...slotGroups];
-                                      nextGroups[index] = {
-                                        ...nextGroups[index],
-                                        platform: platVal,
-                                        format: getDefaultFormat(platVal)
-                                      };
-                                      setSlotGroups(nextGroups);
-                                    }}
-                                    className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none"
-                                  >
-                                    <option value="Telegram">Telegram</option>
-                                    <option value="Instagram">Instagram</option>
-                                    <option value="YouTube">YouTube</option>
-                                    <option value="MAX">MAX</option>
-                                  </select>
-
-                                  {/* Format Selector */}
-                                  <select
-                                    value={group.format}
-                                    onChange={(e) => {
-                                      const nextGroups = [...slotGroups];
-                                      nextGroups[index].format = e.target.value;
-                                      setSlotGroups(nextGroups);
-                                    }}
-                                    className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] font-bold text-black focus:outline-none flex-1"
-                                  >
-                                    {group.platform === 'Instagram' && (
-                                      <>
-                                        <option value="Reels">Instagram Reels</option>
-                                        <option value="Stories">Instagram Stories</option>
-                                        <option value="Post">Instagram Post</option>
-                                      </>
-                                    )}
-                                    {group.platform === 'Telegram' && (
-                                      <>
-                                        <option value="Post">Telegram Post</option>
-                                        <option value="Stories">Telegram Stories</option>
-                                      </>
-                                    )}
-                                    {group.platform === 'YouTube' && (
-                                      <>
-                                        <option value="Release">YouTube Release</option>
-                                        <option value="Shorts">YouTube Shorts</option>
-                                        <option value="Integration">YouTube Integration</option>
-                                      </>
-                                    )}
-                                    {group.platform === 'MAX' && (
-                                      <>
-                                        <option value="Post">MAX Post</option>
-                                        <option value="Integration">MAX Integration</option>
-                                      </>
-                                    )}
-                                  </select>
-
-                                  {/* Delete group button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSlotGroups(slotGroups.filter((_, idx) => idx !== index));
-                                    }}
-                                    className="text-red-500 hover:bg-neutral-100 p-0.5 rounded text-[9px] font-bold"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Add group button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
-                                if (currentSum + 1 > slotsCount) {
-                                  alert(lang === 'ru' 
-                                    ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!` 
-                                    : lang === 'uz' 
-                                    ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!` 
-                                    : `Configured slots count cannot exceed total slots count (${slotsCount})!`
-                                  );
-                                  return;
-                                }
-                                setSlotGroups([...slotGroups, { quantity: 1, platform: platform, format: getDefaultFormat(platform) }]);
+                              disabled={paymentType === 'remaining'}
+                              value={formatPrice(pricePerSlot)}
+                              onChange={(e) => {
+                                const val = parsePrice(e.target.value);
+                                handlePricePerSlotChange(val);
                               }}
-                              className="w-full py-1 text-[9px] font-extrabold text-neutral-600 hover:text-black border border-dashed border-neutral-300 rounded hover:border-neutral-400 bg-white transition"
-                            >
-                              + {lang === 'ru' ? 'Добавить группу слотов' : lang === 'uz' ? 'Slotlar guruhini qo‘shish' : 'Add Slot Group'}
-                            </button>
+                              className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-not-allowed"
+                            />
                           </div>
+
+                          {paymentType === 'remaining' ? (
+                            <div className="pt-1 border-t border-neutral-100">
+                              <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
+                                {lang === 'ru' ? 'Сумма доплаты' : (lang === 'uz' ? 'Qo‘shimcha to‘lov summasi' : 'Payment Amount')}
+                              </label>
+                              <input
+                                type="text"
+                                disabled
+                                value={(paidSlotsCount * (pricePerSlot === '' ? 0 : pricePerSlot)).toLocaleString('ru-RU')}
+                                className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
+                              />
+                            </div>
+                          ) : (
+                            /* Calculated Sums Grid */
+                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-100">
+                              <div>
+                                <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
+                                  {t.prepaidField}
+                                </label>
+                                <input
+                                  type="text"
+                                  disabled
+                                  value={paidAmount === '' ? '0' : paidAmount.toLocaleString('ru-RU')}
+                                  className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
+                                  {t.totalSumField}
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  required
+                                  value={formatPrice(totalAmount)}
+                                  onChange={(e) => {
+                                    const val = parsePrice(e.target.value);
+                                    handleTotalAmountChange(val);
+                                  }}
+                                  className="w-full px-2 py-1.5 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center focus:outline-none focus:border-black"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* Comments */}
+                      <div>
+                        <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                          {t.campaignDescField}
+                        </label>
+                        <textarea
+                          placeholder="Additional notes..."
+                          value={comments}
+                          onChange={(e) => setComments(e.target.value)}
+                          rows={2}
+                          className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:bg-white rounded-md text-[11px] focus:outline-none focus:border-black text-black"
+                        />
+                      </div>
+
+                      {/* Attachment: Screenshot/Receipt */}
+                      <div>
+                        <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
+                          {lang === 'ru' ? 'Прикрепить чек / скриншот' : lang === 'uz' ? 'Chek / skrinshot biriktirish' : 'Attach receipt / screenshot'}
+                        </label>
+                        <input
+                          type="file"
+                          key={fileInputKey}
+                          accept="image/*,application/pdf"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              try {
+                                const compressed = await compressImage(file);
+                                setReceipt(compressed);
+                              } catch (err) {
+                                console.error('Image compression failed:', err);
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setReceipt(reader.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            } else {
+                              setReceipt(null);
+                            }
+                          }}
+                          className="w-full text-sm text-neutral-500 file:mr-4 file:py-3.5 file:px-8 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-neutral-100 file:text-neutral-700 hover:file:bg-neutral-250 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Submit inside TG Mini App */}
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className={`w-full mt-2 py-2 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition ${isSubmitting ? 'bg-neutral-400 cursor-not-allowed' : 'bg-black hover:bg-neutral-900'
+                          }`}
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <span className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></span>
+                            <span>{lang === 'ru' ? 'Отправка...' : lang === 'uz' ? 'Yuborilmoqda...' : 'Sending...'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3 h-3 text-white" />
+                            <span>
+                              {paymentType === 'other'
+                                ? t.submitReportBtn
+                                : bloggerType === 'new'
+                                  ? t.addIntegrationBtn
+                                  : t.submitReportBtn}
+                            </span>
+                          </>
                         )}
-
-                        {/* Calculated Sums Grid */}
-                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-100">
-                          <div>
-                            <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
-                              {t.prepaidField}
-                            </label>
-                            <input
-                              type="text"
-                              disabled
-                              value={paidAmount.toLocaleString()}
-                              className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[8px] font-bold text-neutral-400 uppercase tracking-wide mb-0.5">
-                              {t.totalSumField}
-                            </label>
-                            <input
-                              type="text"
-                              disabled
-                              value={totalAmount.toLocaleString()}
-                              className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    {/* Comments */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {t.campaignDescField}
-                      </label>
-                      <textarea
-                        placeholder="Additional notes..."
-                        value={comments}
-                        onChange={(e) => setComments(e.target.value)}
-                        rows={2}
-                        className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:bg-white rounded-md text-[11px] focus:outline-none focus:border-black text-black"
-                      />
-                    </div>
-
-                    {/* Attachment: Screenshot/Receipt */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                        {lang === 'ru' ? 'Прикрепить чек / скриншот' : lang === 'uz' ? 'Chek / skrinshot biriktirish' : 'Attach receipt / screenshot'}
-                      </label>
-                      <input
-                        type="file"
-                        key={fileInputKey}
-                        accept="image/*,application/pdf"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setReceipt(reader.result as string);
-                            };
-                            reader.readAsDataURL(file);
-                          } else {
-                            setReceipt(null);
-                          }
-                        }}
-                        className="w-full text-[10px] text-neutral-500 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-[9px] file:font-bold file:bg-neutral-100 file:text-neutral-700 hover:file:bg-neutral-250 cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Submit inside TG Mini App */}
-                    <button
-                      type="submit"
-                      className="w-full mt-2 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition"
-                    >
-                      <Send className="w-3 h-3 text-white" />
-                      <span>{t.addIntegrationBtn}</span>
-                    </button>
-                  </form>
-                </div>
+                      </button>
+                    </form>
+                  </div>
                 )}
               </div>
-
-              {/* Bot menu bar bottom */}
-              {!isWebApp && (
-                <div className="bg-white border-t border-neutral-100 p-2.5 flex justify-around items-center text-[9px] text-neutral-400 font-bold">
-                  <span className="text-black">{t.reportForm}</span>
-                  <span className="w-1 h-1 rounded-full bg-neutral-300"></span>
-                  <span>{t.integrationsTitle}</span>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -894,6 +1314,84 @@ export default function ReportsView({ projects, integrations, reports, onAddRepo
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Searchable Blogger Selector Modal */}
+      {isBloggerModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4 transition-all duration-200">
+          <div className="w-full md:max-w-md bg-white rounded-t-2xl md:rounded-2xl shadow-xl flex flex-col max-h-[80vh] md:max-h-[600px] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-neutral-100 bg-neutral-50/50">
+              <span className="font-extrabold text-[13px] text-black uppercase tracking-tight">
+                {lang === 'ru' ? 'Выбор блогера' : lang === 'uz' ? 'Blogger tanlash' : 'Select Blogger'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsBloggerModalOpen(false)}
+                className="p-1 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Input Bar */}
+            <div className="p-3 border-b border-neutral-100">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <input
+                  type="text"
+                  placeholder={lang === 'ru' ? 'Поиск блогера...' : lang === 'uz' ? 'Blogger qidirish...' : 'Search blogger...'}
+                  value={bloggerSearch}
+                  onChange={(e) => setBloggerSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-black focus:bg-white text-black transition"
+                />
+              </div>
+            </div>
+
+            {/* Scrollable Blogger List */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {filteredExistingBloggers.length > 0 ? (
+                filteredExistingBloggers.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => {
+                      setChannelBlogger(name);
+                      setIsBloggerModalOpen(false);
+
+                      const matchedInt = integrations.find(i => i.bloggerName.toLowerCase() === name.toLowerCase());
+                      if (matchedInt) {
+                        setPlatform(matchedInt.platform);
+                      }
+
+                      // Look up the last referral link for this blogger
+                      let prevLink = matchedInt?.referralLink || '';
+                      if (!prevLink && reports) {
+                        const matchedRep = reports.slice().reverse().find(r => r.channelBlogger && r.channelBlogger.toLowerCase() === name.toLowerCase());
+                        if (matchedRep) {
+                          prevLink = matchedRep.destination || '';
+                        }
+                      }
+
+                      if (prevLink) {
+                        setDestination(prevLink);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold text-neutral-800 hover:bg-neutral-50 transition flex items-center justify-between border border-transparent hover:border-neutral-200/50"
+                  >
+                    <span>{name}</span>
+                    {channelBlogger === name && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-black"></span>
+                    )}
+                  </button>
+                ))
+              ) : (
+                <div className="py-8 text-center text-neutral-400 text-xs font-medium">
+                  {lang === 'ru' ? 'Блогеры не найдены' : lang === 'uz' ? 'Bloggerlar topilmadi' : 'No bloggers found'}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

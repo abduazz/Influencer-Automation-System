@@ -1,10 +1,14 @@
 #!/bin/sh
 set -e
 
+export HOME="/tmp"
+export COMPOSER_HOME="/tmp"
+
 echo "🚚 Deploying application"
 
 # Ensure git safe directory for deployment user
 git config --global --add safe.directory /var/www/influencer-laravel 2>/dev/null || true
+git config --global --add safe.directory '*' 2>/dev/null || true
 
 echo "🚀 Pulling latest changes..."
 git reset --hard && git pull

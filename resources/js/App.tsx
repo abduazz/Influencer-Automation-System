@@ -11,6 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
+import ExecutiveDashboardView from './components/ExecutiveDashboardView';
 import BloggersView from './components/BloggersView';
 import ReportsView from './components/ReportsView';
 import ReportsFeedView from './components/ReportsFeedView';
@@ -75,7 +76,7 @@ export default function App() {
     return localStorage.getItem('ff_user_email');
   });
 
-  const [currentUserRole, setCurrentUserRole] = useState<'super_admin' | 'pr_manager' | 'product_manager' | null>(() => {
+  const [currentUserRole, setCurrentUserRole] = useState<AllowedUser['role'] | null>(() => {
     const cachedRole = localStorage.getItem('ff_user_role');
     if (cachedRole) return cachedRole as any;
 
@@ -93,13 +94,13 @@ export default function App() {
   } | null>(null);
 
 
-  const handleAddUser = async (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => {
-    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages);
+  const handleAddUser = async (name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]) => {
+    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects);
     setAllowedUsers((prev) => [...prev, newUser]);
   };
 
-  const handleEditUser = async (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => {
-    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics, allowedPages);
+  const handleEditUser = async (id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]) => {
+    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics, allowedPages, allowedProjects);
     setAllowedUsers((prev) => prev.map((u) => u.id === id ? updatedUser : u));
   };
 
@@ -108,7 +109,7 @@ export default function App() {
     setAllowedUsers((prev) => prev.filter((u) => u.id !== id));
   };
 
-  const handleLoginSuccess = (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => {
+  const handleLoginSuccess = (email: string, role: AllowedUser['role']) => {
     setCurrentUserEmail(email);
     setCurrentUserRole(role);
     localStorage.setItem('ff_user_email', email);
@@ -327,9 +328,9 @@ export default function App() {
       
       // Auto-login Telegram WebApp user if not set
       if (!localStorage.getItem('ff_user_email')) {
-        localStorage.setItem('ff_user_email', 'telegram-manager@fluenceflow.net');
+        localStorage.setItem('ff_user_email', 'telegram-manager@tezi.uz');
         localStorage.setItem('ff_user_role', 'super_admin');
-        setCurrentUserEmail('telegram-manager@fluenceflow.net');
+        setCurrentUserEmail('telegram-manager@tezi.uz');
         setCurrentUserRole('super_admin');
       }
     }
@@ -389,9 +390,14 @@ export default function App() {
     }
   }, [activeTab, isBloggerCabinetRoute]);
 
-  // Resolve allowed pages for the active user
+  // Resolve allowed pages and projects for the active user
   const activeUser = (allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase());
   const allowedPages = activeUser?.allowedPages || ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
+  const userAllowedProjects = activeUser?.allowedProjects;
+
+  const accessibleProjects = (currentUserRole === 'super_admin' || !userAllowedProjects || userAllowedProjects.length === 0)
+    ? projects
+    : projects.filter(p => userAllowedProjects.includes(p.id));
 
   // Enforce page-level access control: redirect user to their first allowed page if active tab is forbidden
   useEffect(() => {
@@ -446,7 +452,7 @@ export default function App() {
         <header className="fixed top-0 left-0 right-0 bg-white/90 border-b border-neutral-200/85 h-14 flex items-center justify-between px-4 z-50 md:hidden shadow-sm backdrop-blur-md">
           <div className="flex items-center gap-2">
             <span className="font-black text-xs tracking-wider uppercase text-neutral-800">
-              FluenceFlow
+              Tezi.uz
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -517,31 +523,39 @@ export default function App() {
         ) : (
           <>
             {activeTab === 'projects' && (
-              <DashboardView
-                projects={projects}
-                integrations={integrations}
-                submissions={submissions}
-                onAddProject={handleAddProject}
-                onEditProject={handleEditProject}
-                onDeleteProject={handleDeleteProject}
-                onAddIntegration={handleAddIntegration}
-                onEditIntegration={handleEditIntegration}
-                onDeleteIntegration={handleDeleteIntegration}
-                lang={lang}
-                allowedMetrics={(allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
-                userRole={currentUserRole}
-                onNavigateToReports={(projectId, bloggerName, paymentType) => {
-                  setReportsInitialState({
-                    projectId,
-                    bloggerName,
-                    paymentType
-                  });
-                  setActiveTab('reports');
-                }}
-              />
+              currentUserRole === 'executive' ? (
+                <ExecutiveDashboardView
+                  projects={accessibleProjects}
+                  integrations={integrations}
+                  lang={lang}
+                />
+              ) : (
+                <DashboardView
+                  projects={accessibleProjects}
+                  integrations={integrations}
+                  submissions={submissions}
+                  onAddProject={handleAddProject}
+                  onEditProject={handleEditProject}
+                  onDeleteProject={handleDeleteProject}
+                  onAddIntegration={handleAddIntegration}
+                  onEditIntegration={handleEditIntegration}
+                  onDeleteIntegration={handleDeleteIntegration}
+                  lang={lang}
+                  allowedMetrics={(allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
+                  userRole={currentUserRole}
+                  onNavigateToReports={(projectId, bloggerName, paymentType) => {
+                    setReportsInitialState({
+                      projectId,
+                      bloggerName,
+                      paymentType
+                    });
+                    setActiveTab('reports');
+                  }}
+                />
+              )
             )}
 
-            {activeTab === 'bloggers' && (
+            {activeTab === 'bloggers' && currentUserRole !== 'executive' && (
               <BloggersView
                 projects={projects}
                 integrations={integrations}
@@ -550,7 +564,7 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'reports' && currentUserRole !== 'product_manager' && (
+            {activeTab === 'reports' && currentUserRole !== 'product_manager' && currentUserRole !== 'executive' && (
               <ReportsView
                 projects={projects}
                 integrations={integrations}
@@ -564,7 +578,7 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'bulk_purchases' && (
+            {activeTab === 'bulk_purchases' && currentUserRole !== 'executive' && (
               <BulkPurchasesView
                 projects={projects}
                 bulkPurchases={bulkPurchases}
@@ -586,7 +600,7 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'other_expenses' && currentUserRole !== 'product_manager' && (
+            {activeTab === 'other_expenses' && currentUserRole !== 'product_manager' && currentUserRole !== 'executive' && (
               <ReportsFeedView
                 projects={projects}
                 integrations={integrations}
@@ -619,6 +633,7 @@ export default function App() {
             {activeTab === 'access' && currentUserRole === 'super_admin' && (
               <AccessManagementView
                 allowedUsers={allowedUsers}
+                projects={projects}
                 onAddUser={handleAddUser}
                 onEditUser={handleEditUser}
                 onRemoveUser={handleRemoveUser}
@@ -653,20 +668,22 @@ export default function App() {
           </button>
 
           {/* Bloggers Tab */}
-          <button
-            onClick={() => setActiveTab('bloggers')}
-            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-              activeTab === 'bloggers' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-            }`}
-          >
-            <Users className="w-5 h-5" />
-            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-              {lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers'}
-            </span>
-          </button>
+          {currentUserRole !== 'executive' && (
+            <button
+              onClick={() => setActiveTab('bloggers')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'bloggers' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <Users className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers'}
+              </span>
+            </button>
+          )}
 
           {/* Create Report Tab */}
-          {currentUserRole !== 'product_manager' && (
+          {currentUserRole !== 'product_manager' && currentUserRole !== 'executive' && (
             <button
               onClick={() => setActiveTab('reports')}
               className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
@@ -681,17 +698,19 @@ export default function App() {
           )}
 
           {/* Bulk Purchases Tab */}
-          <button
-            onClick={() => setActiveTab('bulk_purchases')}
-            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-              activeTab === 'bulk_purchases' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-            }`}
-          >
-            <Layers className="w-5 h-5" />
-            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-              {lang === 'ru' ? 'Оптовая' : lang === 'uz' ? 'Ommaviy' : 'Bulk'}
-            </span>
-          </button>
+          {currentUserRole !== 'executive' && (
+            <button
+              onClick={() => setActiveTab('bulk_purchases')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+                activeTab === 'bulk_purchases' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              <Layers className="w-5 h-5" />
+              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+                {lang === 'ru' ? 'Оптовая' : lang === 'uz' ? 'Ommaviy' : 'Bulk'}
+              </span>
+            </button>
+          )}
 
           {/* Reports Feed Tab */}
           {currentUserRole !== 'product_manager' && (

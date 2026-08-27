@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Influencer Automation System</title>
+    <title>Tezi.uz - Special TezPay ecosystem management system</title>
     @viteReactRefresh
     @vite(['resources/css/app.css', 'resources/js/main.tsx'])
 </head>

@@ -19,6 +19,7 @@ class UserController extends Controller
                 'role' => $user->role->value,
                 'allowedMetrics' => $user->allowed_metrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
                 'allowedPages' => $user->allowed_pages ?? ['projects', 'bloggers', 'reports', 'reports_feed', 'other_expenses'],
+                'allowedProjects' => $user->allowed_projects ?? [],
                 'createdAt' => $user->created_at->format('Y-m-d'),
             ];
         }));
@@ -29,9 +30,10 @@ class UserController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
-            'role' => 'required|in:super_admin,pr_manager,product_manager',
+            'role' => 'required|in:super_admin,pr_manager,product_manager,executive',
             'allowedMetrics' => 'nullable|array',
             'allowedPages' => 'nullable|array',
+            'allowedProjects' => 'nullable|array',
         ]);
 
         $user = User::create([
@@ -41,6 +43,7 @@ class UserController extends Controller
             'password' => Hash::make('password'),
             'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
             'allowed_pages' => $request->allowedPages ?? ['projects', 'bloggers', 'reports', 'reports_feed', 'other_expenses'],
+            'allowed_projects' => $request->allowedProjects ?? [],
         ]);
 
         return response()->json([
@@ -50,6 +53,7 @@ class UserController extends Controller
             'role' => $user->role->value,
             'allowedMetrics' => $user->allowed_metrics,
             'allowedPages' => $user->allowed_pages,
+            'allowedProjects' => $user->allowed_projects,
             'createdAt' => $user->created_at->format('Y-m-d'),
         ], 201);
     }
@@ -58,9 +62,10 @@ class UserController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'role' => 'sometimes|required|in:super_admin,pr_manager,product_manager',
+            'role' => 'sometimes|required|in:super_admin,pr_manager,product_manager,executive',
             'allowedMetrics' => 'nullable|array',
             'allowedPages' => 'nullable|array',
+            'allowedProjects' => 'nullable|array',
         ]);
 
         $user->update([
@@ -68,6 +73,7 @@ class UserController extends Controller
             'role' => $request->input('role', $user->role),
             'allowed_metrics' => $request->has('allowedMetrics') ? $request->allowedMetrics : $user->allowed_metrics,
             'allowed_pages' => $request->has('allowedPages') ? $request->allowedPages : $user->allowed_pages,
+            'allowed_projects' => $request->has('allowedProjects') ? $request->allowedProjects : $user->allowed_projects,
         ]);
 
         return response()->json([
@@ -77,6 +83,7 @@ class UserController extends Controller
             'role' => $user->role->value,
             'allowedMetrics' => $user->allowed_metrics,
             'allowedPages' => $user->allowed_pages,
+            'allowedProjects' => $user->allowed_projects,
             'createdAt' => $user->created_at->format('Y-m-d'),
         ]);
     }

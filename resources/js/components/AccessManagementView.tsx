@@ -4,14 +4,15 @@
  */
 
 import React, { useState } from 'react';
-import { AllowedUser } from '../data/mockData';
+import { AllowedUser, Project } from '../data/mockData';
 import { translations, Language } from '../translations';
-import { Users, UserPlus, Shield, Mail, Trash2, Key, Info, Pencil } from 'lucide-react';
+import { Users, UserPlus, Shield, Mail, Trash2, Key, Info, Pencil, FolderKanban, ChevronDown, ChevronUp, Search, Filter, Layout, BarChart2 } from 'lucide-react';
 
 interface AccessManagementViewProps {
   allowedUsers: AllowedUser[];
-  onAddUser: (name: string, email: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => Promise<void>;
-  onEditUser: (id: string, name: string, role: 'super_admin' | 'pr_manager' | 'product_manager', allowedMetrics?: string[], allowedPages?: string[]) => Promise<void>;
+  projects?: Project[];
+  onAddUser: (name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]) => Promise<void>;
+  onEditUser: (id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]) => Promise<void>;
   onRemoveUser: (id: string) => Promise<void>;
   currentUserEmail: string;
   lang: Language;
@@ -19,6 +20,7 @@ interface AccessManagementViewProps {
 
 export default function AccessManagementView({
   allowedUsers,
+  projects = [],
   onAddUser,
   onEditUser,
   onRemoveUser,
@@ -31,6 +33,7 @@ export default function AccessManagementView({
   const [editingUser, setEditingUser] = useState<AllowedUser | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [selectedRole, setSelectedRole] = useState<AllowedUser['role']>('pr_manager');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -56,6 +59,24 @@ export default function AccessManagementView({
     other_expenses: true
   });
 
+  // Allowed Projects state
+  const [projectsPermissions, setProjectsPermissions] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    (projects || []).forEach(p => { initial[p.id] = true; });
+    return initial;
+  });
+
+  // Accordion state
+  const [openAccordion, setOpenAccordion] = useState<'projects' | 'pages' | 'metrics' | null>('projects');
+
+  // Search & Role filter for active users list
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('all');
+
+  const selectedProjectsCount = Object.values(projectsPermissions).filter(Boolean).length;
+  const selectedPagesCount = Object.values(pagesPermissions).filter(Boolean).length;
+  const selectedMetricsCount = Object.values(metricsPermissions).filter(Boolean).length;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -71,20 +92,23 @@ export default function AccessManagementView({
     if (!cleanEmail) return;
 
     if (!editingUser) {
-      // Validate email format
+      // Validate email format or handle (e.g. chief1)
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(cleanEmail)) {
-        setErrorMsg(lang === 'ru' ? 'Некорректный формат email!' : lang === 'uz' ? 'Email formati noto‘g‘ri!' : 'Invalid email format!');
+      const isValidEmail = emailRegex.test(cleanEmail) || !cleanEmail.includes('@');
+      if (!isValidEmail) {
+        setErrorMsg(lang === 'ru' ? 'Некорректный формат email или логина!' : lang === 'uz' ? 'Email yoki login formati noto‘g‘ri!' : 'Invalid email or handle format!');
         return;
       }
 
       // Check if email already exists in list (case-insensitive)
-      const exists = allowedUsers.some((u) => u.email.toLowerCase() === cleanEmail);
+      const exists = allowedUsers.some((u) => u.email.toLowerCase() === cleanEmail || u.email.toLowerCase() === `${cleanEmail}@tezi.uz`);
       if (exists) {
         setErrorMsg(t.emailAlreadyExists);
         return;
       }
     }
+
+    const resolvedEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@tezi.uz`;
 
     const allowedMetrics = Object.entries(metricsPermissions)
       .filter(([_, allowed]) => allowed)
@@ -94,11 +118,15 @@ export default function AccessManagementView({
       .filter(([_, allowed]) => allowed)
       .map(([name]) => name);
 
-    const determinedRole = pagesPermissions.super_admin ? 'super_admin' : 'pr_manager';
+    const allowedProjects = Object.entries(projectsPermissions)
+      .filter(([_, allowed]) => allowed)
+      .map(([id]) => id);
+
+    const determinedRole = selectedRole;
 
     try {
       if (editingUser) {
-        await onEditUser(editingUser.id, cleanName, determinedRole, allowedMetrics, allowedPages);
+        await onEditUser(editingUser.id, cleanName, determinedRole, allowedMetrics, allowedPages, allowedProjects);
         setSuccessMsg(
           lang === 'ru'
             ? 'Доступ успешно обновлен!'
@@ -108,12 +136,13 @@ export default function AccessManagementView({
         );
         setEditingUser(null);
       } else {
-        await onAddUser(cleanName, cleanEmail, determinedRole, allowedMetrics, allowedPages);
-        setSuccessMsg(t.addSuccessToast.replace('{email}', cleanEmail));
+        await onAddUser(cleanName, resolvedEmail, determinedRole, allowedMetrics, allowedPages, allowedProjects);
+        setSuccessMsg(t.addSuccessToast.replace('{email}', resolvedEmail));
       }
 
       setEmail('');
       setName('');
+      setSelectedRole('pr_manager');
       setMetricsPermissions({
         deals: true,
         spend: true,
@@ -126,10 +155,15 @@ export default function AccessManagementView({
       setPagesPermissions({
         super_admin: false,
         projects: true,
+        bloggers: true,
         reports: true,
+        bulk_purchases: true,
         reports_feed: true,
         other_expenses: true
       });
+      const resetProjects: Record<string, boolean> = {};
+      (projects || []).forEach(p => { resetProjects[p.id] = true; });
+      setProjectsPermissions(resetProjects);
 
       setTimeout(() => {
         setSuccessMsg(null);
@@ -194,6 +228,8 @@ export default function AccessManagementView({
         return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'product_manager':
         return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'executive':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       default:
         return 'bg-neutral-50 text-neutral-600 border-neutral-200';
     }
@@ -207,6 +243,8 @@ export default function AccessManagementView({
         return t.rolePRManager;
       case 'product_manager':
         return t.roleProductManager;
+      case 'executive':
+        return t.roleExecutive;
       default:
         return userRole;
     }
@@ -279,10 +317,10 @@ export default function AccessManagementView({
               <div className="relative">
                 <Mail className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
                 <input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t.userEmailPlaceholder}
+                  placeholder={lang === 'ru' ? 'Email или логин (например chief1)...' : lang === 'uz' ? 'Email yoki login (masalan chief1)...' : 'Email or handle (e.g. chief1)...'}
                   className={`w-full border focus:border-black focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs font-medium focus:outline-hidden transition duration-150 ${
                     editingUser
                       ? 'bg-neutral-100 border-neutral-200 text-neutral-450 cursor-not-allowed'
@@ -294,95 +332,223 @@ export default function AccessManagementView({
               </div>
             </div>
 
-            {/* Allowed Dashboard Metrics Checklist */}
-            <div className="space-y-2 border-t border-neutral-100 pt-3">
-              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                {lang === 'ru' ? 'Разрешенные метрики на дешборде:' : lang === 'uz' ? 'Ruxsat berilgan ko‘rsatkichlar:' : 'Allowed Dashboard Metrics:'}
+            {/* Role Selection Field */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                {t.userRoleLabel}
               </label>
-              
-              <div className="space-y-2">
-                {[
-                  { key: 'deals', labelRu: 'Сделки с блогерами', labelUz: 'Bloggerlar bilan bitimlar', labelEn: 'Blogger Deals' },
-                  { key: 'spend', labelRu: 'Бюджет проекта (Расходы)', labelUz: 'Loyiha budjeti (Xarajatlar)', labelEn: 'Allocated Spend' },
-                  { key: 'total_slots', labelRu: 'Всего куплено слотов', labelUz: 'Jami sotib olingan slotlar', labelEn: 'Total Slots' },
-                  { key: 'slots_published', labelRu: 'Выполнено слотов', labelUz: 'Bajarilgan slotlar', labelEn: 'Slots Published' },
-                  { key: 'slots_remaining', labelRu: 'Осталось выполнить слотов', labelUz: 'Bajarilishi kerak bo‘lgan slotlar', labelEn: 'Slots Remaining' },
-                  { key: 'financial_metrics', labelRu: 'Выплаты блогерам (таблица)', labelUz: 'Bloggerlar to‘lovlari (jadval)', labelEn: 'Blogger Payouts (table)' },
-                  { key: 'set_limit', labelRu: 'Установка месячного лимита', labelUz: 'Oylik limitni o‘rnatish', labelEn: 'Set Campaign Monthly Limit' },
-                ].map((m) => {
-                  const isChecked = metricsPermissions[m.key];
-                  const label = lang === 'ru' ? m.labelRu : lang === 'uz' ? m.labelUz : m.labelEn;
-                  
-                  return (
-                    <div key={m.key} className="flex items-center justify-between p-2 rounded-lg border border-neutral-200 bg-neutral-50/50 hover:bg-neutral-50 transition duration-100">
-                      <span className="text-[11px] font-semibold text-neutral-850">{label}</span>
-                      
-                      {/* Premium Toggle Switch */}
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value as AllowedUser['role'])}
+                className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-lg px-3 py-2 text-xs font-medium text-black focus:outline-hidden transition duration-150"
+              >
+                <option value="pr_manager">{t.rolePRManager}</option>
+                <option value="product_manager">{t.roleProductManager}</option>
+                <option value="executive">{t.roleExecutive}</option>
+                <option value="super_admin">{t.roleSuperAdmin}</option>
+              </select>
+            </div>
+                            {/* Accordion 1: Allowed Projects */}
+            <div className="border border-neutral-200/80 rounded-xl overflow-hidden bg-neutral-50/50">
+              <button
+                type="button"
+                onClick={() => setOpenAccordion(prev => prev === 'projects' ? null : 'projects')}
+                className="w-full px-3.5 py-2.5 flex items-center justify-between bg-white hover:bg-neutral-50 transition cursor-pointer text-left border-b border-neutral-100"
+              >
+                <div className="flex items-center gap-2">
+                  <FolderKanban className="w-4 h-4 text-black shrink-0" />
+                  <span className="text-xs font-bold text-neutral-900">
+                    {lang === 'ru' ? 'Доступные проекты' : lang === 'uz' ? 'Ruxsat berilgan loyihalar' : 'Allowed Projects'}
+                  </span>
+                  <span className="text-[9px] font-extrabold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">
+                    {projects.length > 0 ? `${selectedProjectsCount}/${projects.length}` : '0'}
+                  </span>
+                </div>
+                {openAccordion === 'projects' ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
+              </button>
+
+              {openAccordion === 'projects' && (
+                <div className="p-3 space-y-2.5 bg-neutral-50/40 animate-fade-in">
+                  <div className="flex items-center justify-end">
+                    {projects.length > 0 && (
                       <button
                         type="button"
                         onClick={() => {
-                          setMetricsPermissions(prev => ({
-                            ...prev,
-                            [m.key]: !prev[m.key]
-                          }));
+                          const allSelected = projects.every(p => projectsPermissions[p.id]);
+                          const newState: Record<string, boolean> = {};
+                          projects.forEach(p => { newState[p.id] = !allSelected; });
+                          setProjectsPermissions(newState);
                         }}
-                        className={`w-8 h-4 rounded-full transition duration-200 relative ${
-                          isChecked ? 'bg-black' : 'bg-neutral-250'
-                        }`}
+                        className="text-[9px] font-bold text-neutral-500 hover:text-black transition cursor-pointer lowercase"
                       >
-                        <span className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
-                          isChecked ? 'right-0.5' : 'left-0.5'
-                        }`} />
+                        {projects.every(p => projectsPermissions[p.id]) 
+                          ? (lang === 'ru' ? 'снять все' : lang === 'uz' ? 'barchasini yechish' : 'deselect all')
+                          : (lang === 'ru' ? 'выбрать все' : lang === 'uz' ? 'barchasini tanlash' : 'select all')}
                       </button>
+                    )}
+                  </div>
+
+                  {projects.length === 0 ? (
+                    <p className="text-[11px] text-neutral-400 italic p-2 bg-white rounded-lg border border-neutral-200/60">
+                      {lang === 'ru' ? 'Проекты пока не созданы.' : lang === 'uz' ? 'Hali loyihalar yaratilmadi.' : 'No projects created yet.'}
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {projects.map((proj) => {
+                        const isChecked = projectsPermissions[proj.id] ?? true;
+
+                        return (
+                          <div key={proj.id} className="flex items-center justify-between p-2 rounded-lg border border-neutral-200/70 bg-white hover:border-neutral-300 transition">
+                            <span className="text-[10px] font-bold text-neutral-800 truncate pr-1" title={proj.name}>
+                              {proj.name}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProjectsPermissions(prev => ({
+                                  ...prev,
+                                  [proj.id]: !prev[proj.id]
+                                }));
+                              }}
+                              className={`w-7 h-3.5 rounded-full transition duration-200 relative shrink-0 ${
+                                isChecked ? 'bg-black' : 'bg-neutral-200'
+                              }`}
+                            >
+                              <span className={`w-2.5 h-2.5 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
+                                isChecked ? 'right-0.5' : 'left-0.5'
+                              }`} />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Allowed Dashboard Pages Checklist */}
-            <div className="space-y-2 border-t border-neutral-100 pt-3">
-              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
-                {t.allowedPagesLabel}
-              </label>
-              
-              <div className="space-y-2">
-                {[
-                  { key: 'super_admin', label: t.pageSuperAdmin },
-                  { key: 'projects', label: t.pageProjects },
-                  { key: 'bloggers', label: t.pageBloggers },
-                  { key: 'reports', label: t.pageReports },
-                  { key: 'bulk_purchases', label: lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases' },
-                  { key: 'reports_feed', label: t.pageReportsFeed },
-                  { key: 'other_expenses', label: t.pageOtherExpenses },
-                ].map((p) => {
-                  const isChecked = pagesPermissions[p.key];
-                  
-                  return (
-                    <div key={p.key} className="flex items-center justify-between p-2 rounded-lg border border-neutral-200 bg-neutral-50/50 hover:bg-neutral-50 transition duration-100">
-                      <span className="text-[11px] font-semibold text-neutral-850">{p.label}</span>
-                      
-                      {/* Toggle Switch */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPagesPermissions(prev => ({
-                            ...prev,
-                            [p.key]: !prev[p.key]
-                          }));
-                        }}
-                        className={`w-8 h-4 rounded-full transition duration-200 relative ${
-                          isChecked ? 'bg-black' : 'bg-neutral-250'
-                        }`}
-                      >
-                        <span className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
-                          isChecked ? 'right-0.5' : 'left-0.5'
-                        }`} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Accordion 2: Allowed Pages */}
+            <div className="border border-neutral-200/80 rounded-xl overflow-hidden bg-neutral-50/50">
+              <button
+                type="button"
+                onClick={() => setOpenAccordion(prev => prev === 'pages' ? null : 'pages')}
+                className="w-full px-3.5 py-2.5 flex items-center justify-between bg-white hover:bg-neutral-50 transition cursor-pointer text-left border-b border-neutral-100"
+              >
+                <div className="flex items-center gap-2">
+                  <Layout className="w-4 h-4 text-black shrink-0" />
+                  <span className="text-xs font-bold text-neutral-900">
+                    {lang === 'ru' ? 'Доступные страницы' : lang === 'uz' ? 'Ruxsat berilgan bo‘limlar' : 'Allowed Menu Pages'}
+                  </span>
+                  <span className="text-[9px] font-extrabold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">
+                    {selectedPagesCount}/7
+                  </span>
+                </div>
+                {openAccordion === 'pages' ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
+              </button>
+
+              {openAccordion === 'pages' && (
+                <div className="p-3 space-y-2 bg-neutral-50/40 animate-fade-in">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {[
+                      { key: 'super_admin', label: t.pageSuperAdmin },
+                      { key: 'projects', label: t.pageProjects },
+                      { key: 'bloggers', label: t.pageBloggers },
+                      { key: 'reports', label: t.pageReports },
+                      { key: 'bulk_purchases', label: lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases' },
+                      { key: 'reports_feed', label: t.pageReportsFeed },
+                      { key: 'other_expenses', label: t.pageOtherExpenses },
+                    ].map((p) => {
+                      const isChecked = pagesPermissions[p.key];
+
+                      return (
+                        <div key={p.key} className="flex items-center justify-between p-2 rounded-lg border border-neutral-200/70 bg-white hover:border-neutral-300 transition">
+                          <span className="text-[10px] font-bold text-neutral-800 truncate pr-1">{p.label}</span>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPagesPermissions(prev => ({
+                                ...prev,
+                                [p.key]: !prev[p.key]
+                              }));
+                            }}
+                            className={`w-7 h-3.5 rounded-full transition duration-200 relative shrink-0 ${
+                              isChecked ? 'bg-black' : 'bg-neutral-200'
+                            }`}
+                          >
+                            <span className={`w-2.5 h-2.5 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
+                              isChecked ? 'right-0.5' : 'left-0.5'
+                            }`} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Accordion 3: Allowed Metrics */}
+            <div className="border border-neutral-200/80 rounded-xl overflow-hidden bg-neutral-50/50">
+              <button
+                type="button"
+                onClick={() => setOpenAccordion(prev => prev === 'metrics' ? null : 'metrics')}
+                className="w-full px-3.5 py-2.5 flex items-center justify-between bg-white hover:bg-neutral-50 transition cursor-pointer text-left border-b border-neutral-100"
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart2 className="w-4 h-4 text-black shrink-0" />
+                  <span className="text-xs font-bold text-neutral-900">
+                    {lang === 'ru' ? 'Метрики дешборда' : lang === 'uz' ? 'Boshqaruv ko‘rsatkichlari' : 'Dashboard Metrics'}
+                  </span>
+                  <span className="text-[9px] font-extrabold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">
+                    {selectedMetricsCount}/7
+                  </span>
+                </div>
+                {openAccordion === 'metrics' ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
+              </button>
+
+              {openAccordion === 'metrics' && (
+                <div className="p-3 space-y-2 bg-neutral-50/40 animate-fade-in">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {[
+                      { key: 'deals', labelRu: 'Сделки', labelUz: 'Bitimlar', labelEn: 'Deals' },
+                      { key: 'spend', labelRu: 'Расходы', labelUz: 'Xarajatlar', labelEn: 'Spend' },
+                      { key: 'total_slots', labelRu: 'Всего слотов', labelUz: 'Jami slotlar', labelEn: 'Total Slots' },
+                      { key: 'slots_published', labelRu: 'Слотов сдано', labelUz: 'Bajarilgan slotlar', labelEn: 'Published' },
+                      { key: 'slots_remaining', labelRu: 'Остаток слотов', labelUz: 'Qolgan slotlar', labelEn: 'Remaining' },
+                      { key: 'financial_metrics', labelRu: 'Выплаты', labelUz: 'To‘lovlar', labelEn: 'Payouts' },
+                      { key: 'set_limit', labelRu: 'Лимиты', labelUz: 'Limitlar', labelEn: 'Set Limits' },
+                    ].map((m) => {
+                      const isChecked = metricsPermissions[m.key];
+                      const label = lang === 'ru' ? m.labelRu : lang === 'uz' ? m.labelUz : m.labelEn;
+
+                      return (
+                        <div key={m.key} className="flex items-center justify-between p-2 rounded-lg border border-neutral-200/70 bg-white hover:border-neutral-300 transition">
+                          <span className="text-[10px] font-bold text-neutral-800 truncate pr-1">{label}</span>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMetricsPermissions(prev => ({
+                                ...prev,
+                                [m.key]: !prev[m.key]
+                              }));
+                            }}
+                            className={`w-7 h-3.5 rounded-full transition duration-200 relative shrink-0 ${
+                              isChecked ? 'bg-black' : 'bg-neutral-200'
+                            }`}
+                          >
+                            <span className={`w-2.5 h-2.5 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
+                              isChecked ? 'right-0.5' : 'left-0.5'
+                            }`} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Quick Helper Explaining Roles */}
@@ -391,9 +557,10 @@ export default function AccessManagementView({
                 <Info className="w-3.5 h-3.5 text-neutral-400" />
                 <span>{lang === 'ru' ? 'Права доступа:' : lang === 'uz' ? 'Ruxsat darajalari:' : 'Access Info:'}</span>
               </div>
-              <p>• <strong>{t.roleSuperAdmin}</strong>: {lang === 'ru' ? 'Полный доступ ко всему, включая доступы.' : lang === 'uz' ? 'Barcha bo‘limlarga to‘liq kirish.' : 'Full system privileges including whitelisting.'}</p>
-              <p>• <strong>{t.rolePRManager}</strong>: {lang === 'ru' ? 'Доступ к дешборду и создание отчетов только для Telegram.' : lang === 'uz' ? 'Panel va faqat Telegram hisoboti yaratish.' : 'Dashboard and Telegram-only report logs.'}</p>
-              <p>• <strong>{t.roleProductManager}</strong>: {lang === 'ru' ? 'Доступ только к дешборду (без отчетов).' : lang === 'uz' ? 'Faqat loyihalar paneliga kirish (hisobotsiz).' : 'Only dashboard view, reports disabled.'}</p>
+              <p>• <strong>{t.roleSuperAdmin}</strong>: {lang === 'ru' ? 'Полный доступ ко всем настройкам и проектам.' : lang === 'uz' ? 'Barcha sozlamalar va loyihalarga to‘liq kirish.' : 'Full system privileges.'}</p>
+              <p>• <strong>{t.roleExecutive}</strong>: {lang === 'ru' ? 'Сводный дешборд бюджета и аналитики руководства.' : lang === 'uz' ? 'Rahbariyat moliyaviy va o‘zlashtirish hisoboti.' : 'Executive high-level budget overview.'}</p>
+              <p>• <strong>{t.rolePRManager}</strong>: {lang === 'ru' ? 'Доступ к рабочим проектам и созданию отчетов.' : lang === 'uz' ? 'Loyihalar paneli va hisobotlar yaratish.' : 'Dashboard and report logging.'}</p>
+              <p>• <strong>{t.roleProductManager}</strong>: {lang === 'ru' ? 'Доступ только к избранным проектам (без отчетов).' : lang === 'uz' ? 'Faqat tanlangan loyihalar paneliga kirish.' : 'Dashboard view only.'}</p>
             </div>
 
             {editingUser ? (
@@ -447,14 +614,57 @@ export default function AccessManagementView({
 
         {/* List of Active Authorized Members */}
         <div className="bg-white border border-neutral-200 rounded-2xl p-6 text-left shadow-2xs lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-100 pb-4">
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-black" />
               <h3 className="font-bold text-black text-xs uppercase tracking-wider">{t.activeUsersTitle}</h3>
+              <span className="text-[10px] font-black bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">
+                {allowedUsers.length}
+              </span>
             </div>
-            <span className="text-[10px] font-black bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">
-              {allowedUsers.length}
+
+            {/* Search Input */}
+            <div className="relative min-w-[200px]">
+              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={userSearchQuery}
+                onChange={(e) => setUserSearchQuery(e.target.value)}
+                placeholder={lang === 'ru' ? 'Поиск пользователя...' : lang === 'uz' ? 'Qidirish...' : 'Search user...'}
+                className="w-full bg-neutral-50 border border-neutral-200 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium focus:bg-white focus:border-black focus:outline-none transition"
+              />
+            </div>
+          </div>
+
+          {/* Role Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-neutral-100 text-[10px] font-bold">
+            <span className="text-neutral-400 uppercase tracking-wider mr-1 text-[9px]">
+              {lang === 'ru' ? 'Фильтр:' : lang === 'uz' ? 'Filtr:' : 'Filter:'}
             </span>
+            {[
+              { key: 'all', labelRu: 'Все', labelUz: 'Barchasi', labelEn: 'All' },
+              { key: 'super_admin', labelRu: 'Админы', labelUz: 'Adminlar', labelEn: 'Admins' },
+              { key: 'executive', labelRu: 'Руководство', labelUz: 'Rahbariyat', labelEn: 'Executives' },
+              { key: 'pr_manager', labelRu: 'PR Менеджеры', labelUz: 'PR Menejerlar', labelEn: 'PR Managers' },
+              { key: 'product_manager', labelRu: 'Product Менеджеры', labelUz: 'Product Menejerlar', labelEn: 'Product Managers' },
+            ].map((f) => {
+              const isActive = userRoleFilter === f.key;
+              const label = lang === 'ru' ? f.labelRu : lang === 'uz' ? f.labelUz : f.labelEn;
+
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setUserRoleFilter(f.key)}
+                  className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                    isActive
+                      ? 'bg-black text-white font-extrabold shadow-2xs'
+                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-600'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
 
           <div className="overflow-x-auto">
@@ -467,7 +677,15 @@ export default function AccessManagementView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 text-xs font-medium text-neutral-700">
-                {allowedUsers.map((user) => {
+                {allowedUsers
+                  .filter((user) => {
+                    const matchesSearch = !userSearchQuery ||
+                      (user.name && user.name.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+                      user.email.toLowerCase().includes(userSearchQuery.toLowerCase());
+                    const matchesRole = userRoleFilter === 'all' || user.role === userRoleFilter;
+                    return matchesSearch && matchesRole;
+                  })
+                  .map((user) => {
                   const isSelf = user.email.toLowerCase() === currentUserEmail.toLowerCase();
                   return (
                     <tr key={user.id} className="hover:bg-neutral-50/30 transition duration-150">
@@ -496,6 +714,22 @@ export default function AccessManagementView({
                                 </span>
                               );
                             })}
+                            {/* Project Access Badges */}
+                            {user.allowedProjects && user.allowedProjects.length > 0 && user.allowedProjects.length < projects.length ? (
+                              user.allowedProjects.map((pId) => {
+                                const pObj = projects.find(p => p.id === pId);
+                                if (!pObj) return null;
+                                return (
+                                  <span key={pId} className="text-[8px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded">
+                                    {pObj.name}
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <span className="text-[8px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                {lang === 'ru' ? 'Все проекты' : lang === 'uz' ? 'Barcha loyihalar' : 'All Projects'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -509,6 +743,7 @@ export default function AccessManagementView({
                               setEditingUser(user);
                               setName(user.name || '');
                               setEmail(user.email);
+                              setSelectedRole(user.role);
                               
                               // Load metrics
                               const defaultMetrics = ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'];
@@ -533,6 +768,14 @@ export default function AccessManagementView({
                                 reports_feed: userPages.includes('reports_feed'),
                                 other_expenses: userPages.includes('other_expenses'),
                               });
+
+                              // Load allowed projects
+                              const userProjects = user.allowedProjects;
+                              const projPerms: Record<string, boolean> = {};
+                              (projects || []).forEach(p => {
+                                projPerms[p.id] = !userProjects || userProjects.length === 0 || userProjects.includes(p.id);
+                              });
+                              setProjectsPermissions(projPerms);
                             }}
                             className="p-1.5 rounded text-neutral-400 hover:text-black hover:bg-neutral-100 transition duration-150 cursor-pointer"
                             title={lang === 'ru' ? 'Редактировать' : lang === 'uz' ? 'Tahrirlash' : 'Edit'}

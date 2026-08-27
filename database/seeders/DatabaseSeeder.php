@@ -20,7 +20,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // Clean up old mock users
-        User::whereIn('email', ['pr@fluenceflow.com', 'product@fluenceflow.com'])->delete();
+        User::whereIn('email', ['pr@fluenceflow.com', 'product@fluenceflow.com', 'chief1@fluenceflow.net'])->delete();
 
         // Seed Whitelisted Users
         $users = [
@@ -34,6 +34,12 @@ class DatabaseSeeder extends Seeder
                 'name' => 'Super Admin 2',
                 'email' => 'khalilovdev@gmail.com',
                 'role' => UserRole::SuperAdmin,
+                'password' => Hash::make('password'),
+            ],
+            [
+                'name' => 'Chief / Руководство',
+                'email' => 'chief1@tezi.uz',
+                'role' => UserRole::Executive,
                 'password' => Hash::make('password'),
             ],
         ];

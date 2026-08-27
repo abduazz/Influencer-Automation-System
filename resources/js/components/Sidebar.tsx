@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
+import { AllowedUser } from '../data/mockData';
+
 interface SidebarProps {
   activeTab: 'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
   setActiveTab: (tab: 'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
@@ -31,7 +33,7 @@ interface SidebarProps {
   lang: Language;
   setLang: (lang: Language) => void;
   userEmail: string;
-  userRole: 'super_admin' | 'pr_manager' | 'product_manager';
+  userRole: AllowedUser['role'] | null;
   onLogout: () => void;
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
@@ -56,6 +58,10 @@ export default function Sidebar({
 
   const hasAccess = (pageKey: string) => {
     if (userRole === 'super_admin') return true;
+    if (userRole === 'executive') {
+      const execPages = allowedPages || ['projects', 'reports_feed'];
+      return execPages.includes(pageKey) && (pageKey === 'projects' || pageKey === 'reports_feed');
+    }
     if (pageKey === 'bulk_purchases' || pageKey === 'bloggers') return true;
     return (allowedPages || ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
   };
@@ -72,10 +78,10 @@ export default function Sidebar({
               </div>
               <div className="overflow-hidden">
                 <h1 className="font-black text-black text-lg tracking-tight animate-pulse truncate">
-                  FluenceFlow
+                  Tezi.uz
                 </h1>
                 <p className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider truncate">
-                  Campaign Manager
+                  Special TezPay ecosystem management system
                 </p>
               </div>
             </div>
@@ -335,7 +341,7 @@ export default function Sidebar({
                     {userEmail}
                   </h4>
                   <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider leading-none mt-1">
-                    {userRole === 'super_admin' ? t.roleSuperAdmin : userRole === 'pr_manager' ? 'PR Manager' : 'Product'}
+                    {userRole === 'super_admin' ? t.roleSuperAdmin : userRole === 'pr_manager' ? 'PR Manager' : userRole === 'executive' ? (lang === 'ru' ? 'Руководство' : lang === 'uz' ? 'Rahbariyat' : 'Executive') : 'Product'}
                   </p>
                 </div>
               </div>

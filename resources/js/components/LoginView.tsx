@@ -11,7 +11,7 @@ import { ShieldAlert, Globe, Radio, Mail, KeyRound } from 'lucide-react';
 interface LoginViewProps {
   allowedUsers: AllowedUser[];
   allowedUsersLoading?: boolean;
-  onLoginSuccess: (email: string, role: 'super_admin' | 'pr_manager' | 'product_manager') => void;
+  onLoginSuccess: (email: string, role: AllowedUser['role']) => void;
   lang: Language;
   setLang: (lang: Language) => void;
 }
@@ -32,13 +32,26 @@ export default function LoginView({
     e.preventDefault();
     setErrorMsg(null);
 
-    const cleanEmail = emailInput.trim().toLowerCase();
-    if (!cleanEmail) return;
+    const cleanInput = emailInput.trim().toLowerCase();
+    if (!cleanInput) return;
 
     if (allowedUsersLoading) return;
 
-    // Search email in the whitelist
-    const foundUser = allowedUsers.find((u) => u && u.email && u.email.toLowerCase() === cleanEmail);
+    // Flexible handle search (matches email, name, or email prefix like chief1)
+    const foundUser = allowedUsers.find((u) => {
+      if (!u || !u.email) return false;
+      const userEmail = u.email.toLowerCase();
+      const userName = (u.name || '').toLowerCase();
+      const emailPrefix = userEmail.split('@')[0];
+
+      return (
+        userEmail === cleanInput ||
+        userName === cleanInput ||
+        emailPrefix === cleanInput ||
+        userEmail.startsWith(`${cleanInput}@`) ||
+        userName.includes(cleanInput)
+      );
+    });
 
     if (foundUser) {
       onLoginSuccess(foundUser.email, foundUser.role);
@@ -78,10 +91,10 @@ export default function LoginView({
             <Radio className="w-6 h-6 text-white" />
           </div>
           <h1 className="font-black text-black text-2xl tracking-tight mt-3">
-            FluenceFlow
+            Tezi.uz
           </h1>
           <p className="text-[10px] uppercase font-bold text-neutral-400 tracking-widest leading-none">
-            Campaign Manager Portal
+            Special TezPay ecosystem management system
           </p>
         </div>
 
@@ -113,10 +126,10 @@ export default function LoginView({
               <div className="relative">
                 <Mail className="absolute left-3 top-3 w-4.5 h-4.5 text-neutral-400" />
                 <input
-                  type="email"
+                  type="text"
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder={t.loginEmailPlaceholder}
+                  placeholder={lang === 'ru' ? 'Email или логин (например chief1)...' : lang === 'uz' ? 'Email yoki login (masalan chief1)...' : 'Email or handle (e.g. chief1)...'}
                   className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium text-black focus:outline-hidden transition duration-150"
                   required
                 />

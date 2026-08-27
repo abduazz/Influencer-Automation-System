@@ -408,7 +408,9 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                   <th className="px-5 py-3 font-extrabold">{t.createdByField}</th>
                   <th className="px-5 py-3 font-extrabold text-right">{t.totalSumColumn}</th>
                   <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderReceipt}</th>
-                  <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderCabinet}</th>
+                  {userRole !== 'executive' && (
+                    <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderCabinet}</th>
+                  )}
                   {onDeleteReport && (
                     <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderActions}</th>
                   )}
@@ -514,24 +516,26 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                         )}
                       </td>
 
-                      {/* Cabinet */}
-                      <td className="px-5 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
-                        {cabinetUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(cabinetUrl);
-                              alert(lang === 'ru' ? 'Ссылка кабинета скопирована!' : lang === 'uz' ? 'Kabinet havolasi nusxalandi!' : 'Cabinet link copied!');
-                            }}
-                            className="inline-flex items-center justify-center p-1.5 text-black hover:bg-neutral-100 border border-neutral-200 rounded-lg transition shadow-2xs cursor-pointer"
-                            title={lang === 'ru' ? 'Копировать ссылку' : lang === 'uz' ? 'Havolani nusxalash' : 'Copy cabinet link'}
-                          >
-                            <Link className="w-3.5 h-3.5" />
-                          </button>
-                        ) : (
-                          <span className="text-neutral-300">—</span>
-                        )}
-                      </td>
+                      {/* Cabinet (Hidden for executive role) */}
+                      {userRole !== 'executive' && (
+                        <td className="px-5 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                          {cabinetUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(cabinetUrl);
+                                alert(lang === 'ru' ? 'Ссылка кабинета скопирована!' : lang === 'uz' ? 'Kabinet havolasi nusxalandi!' : 'Cabinet link copied!');
+                              }}
+                              className="inline-flex items-center justify-center p-1.5 text-black hover:bg-neutral-100 border border-neutral-200 rounded-lg transition shadow-2xs cursor-pointer"
+                              title={lang === 'ru' ? 'Копировать ссылку' : lang === 'uz' ? 'Havolani nusxalash' : 'Copy cabinet link'}
+                            >
+                              <Link className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <span className="text-neutral-300">—</span>
+                          )}
+                        </td>
+                      )}
 
                       {/* Actions */}
                       {onDeleteReport && (
@@ -642,8 +646,8 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                   </div>
                 )}
 
-                {/* Blogger Cabinet Link Section */}
-                {cabinetUrl && (
+                {/* Blogger Cabinet Link Section (Hidden for executive role) */}
+                {userRole !== 'executive' && cabinetUrl && (
                   <div className="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
                     <span className="text-[9px] text-neutral-400 font-extrabold uppercase tracking-wide">
                       {lang === 'ru' ? 'Линк блогера:' : lang === 'uz' ? 'Blogger havolasi:' : 'Cabinet Link:'}

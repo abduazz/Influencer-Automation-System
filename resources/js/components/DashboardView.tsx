@@ -286,8 +286,24 @@ export default function DashboardView({
   // Selected Project Statistics Calculators (filtered by date)
   const totalSpend = filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
+
+  // Selected Project total spend and current month spend
+  const selectedProjectTotalSpend = activeProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+
+  const now = new Date();
+  const currentYearStr = String(now.getFullYear());
+  const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
+  const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
+
+  const selectedProjectMonthlySpend = activeProjectIntegrations.filter(i => {
+    if (!i.startDate) return false;
+    if (i.startDate.startsWith(currentYMPrefix)) return true;
+    const d = new Date(i.startDate);
+    return !isNaN(d.getTime()) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+
   const remainingLimit = selectedProject && (selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null)
-    ? selectedProject.monthlyLimit - totalSpend
+    ? selectedProject.monthlyLimit - selectedProjectMonthlySpend
     : null;
   const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
   const totalPublishedSlots = filteredIntegrations.reduce((sum, item) => {
@@ -496,10 +512,13 @@ export default function DashboardView({
                 
                 <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wider shrink-0">
                   <span className="px-2.5 py-1 rounded bg-white border border-neutral-200 text-neutral-600">
-                    {integrations.filter(i => i.projectId === selectedProject.id).length} {t.integrationsCount}
+                    {activeProjectIntegrations.length} {t.integrationsCount}
                   </span>
-                  <span className="px-2.5 py-1 rounded bg-black text-white">
-                    {t.spend}: {integrations.filter(i => i.projectId === selectedProject.id).reduce((acc, curr) => acc + curr.totalAmount, 0).toLocaleString()}
+                  <span className="px-2.5 py-1 rounded bg-black text-white" title={t.monthlySpend}>
+                    {t.monthlySpend}: {selectedProjectMonthlySpend.toLocaleString()}
+                  </span>
+                  <span className="px-2.5 py-1 rounded bg-neutral-800 text-white" title={t.totalSpend}>
+                    {t.totalSpend}: {selectedProjectTotalSpend.toLocaleString()}
                   </span>
                   {allowedMetrics.includes('set_limit') || userRole === 'super_admin' ? (
                     selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null ? (

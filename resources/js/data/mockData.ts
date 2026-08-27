@@ -93,10 +93,11 @@ export interface AllowedUser {
   id: string;
   name: string;
   email: string;
-  role: 'super_admin' | 'pr_manager' | 'product_manager';
+  role: 'super_admin' | 'pr_manager' | 'product_manager' | 'executive';
   createdAt: string;
   allowedMetrics?: string[];
   allowedPages?: string[];
+  allowedProjects?: string[];
 }
 
 export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
@@ -117,6 +118,15 @@ export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
     createdAt: '2026-07-10',
     allowedMetrics: ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
     allowedPages: ['projects', 'reports', 'reports_feed', 'other_expenses'],
+  },
+  {
+    id: 'user-5',
+    name: 'Chief 1',
+    email: 'chief1@tezi.uz',
+    role: 'executive',
+    createdAt: '2026-08-27',
+    allowedMetrics: ['spend', 'set_limit'],
+    allowedPages: ['projects'],
   },
 ];
 

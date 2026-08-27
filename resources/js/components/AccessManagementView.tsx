@@ -6,12 +6,13 @@
 import React, { useState } from 'react';
 import { AllowedUser, Project } from '../data/mockData';
 import { translations, Language } from '../translations';
-import { Users, UserPlus, Shield, Mail, Trash2, Key, Info, Pencil, FolderKanban, ChevronDown, ChevronUp, Search, Filter, Layout, BarChart2, Crown } from 'lucide-react';
+import { Users, UserPlus, Shield, Mail, Trash2, Key, Info, Pencil, FolderKanban, ChevronDown, ChevronUp, Search, Filter, Layout, BarChart2, Crown, Lock } from 'lucide-react';
+import { updateUserPassword } from '../services/api';
 
 interface AccessManagementViewProps {
   allowedUsers: AllowedUser[];
   projects?: Project[];
-  onAddUser: (name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]) => Promise<void>;
+  onAddUser: (name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[], password?: string) => Promise<void>;
   onEditUser: (id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]) => Promise<void>;
   onRemoveUser: (id: string) => Promise<void>;
   currentUserEmail: string;
@@ -33,9 +34,15 @@ export default function AccessManagementView({
   const [editingUser, setEditingUser] = useState<AllowedUser | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [selectedRole, setSelectedRole] = useState<AllowedUser['role']>('pr_manager');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Change Password Modal state
+  const [passwordModalUser, setPasswordModalUser] = useState<AllowedUser | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
 
   // Allowed Metrics state
   const [metricsPermissions, setMetricsPermissions] = useState<Record<string, boolean>>({
@@ -136,12 +143,13 @@ export default function AccessManagementView({
         );
         setEditingUser(null);
       } else {
-        await onAddUser(cleanName, resolvedEmail, determinedRole, allowedMetrics, allowedPages, allowedProjects);
+        await onAddUser(cleanName, resolvedEmail, determinedRole, allowedMetrics, allowedPages, allowedProjects, password.trim() || undefined);
         setSuccessMsg(t.addSuccessToast.replace('{email}', resolvedEmail));
       }
 
       setEmail('');
       setName('');
+      setPassword('');
       setSelectedRole('pr_manager');
       setMetricsPermissions({
         deals: true,
@@ -217,6 +225,36 @@ export default function AccessManagementView({
             : `Failed to revoke access: ${message || 'Please check server connection.'}`
         );
       }
+    }
+  };
+
+  const handlePasswordUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordModalUser || !newPasswordInput.trim()) return;
+
+    setPasswordSaving(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      await updateUserPassword(passwordModalUser.id, newPasswordInput.trim());
+      setSuccessMsg(t.passwordChangedSuccess || 'Пароль успешно изменен!');
+      setPasswordModalUser(null);
+      setNewPasswordInput('');
+      setTimeout(() => {
+        setSuccessMsg(null);
+      }, 4000);
+    } catch (err: any) {
+      const message = err?.message || '';
+      setErrorMsg(
+        lang === 'ru'
+          ? `Не удалось изменить пароль: ${message || 'Проверьте подключение к серверу.'}`
+          : lang === 'uz'
+          ? `Parolni o‘zgartirib bo‘lmadi: ${message || 'Server bilan ulanishni tekshiring.'}`
+          : `Failed to change password: ${message || 'Please check server connection.'}`
+      );
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
@@ -331,6 +369,25 @@ export default function AccessManagementView({
                 />
               </div>
             </div>
+
+            {/* Password Field (when creating new user) */}
+            {!editingUser && (
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                  {t.userPasswordLabel || 'Пароль'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
+                  <input
+                    type="text"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t.defaultPasswordHint || 'По умолчанию: password'}
+                    className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs font-medium text-black focus:outline-hidden transition duration-150"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Role Selection Field */}
             <div className="space-y-1.5">
@@ -761,6 +818,16 @@ export default function AccessManagementView({
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => {
+                              setPasswordModalUser(user);
+                              setNewPasswordInput('');
+                            }}
+                            className="p-1.5 rounded text-neutral-400 hover:text-black hover:bg-neutral-100 transition duration-150 cursor-pointer"
+                            title={t.changePasswordBtn || 'Сменить пароль'}
+                          >
+                            <Key className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
                               setEditingUser(user);
                               setName(user.name || '');
                               setEmail(user.email);
@@ -825,6 +892,74 @@ export default function AccessManagementView({
           </div>
         </div>
       </div>
+
+      {/* Modal: Change Password */}
+      {passwordModalUser && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-neutral-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl text-left">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-black" />
+                <h3 className="font-bold text-black text-xs uppercase tracking-wider">
+                  {t.changePasswordModalTitle || 'Смена пароля пользователя'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasswordModalUser(null)}
+                className="text-neutral-400 hover:text-black transition cursor-pointer text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-500 font-medium">
+              {lang === 'ru' ? 'Изменение пароля для:' : lang === 'uz' ? 'Parolni o‘zgartirish:' : 'Changing password for:'}{' '}
+              <strong className="text-black font-bold">{passwordModalUser.name || passwordModalUser.email}</strong> ({passwordModalUser.email})
+            </p>
+
+            <form onSubmit={handlePasswordUpdateSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                  {t.newPasswordLabel || 'Новый пароль'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
+                  <input
+                    type="text"
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder={t.newPasswordPlaceholder || 'Введите новый пароль...'}
+                    className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-lg pl-9 pr-3 py-2 text-xs font-medium text-black focus:outline-hidden transition"
+                    required
+                    minLength={4}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPasswordModalUser(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-neutral-600 hover:bg-neutral-100 transition cursor-pointer"
+                >
+                  {lang === 'ru' ? 'Отмена' : lang === 'uz' ? 'Bekor qilish' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={passwordSaving || !newPasswordInput.trim()}
+                  className="px-4 py-2 rounded-xl bg-black hover:bg-neutral-800 disabled:bg-neutral-300 text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  {passwordSaving
+                    ? (lang === 'ru' ? 'Сохранение...' : lang === 'uz' ? 'Saqlanmoqda...' : 'Saving...')
+                    : (lang === 'ru' ? 'Сохранить пароль' : lang === 'uz' ? 'Parolni saqlash' : 'Save Password')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

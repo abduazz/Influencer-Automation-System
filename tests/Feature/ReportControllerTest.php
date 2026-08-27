@@ -333,5 +333,45 @@ class ReportControllerTest extends TestCase
             'total_amount' => 2000.00,
         ]);
     }
+
+    public function test_creating_report_with_zero_amount_fails_validation(): void
+    {
+        $project = Project::create([
+            'name' => 'Zero Amount Campaign',
+            'description' => 'Test Description',
+        ]);
+
+        // Case 1: Standard report with pricePerSlot = 0
+        $payload1 = [
+            'paymentType' => 'prepaid',
+            'date' => '2026-07-16',
+            'projectId' => $project->id,
+            'destination' => 'https://example.com/target',
+            'channelBlogger' => 'zero_price_influencer',
+            'bloggerPageLink' => 'https://t.me/zero_price',
+            'platform' => 'Telegram',
+            'slotsCount' => 5,
+            'paidSlotsCount' => 2,
+            'pricePerSlot' => 0,
+            'lang' => 'ru',
+        ];
+
+        $response1 = $this->postJson('/api/reports', $payload1);
+        $response1->assertStatus(422);
+        $response1->assertJsonValidationErrors(['pricePerSlot']);
+
+        // Case 2: Other payment type report with amount = 0
+        $payload2 = [
+            'paymentType' => 'other',
+            'date' => '2026-07-16',
+            'destination' => 'Zero Expense',
+            'amount' => 0,
+            'lang' => 'ru',
+        ];
+
+        $response2 = $this->postJson('/api/reports', $payload2);
+        $response2->assertStatus(422);
+        $response2->assertJsonValidationErrors(['amount']);
+    }
 }
 

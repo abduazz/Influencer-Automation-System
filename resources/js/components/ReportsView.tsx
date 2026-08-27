@@ -198,6 +198,7 @@ export default function ReportsView({
   const [fileInputKey, setFileInputKey] = useState<number>(0);
   const [isBloggerModalOpen, setIsBloggerModalOpen] = useState(false);
   const [bloggerSearch, setBloggerSearch] = useState('');
+  const [amountError, setAmountError] = useState<string | null>(null);
 
   const existingBloggers = Array.from(
     new Set(
@@ -312,6 +313,7 @@ export default function ReportsView({
 
   const handlePricePerSlotChange = (newPrice: number | '') => {
     setPricePerSlot(newPrice);
+    if (newPrice !== '' && Number(newPrice) > 0) setAmountError(null);
     const p = newPrice === '' ? 0 : newPrice;
     setTotalAmount(slotsCount * p);
     setPaidAmount(paidSlotsCount * p);
@@ -319,6 +321,7 @@ export default function ReportsView({
 
   const handleTotalAmountChange = (newTotal: number | '') => {
     setTotalAmount(newTotal);
+    if (newTotal !== '' && Number(newTotal) > 0) setAmountError(null);
     const t = newTotal === '' ? 0 : newTotal;
     const computedPrice = slotsCount > 0 ? (t / slotsCount) : 0;
     const roundedPrice = Math.round(computedPrice * 100) / 100;
@@ -364,6 +367,19 @@ export default function ReportsView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
+
+    if (paymentType === 'other') {
+      if (otherAmount === '' || Number(otherAmount) <= 0) {
+        setAmountError(lang === 'ru' ? 'Сумма не должна быть равна нулю' : lang === 'uz' ? 'Summa nolga teng bo‘lmasligi kerak' : 'Sum must not be equal to zero');
+        return;
+      }
+    } else {
+      if (pricePerSlot === '' || Number(pricePerSlot) <= 0) {
+        setAmountError(lang === 'ru' ? 'Сумма не должна быть равна нулю' : lang === 'uz' ? 'Summa nolga teng bo‘lmasligi kerak' : 'Sum must not be equal to zero');
+        return;
+      }
+    }
+    setAmountError(null);
     if (paymentType === 'other' && !destination.trim()) return;
     if (paymentType !== 'other' && ((!isMultiProject && !projectId) || !channelBlogger.trim() || !bloggerPageLink.trim())) return;
 
@@ -468,12 +484,8 @@ export default function ReportsView({
       setPaymentType('prepaid');
     } catch (err: any) {
       console.error(err);
-      alert(lang === 'ru'
-        ? `Ошибка при сохранении отчета: ${err.message || err}`
-        : lang === 'uz'
-          ? `Hisobotni saqlashda xatolik: ${err.message || err}`
-          : `Error saving report: ${err.message || err}`
-      );
+      const errorMessage = err?.message || String(err);
+      setAmountError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -791,9 +803,15 @@ export default function ReportsView({
                               onChange={(e) => {
                                 const val = parsePrice(e.target.value);
                                 setOtherAmount(val);
+                                if (val !== '' && Number(val) > 0) setAmountError(null);
                               }}
-                              className="w-full px-2.5 py-1 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black"
+                              className={`w-full px-2.5 py-1 bg-white border rounded-md text-[11px] font-bold text-black focus:outline-none ${amountError ? 'border-red-500 ring-1 ring-red-500' : 'border-neutral-200 focus:border-black'}`}
                             />
+                            {amountError && (
+                              <p className="text-red-600 text-[11px] font-extrabold mt-1 animate-in fade-in">
+                                {amountError}
+                              </p>
+                            )}
                           </div>
                         </div>
                       ) : (
@@ -1155,9 +1173,15 @@ export default function ReportsView({
                               onChange={(e) => {
                                 const val = parsePrice(e.target.value);
                                 handlePricePerSlotChange(val);
+                                if (val !== '' && Number(val) > 0) setAmountError(null);
                               }}
-                              className="w-full px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-[11px] font-bold text-black focus:outline-none focus:border-black disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-not-allowed"
+                              className={`w-full px-2.5 py-1 bg-white border rounded-md text-[11px] font-bold text-black focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-not-allowed ${amountError ? 'border-red-500 ring-1 ring-red-500' : 'border-neutral-200 focus:border-black'}`}
                             />
+                            {amountError && (
+                              <p className="text-red-600 text-[11px] font-extrabold mt-1 animate-in fade-in">
+                                {amountError}
+                              </p>
+                            )}
                           </div>
 
                           {paymentType === 'remaining' ? (
@@ -1253,6 +1277,12 @@ export default function ReportsView({
                       </div>
 
                       {/* Submit inside TG Mini App */}
+                      {amountError && (
+                        <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-red-600 text-[11px] font-bold text-center flex items-center justify-center gap-1.5 animate-in fade-in">
+                          <span>⚠️</span>
+                          <span>{amountError}</span>
+                        </div>
+                      )}
                       <button
                         type="submit"
                         disabled={isSubmitting}

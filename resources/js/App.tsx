@@ -94,8 +94,8 @@ export default function App() {
   } | null>(null);
 
 
-  const handleAddUser = async (name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]) => {
-    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects);
+  const handleAddUser = async (name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[], password?: string) => {
+    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects, password);
     setAllowedUsers((prev) => [...prev, newUser]);
   };
 

@@ -315,7 +315,9 @@ export default function DashboardView({
   const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
   const totalPublishedSlots = filteredIntegrations.reduce((sum, item) => {
     const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-    const slotsSubmitted = (sub && sub.data) ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
+    const slotsSubmitted = (sub && sub.data) 
+      ? Object.entries(sub.data).filter(([key, val]) => /^slot_\d+$/.test(key) && typeof val === 'string' && val.trim() !== '').length 
+      : 0;
     return sum + slotsSubmitted;
   }, 0);
   const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
@@ -631,7 +633,9 @@ export default function DashboardView({
                   <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
                     {filteredIntegrations.map((item) => {
                       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-                      const slotsSubmitted = (sub && sub.data) ? Object.values(sub.data).filter(v => typeof v === 'string' && v.trim() !== '').length : 0;
+                      const slotsSubmitted = (sub && sub.data) 
+                        ? Object.entries(sub.data).filter(([key, val]) => /^slot_\d+$/.test(key) && typeof val === 'string' && val.trim() !== '').length 
+                        : 0;
                       const slotsRemaining = Math.max(0, item.slotsCount - slotsSubmitted);
 
                       return (

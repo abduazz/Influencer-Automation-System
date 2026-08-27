@@ -8,9 +8,11 @@ use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
 
+Route::post('/login', [UserController::class, 'login']);
 Route::get('/allowed-users', [UserController::class, 'index']);
 Route::post('/allowed-users', [UserController::class, 'store']);
 Route::put('/allowed-users/{user}', [UserController::class, 'update']);
+Route::put('/allowed-users/{user}/password', [UserController::class, 'updatePassword']);
 Route::delete('/allowed-users/{user}', [UserController::class, 'destroy']);
 
 Route::get('/projects', [ProjectController::class, 'index']);

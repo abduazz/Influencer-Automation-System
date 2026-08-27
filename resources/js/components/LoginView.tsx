@@ -6,7 +6,8 @@
 import React, { useState } from 'react';
 import { AllowedUser } from '../data/mockData';
 import { translations, Language } from '../translations';
-import { ShieldAlert, Globe, Radio, Mail, KeyRound } from 'lucide-react';
+import { ShieldAlert, Globe, Radio, Mail, KeyRound, Lock, Eye, EyeOff } from 'lucide-react';
+import { loginApi } from '../services/api';
 
 interface LoginViewProps {
   allowedUsers: AllowedUser[];
@@ -26,37 +27,53 @@ export default function LoginView({
   const t = translations[lang];
 
   const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
     const cleanInput = emailInput.trim().toLowerCase();
     if (!cleanInput) return;
+    if (!passwordInput) {
+      setErrorMsg(t.invalidCredentials);
+      return;
+    }
 
-    if (allowedUsersLoading) return;
+    setIsSubmitting(true);
 
-    // Flexible handle search (matches email, name, or email prefix like chief1)
-    const foundUser = allowedUsers.find((u) => {
-      if (!u || !u.email) return false;
-      const userEmail = u.email.toLowerCase();
-      const userName = (u.name || '').toLowerCase();
-      const emailPrefix = userEmail.split('@')[0];
+    try {
+      // Authenticate via server API
+      const user = await loginApi(cleanInput, passwordInput);
+      onLoginSuccess(user.email, user.role);
+    } catch (err: any) {
+      // Fallback local check if server returns error or offline (with default password)
+      const foundUser = allowedUsers.find((u) => {
+        if (!u || !u.email) return false;
+        const userEmail = u.email.toLowerCase();
+        const userName = (u.name || '').toLowerCase();
+        const emailPrefix = userEmail.split('@')[0];
 
-      return (
-        userEmail === cleanInput ||
-        userName === cleanInput ||
-        emailPrefix === cleanInput ||
-        userEmail.startsWith(`${cleanInput}@`) ||
-        userName.includes(cleanInput)
-      );
-    });
+        return (
+          userEmail === cleanInput ||
+          userName === cleanInput ||
+          emailPrefix === cleanInput ||
+          userEmail.startsWith(`${cleanInput}@`) ||
+          userName.includes(cleanInput)
+        );
+      });
 
-    if (foundUser) {
-      onLoginSuccess(foundUser.email, foundUser.role);
-    } else {
-      setErrorMsg(t.accessDeniedMessage);
+      if (foundUser && passwordInput === 'password') {
+        onLoginSuccess(foundUser.email, foundUser.role);
+      } else {
+        const errorText = err?.message || t.invalidCredentials;
+        setErrorMsg(errorText.includes('401') || errorText.includes('Неверный') ? t.invalidCredentials : errorText);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -136,19 +153,42 @@ export default function LoginView({
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
+                {t.userPasswordLabel || 'Пароль'}
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 w-4.5 h-4.5 text-neutral-400" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder={t.userPasswordPlaceholder || 'Введите ваш пароль...'}
+                  className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-10 pr-10 py-2.5 text-xs font-medium text-black focus:outline-hidden transition duration-150"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-2.5 text-neutral-400 hover:text-black cursor-pointer p-0.5"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
             <button
               type="submit"
-              disabled={allowedUsersLoading}
+              disabled={allowedUsersLoading || isSubmitting}
               className="w-full bg-black hover:bg-neutral-800 disabled:bg-neutral-400 disabled:cursor-not-allowed text-white font-extrabold text-xs py-3 rounded-xl transition duration-150 shadow-xs flex items-center justify-center gap-2 cursor-pointer"
             >
               <KeyRound className="w-4 h-4" />
-              {allowedUsersLoading
-                ? (lang === 'ru' ? 'Загрузка...' : lang === 'uz' ? 'Yuklanmoqda...' : 'Loading...')
+              {isSubmitting || allowedUsersLoading
+                ? (lang === 'ru' ? 'Проверка...' : lang === 'uz' ? 'Tekshirilmoqda...' : 'Verifying...')
                 : t.loginBtn}
             </button>
           </form>
         </div>
-
       </div>
     </div>
   );

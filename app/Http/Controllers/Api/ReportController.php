@@ -53,12 +53,15 @@ class ReportController extends Controller
             'platform' => 'required_unless:paymentType,other|nullable|in:Telegram,Instagram,YouTube,MAX,TikTok',
             'slotsCount' => 'required_unless:paymentType,other|nullable|integer|min:0',
             'paidSlotsCount' => 'required_unless:paymentType,other|nullable|integer|min:0',
-            'pricePerSlot' => 'required_unless:paymentType,other|nullable|numeric|min:0',
+            'pricePerSlot' => 'required_unless:paymentType,other|nullable|numeric|gt:0',
             'comments' => 'nullable|string',
             'slotsConfig' => 'nullable|array',
-            'amount' => 'required_if:paymentType,other|nullable|numeric|min:0',
+            'amount' => 'required_if:paymentType,other|nullable|numeric|gt:0',
             'receipt' => 'nullable|string',
             'lang' => 'nullable|string|in:ru,en,uz',
+        ], [
+            'pricePerSlot.gt' => 'Сумма не должна быть равна нулю.',
+            'amount.gt' => 'Сумма не должна быть равна нулю.',
         ]);
 
         $paymentType = $request->input('paymentType', 'prepaid');

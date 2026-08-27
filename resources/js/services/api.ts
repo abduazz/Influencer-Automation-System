@@ -15,7 +15,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     let errMsg = '';
     try {
       const data = await res.json();
-      errMsg = data.message || data.error || res.statusText || 'Unknown Server Error';
+      if (data.errors && typeof data.errors === 'object') {
+        const errorList = Object.values(data.errors).flat().join(' ');
+        errMsg = errorList || data.message || data.error || res.statusText || 'Validation Failed';
+      } else {
+        errMsg = data.message || data.error || res.statusText || 'Unknown Server Error';
+      }
     } catch {
       errMsg = res.statusText || `Server Error (Status ${res.status})`;
     }
@@ -99,14 +104,20 @@ export function createSubmission(integrationId: string, data: Record<string, str
   });
 }
 
-// Whitelisted Users API
+// Whitelisted Users & Auth API
+export function loginApi(login: string, password: string): Promise<AllowedUser> {
+  return request<AllowedUser>('/api/login', {
+    method: 'POST',
+    body: JSON.stringify({ login, password }),
+  });
+}
 export function fetchAllowedUsers(): Promise<AllowedUser[]> {
   return request<AllowedUser[]>('/api/allowed-users');
 }
-export function createAllowedUser(name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]): Promise<AllowedUser> {
+export function createAllowedUser(name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[], password?: string): Promise<AllowedUser> {
   return request<AllowedUser>('/api/allowed-users', {
     method: 'POST',
-    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages, allowedProjects }),
+    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages, allowedProjects, password }),
   });
 }
 export function deleteAllowedUser(id: string): Promise<void> {
@@ -116,6 +127,12 @@ export function updateAllowedUser(id: string, name: string, role: AllowedUser['r
   return request<AllowedUser>(`/api/allowed-users/${id}`, {
     method: 'PUT',
     body: JSON.stringify({ name, role, allowedMetrics, allowedPages, allowedProjects }),
+  });
+}
+export function updateUserPassword(id: string, password: string): Promise<{ success: boolean; message: string }> {
+  return request<{ success: boolean; message: string }>(`/api/allowed-users/${id}/password`, {
+    method: 'PUT',
+    body: JSON.stringify({ password }),
   });
 }
 

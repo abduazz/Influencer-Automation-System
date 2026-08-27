@@ -220,7 +220,16 @@ export const translations = {
     cannotDeleteSelf: 'You cannot revoke access from your active logged-in email!',
     addSuccessToast: 'Access granted to {email} successfully!',
     removeSuccessToast: 'Access revoked successfully!',
-    emailAlreadyExists: 'This email is already in the access list!'
+    emailAlreadyExists: 'This email is already in the access list!',
+    userPasswordLabel: 'Password',
+    userPasswordPlaceholder: 'Enter your password...',
+    changePasswordBtn: 'Change Password',
+    changePasswordModalTitle: 'Change User Password',
+    newPasswordLabel: 'New Password',
+    newPasswordPlaceholder: 'Enter new password (min. 4 characters)...',
+    passwordChangedSuccess: 'Password changed successfully!',
+    invalidCredentials: 'Invalid login or password.',
+    defaultPasswordHint: 'Default password if empty: password'
   },
   ru: {
     // Sidebar
@@ -441,7 +450,16 @@ export const translations = {
     cannotDeleteSelf: 'Вы не можете отозвать доступ у собственного текущего email!',
     addSuccessToast: 'Доступ успешно предоставлен для {email}!',
     removeSuccessToast: 'Доступ успешно отозван!',
-    emailAlreadyExists: 'Этот email уже есть в списке доступа!'
+    emailAlreadyExists: 'Этот email уже есть в списке доступа!',
+    userPasswordLabel: 'Пароль',
+    userPasswordPlaceholder: 'Введите ваш пароль...',
+    changePasswordBtn: 'Сменить пароль',
+    changePasswordModalTitle: 'Смена пароля пользователя',
+    newPasswordLabel: 'Новый пароль',
+    newPasswordPlaceholder: 'Введите новый пароль (мин. 4 симв.)...',
+    passwordChangedSuccess: 'Пароль успешно изменен!',
+    invalidCredentials: 'Неверный логин/email или пароль.',
+    defaultPasswordHint: 'Пароль по умолчанию: password'
   },
   uz: {
     // Sidebar
@@ -662,6 +680,15 @@ export const translations = {
     cannotDeleteSelf: 'Siz o‘z emailingizdan ruxsatni olib tashlay olmaysiz!',
     addSuccessToast: 'Ruxsat {email} uchun muvaffaqiyatli berildi!',
     removeSuccessToast: 'Ruxsat muvaffaqiyatli bekor qilindi!',
-    emailAlreadyExists: 'Ushbu email allaqachon ruxsatlar ro‘yxatida mavjud!'
+    emailAlreadyExists: 'Ushbu email allaqachon ruxsatlar ro‘yxatida mavjud!',
+    userPasswordLabel: 'Parol',
+    userPasswordPlaceholder: 'Parolingizni kiriting...',
+    changePasswordBtn: 'Parolni o‘zgartirish',
+    changePasswordModalTitle: 'Foydalanuvchi parolini o‘zgartirish',
+    newPasswordLabel: 'Yangi parol',
+    newPasswordPlaceholder: 'Yangi parolni kiriting (kamida 4 belgi)...',
+    passwordChangedSuccess: 'Parol muvaffaqiyatli o‘zgartirildi!',
+    invalidCredentials: 'Noto‘g‘ri login yoki parol.',
+    defaultPasswordHint: 'Boshlang‘ich parol: password'
   }
 };

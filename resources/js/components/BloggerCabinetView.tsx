@@ -18,6 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Language, translations } from '../translations';
+import { getCabinetUrl } from '../utils/url';
 
 
 interface BloggerCabinetViewProps {
@@ -329,7 +330,7 @@ export default function BloggerCabinetView({
           <button
             onClick={async () => {
               const tokenOrId = selectedIntegration?.bloggerCabinetToken || selectedIntegrationId;
-              const cabinetUrl = `${window.location.origin}/c/${tokenOrId}`;
+              const cabinetUrl = getCabinetUrl(tokenOrId);
               try {
                 await navigator.clipboard.writeText(cabinetUrl);
                 alert(`${t.copiedAlert}\n${cabinetUrl}`);

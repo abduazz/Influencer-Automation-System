@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet } from 'lucide-react';
 import { Project, Report, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
+import { getCabinetUrl } from '../utils/url';
 
 interface ReportsFeedViewProps {
   projects: Project[];
@@ -117,7 +118,7 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
           )
         );
         const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
-        const cabinetUrl = token ? `${window.location.origin}/c/${token}` : '';
+        const cabinetUrl = token ? getCabinetUrl(token) : '';
 
         return [
           String(idx + 1),
@@ -433,7 +434,7 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                   );
 
                   const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
-                  const cabinetUrl = token ? `${window.location.origin}/c/${token}` : '';
+                  const cabinetUrl = token ? getCabinetUrl(token) : '';
 
                   // Platform Badge Colors
                   let platformBadgeClass = "bg-neutral-50 text-neutral-600 border-neutral-200";
@@ -576,7 +577,7 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
           );
 
           const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
-          const cabinetUrl = token ? `${window.location.origin}/c/${token}` : '';
+          const cabinetUrl = token ? getCabinetUrl(token) : '';
 
           return (
             <div

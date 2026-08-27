@@ -10,7 +10,7 @@ class IntegrationController extends Controller
 {
     public function index()
     {
-        return response()->json(Integration::all()->map(function ($integration) {
+        return response()->json(Integration::orderBy('start_date', 'desc')->orderBy('id', 'desc')->get()->map(function ($integration) {
             return [
                 'id' => (string) $integration->id,
                 'projectId' => (string) $integration->project_id,

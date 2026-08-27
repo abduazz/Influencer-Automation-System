@@ -18,6 +18,7 @@ import {
   X
 } from 'lucide-react';
 import { Language, translations } from '../translations';
+import { getCabinetUrl } from '../utils/url';
 
 interface StepperInputProps {
   value: number;
@@ -442,7 +443,7 @@ export default function ReportsView({
       const toastSubject = paymentType === 'other' ? destination : channelBlogger;
       let cabinetLink: string | null = null;
       if (createdReport?.bloggerCabinetToken) {
-        cabinetLink = `${window.location.origin}/c/${createdReport.bloggerCabinetToken}`;
+        cabinetLink = getCabinetUrl(createdReport.bloggerCabinetToken);
       }
 
       setSuccessToast({
@@ -524,7 +525,7 @@ export default function ReportsView({
                           <input
                             type="text"
                             readOnly
-                            value={`${window.location.origin}/c/${createdReportResult.bloggerCabinetToken}`}
+                            value={getCabinetUrl(createdReportResult.bloggerCabinetToken)}
                             onClick={(e) => {
                               const target = e.target as HTMLInputElement;
                               target.select();
@@ -535,7 +536,7 @@ export default function ReportsView({
                           <button
                             type="button"
                             onClick={() => {
-                              const url = `${window.location.origin}/c/${createdReportResult.bloggerCabinetToken}`;
+                              const url = getCabinetUrl(createdReportResult.bloggerCabinetToken);
                               navigator.clipboard.writeText(url);
                               alert(lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!');
                             }}

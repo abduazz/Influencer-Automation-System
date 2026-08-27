@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { Project, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
+import { getCabinetUrl } from '../utils/url';
 import { 
   Users, 
   Search, 
@@ -243,7 +244,7 @@ export default function BloggersView({
   const handleCopyCabinetLink = (token?: string) => {
     if (!token) return;
     try {
-      const url = `${window.location.origin}/c/${token}`;
+      const url = getCabinetUrl(token);
       navigator.clipboard.writeText(url);
       setCopiedToken(token);
       setTimeout(() => setCopiedToken(null), 2500);

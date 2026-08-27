@@ -10,6 +10,7 @@ import {
   SlotConfig,
   BloggerSubmission
 } from '../data/mockData';
+import { getCabinetUrl } from '../utils/url';
 import { 
   Plus, 
   Trash2, 
@@ -276,12 +277,18 @@ export default function DashboardView({
     ? integrations.filter(i => i.projectId === selectedProject.id)
     : [];
 
-  // Filter integrations by Start Date range
-  const filteredIntegrations = activeProjectIntegrations.filter((item) => {
-    if (filterStartDate && item.startDate < filterStartDate) return false;
-    if (filterEndDate && item.startDate > filterEndDate) return false;
-    return true;
-  });
+  // Filter integrations by Start Date range & sort by date descending (newest first)
+  const filteredIntegrations = activeProjectIntegrations
+    .filter((item) => {
+      if (filterStartDate && item.startDate < filterStartDate) return false;
+      if (filterEndDate && item.startDate > filterEndDate) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const dateCompare = (b.startDate || '').localeCompare(a.startDate || '');
+      if (dateCompare !== 0) return dateCompare;
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
 
   // Selected Project Statistics Calculators (filtered by date)
   const totalSpend = filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
@@ -1394,7 +1401,7 @@ export default function DashboardView({
                     {lang === 'ru' ? 'Ссылка для отчета блогера' : lang === 'uz' ? 'Blogger hisoboti havolasi' : 'Blogger Execution Report Link'}
                   </p>
                   {(() => {
-                    const cabinetUrl = `${window.location.origin}/c/${selectedIntegrationForDetails.bloggerCabinetToken || selectedIntegrationForDetails.id}`;
+                    const cabinetUrl = getCabinetUrl(selectedIntegrationForDetails.bloggerCabinetToken || selectedIntegrationForDetails.id);
                     return (
                       <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
                         <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{cabinetUrl}</span>

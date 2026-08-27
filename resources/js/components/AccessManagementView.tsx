@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { AllowedUser, Project } from '../data/mockData';
 import { translations, Language } from '../translations';
-import { Users, UserPlus, Shield, Mail, Trash2, Key, Info, Pencil, FolderKanban, ChevronDown, ChevronUp, Search, Filter, Layout, BarChart2 } from 'lucide-react';
+import { Users, UserPlus, Shield, Mail, Trash2, Key, Info, Pencil, FolderKanban, ChevronDown, ChevronUp, Search, Filter, Layout, BarChart2, Crown } from 'lucide-react';
 
 interface AccessManagementViewProps {
   allowedUsers: AllowedUser[];
@@ -244,7 +244,7 @@ export default function AccessManagementView({
       case 'product_manager':
         return t.roleProductManager;
       case 'executive':
-        return t.roleExecutive;
+        return lang === 'ru' ? 'Руководство' : lang === 'uz' ? 'Rahbariyat' : 'Executive';
       default:
         return userRole;
     }
@@ -687,50 +687,71 @@ export default function AccessManagementView({
                   })
                   .map((user) => {
                   const isSelf = user.email.toLowerCase() === currentUserEmail.toLowerCase();
+                  const isExecutive = user.role === 'executive';
+
                   return (
-                    <tr key={user.id} className="hover:bg-neutral-50/30 transition duration-150">
+                    <tr
+                      key={user.id}
+                      className={`transition duration-150 ${
+                        isExecutive
+                          ? 'bg-amber-50/40 hover:bg-amber-100/40 border-l-4 border-l-amber-500'
+                          : 'hover:bg-neutral-50/30'
+                      }`}
+                    >
                       <td className="py-3 px-4">
                         <div className="flex flex-col text-left">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-extrabold text-neutral-900">{user.name || user.email.split('@')[0]}</span>
+                            {isExecutive ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md shadow-2xs">
+                                <Crown className="w-3 h-3 text-amber-600" />
+                                {lang === 'ru' ? 'Руководство' : lang === 'uz' ? 'Rahbariyat' : 'Executive'}
+                              </span>
+                            ) : (
+                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${getRoleBadgeColor(user.role)}`}>
+                                {getRoleLabel(user.role)}
+                              </span>
+                            )}
                             {isSelf && (
                               <span className="text-[8px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 rounded px-1.5 py-0.2 animate-pulse">
                                 {lang === 'ru' ? 'ВЫ' : lang === 'uz' ? 'SIZ' : 'YOU'}
                               </span>
                             )}
                           </div>
-                          <span className="text-[10px] text-neutral-400 font-semibold">{user.email}</span>
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {(user.allowedPages || ['projects', 'reports', 'reports_feed', 'other_expenses']).map((pageKey) => {
-                              let pageLabel = pageKey;
-                              if (pageKey === 'super_admin') pageLabel = t.pageSuperAdmin;
-                              else if (pageKey === 'projects') pageLabel = t.pageProjects;
-                              else if (pageKey === 'reports') pageLabel = t.pageReports;
-                              else if (pageKey === 'reports_feed') pageLabel = t.pageReportsFeed;
-                              else if (pageKey === 'other_expenses') pageLabel = t.pageOtherExpenses;
-                              return (
-                                <span key={pageKey} className="text-[8px] font-bold bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">
-                                  {pageLabel}
-                                </span>
-                              );
-                            })}
-                            {/* Project Access Badges */}
-                            {user.allowedProjects && user.allowedProjects.length > 0 && user.allowedProjects.length < projects.length ? (
-                              user.allowedProjects.map((pId) => {
-                                const pObj = projects.find(p => p.id === pId);
-                                if (!pObj) return null;
+                          <span className="text-[10px] text-neutral-400 font-semibold mt-0.5">{user.email}</span>
+                          {!isExecutive && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {(user.allowedPages || ['projects', 'reports', 'reports_feed', 'other_expenses']).map((pageKey) => {
+                                let pageLabel = pageKey;
+                                if (pageKey === 'super_admin') pageLabel = t.pageSuperAdmin;
+                                else if (pageKey === 'projects') pageLabel = t.pageProjects;
+                                else if (pageKey === 'reports') pageLabel = t.pageReports;
+                                else if (pageKey === 'reports_feed') pageLabel = t.pageReportsFeed;
+                                else if (pageKey === 'other_expenses') pageLabel = t.pageOtherExpenses;
                                 return (
-                                  <span key={pId} className="text-[8px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded">
-                                    {pObj.name}
+                                  <span key={pageKey} className="text-[8px] font-bold bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">
+                                    {pageLabel}
                                   </span>
                                 );
-                              })
-                            ) : (
-                              <span className="text-[8px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
-                                {lang === 'ru' ? 'Все проекты' : lang === 'uz' ? 'Barcha loyihalar' : 'All Projects'}
-                              </span>
-                            )}
-                          </div>
+                              })}
+                              {/* Project Access Badges */}
+                              {user.allowedProjects && user.allowedProjects.length > 0 && user.allowedProjects.length < projects.length ? (
+                                user.allowedProjects.map((pId) => {
+                                  const pObj = projects.find(p => p.id === pId);
+                                  if (!pObj) return null;
+                                  return (
+                                    <span key={pId} className="text-[8px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded">
+                                      {pObj.name}
+                                    </span>
+                                  );
+                                })
+                              ) : (
+                                <span className="text-[8px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                  {lang === 'ru' ? 'Все проекты' : lang === 'uz' ? 'Barcha loyihalar' : 'All Projects'}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="py-3 px-4 text-neutral-500 text-[11px]">

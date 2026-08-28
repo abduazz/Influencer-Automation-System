@@ -37,6 +37,12 @@ class DatabaseSeeder extends Seeder
                 'password' => Hash::make('password'),
             ],
             [
+                'name' => 'Super Admin 3',
+                'email' => 'super@admin.com',
+                'role' => UserRole::SuperAdmin,
+                'password' => Hash::make('pass1'),
+            ],
+            [
                 'name' => 'Chief / Руководство',
                 'email' => 'chief1@tezi.uz',
                 'role' => UserRole::Executive,

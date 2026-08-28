@@ -277,10 +277,11 @@ export default function DashboardView({
     ? integrations.filter(i => i.projectId === selectedProject.id)
     : [];
 
-  // Filter integrations by Start Date range & sort by date descending (newest first)
+  // Filter integrations by Date range (interval overlap) & sort by date descending (newest first)
   const filteredIntegrations = activeProjectIntegrations
     .filter((item) => {
-      if (filterStartDate && item.startDate < filterStartDate) return false;
+      const itemEnd = item.endDate || item.startDate;
+      if (filterStartDate && itemEnd < filterStartDate) return false;
       if (filterEndDate && item.startDate > filterEndDate) return false;
       return true;
     })
@@ -304,9 +305,10 @@ export default function DashboardView({
 
   const selectedProjectMonthlySpend = activeProjectIntegrations.filter(i => {
     if (!i.startDate) return false;
-    if (i.startDate.startsWith(currentYMPrefix)) return true;
-    const d = new Date(i.startDate);
-    return !isNaN(d.getTime()) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    const iEnd = i.endDate || i.startDate;
+    const startYM = i.startDate.substring(0, 7);
+    const endYM = iEnd.substring(0, 7);
+    return currentYMPrefix >= startYM && currentYMPrefix <= endYM;
   }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
 
   const remainingLimit = selectedProject && (selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null)

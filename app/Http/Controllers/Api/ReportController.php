@@ -163,7 +163,6 @@ class ReportController extends Controller
                         if (!empty($report->blogger_page_link)) {
                             $existingIntegrationUpdate['blogger_page_link'] = $report->blogger_page_link;
                         }
-                        $existingIntegration->update($existingIntegrationUpdate);
                     } else {
                         $newSlotsCount = $existingIntegration->slots_count + $groupSlotsCount;
                         $newPaidSlotsCount = $existingIntegration->paid_slots_count + $groupPaidSlotsCount;
@@ -178,8 +177,18 @@ class ReportController extends Controller
                         if (!empty($report->blogger_page_link)) {
                             $existingIntegrationUpdate['blogger_page_link'] = $report->blogger_page_link;
                         }
-                        $existingIntegration->update($existingIntegrationUpdate);
                     }
+
+                    $reportDate = \Carbon\Carbon::parse($report->date);
+                    $targetEndDate = $reportDate->copy()->addDays(14);
+                    if (!$existingIntegration->start_date || $reportDate->lt($existingIntegration->start_date)) {
+                        $existingIntegrationUpdate['start_date'] = $reportDate;
+                    }
+                    if (!$existingIntegration->end_date || $targetEndDate->gt($existingIntegration->end_date)) {
+                        $existingIntegrationUpdate['end_date'] = $targetEndDate;
+                    }
+
+                    $existingIntegration->update($existingIntegrationUpdate);
                 } else {
                     $token = Integration::generateCabinetToken($cleanBloggerName);
                     $referralLink = $report->destination;
@@ -333,9 +342,18 @@ class ReportController extends Controller
                     $referralLink = null;
                     $startDate = null;
 
+                    $minDate = null;
+                    $maxDate = null;
                     foreach ($remainingReports as $rep) {
+                        $repDate = \Carbon\Carbon::parse($rep->date);
+                        if ($minDate === null || $repDate->lt($minDate)) {
+                            $minDate = $repDate->copy();
+                        }
+                        if ($maxDate === null || $repDate->gt($maxDate)) {
+                            $maxDate = $repDate->copy();
+                        }
+
                         if ($first) {
-                            $startDate = \Carbon\Carbon::parse($rep->date);
                             $referralLink = $rep->destination;
                             $pricePerSlot = $rep->price_per_slot;
                             if ($rep->payment_type === 'remaining') {
@@ -369,8 +387,8 @@ class ReportController extends Controller
                         'paid_slots_count' => $paidSlotsCount,
                         'slots_config' => $slotsConfig,
                         'referral_link' => $referralLink,
-                        'start_date' => $startDate,
-                        'end_date' => $startDate ? $startDate->copy()->addDays(14) : null,
+                        'start_date' => $minDate,
+                        'end_date' => $maxDate ? $maxDate->copy()->addDays(14) : null,
                     ]);
                 }
             }

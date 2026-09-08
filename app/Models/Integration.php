@@ -28,6 +28,7 @@ class Integration extends Model
         'status',
         'blogger_cabinet_token',
         'slots_config',
+        'comments',
     ];
 
     protected $casts = [
@@ -39,6 +40,7 @@ class Integration extends Model
         'slots_count' => 'integer',
         'paid_slots_count' => 'integer',
         'slots_config' => 'array',
+        'comments' => 'array',
     ];
 
     public static function generateCabinetToken(string $bloggerName): string

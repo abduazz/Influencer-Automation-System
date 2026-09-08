@@ -185,12 +185,25 @@ class BulkPurchaseController extends Controller
             $newPaidSlotsCount = $existingIntegration->paid_slots_count + $slotsToAllocate;
             $mergedSlotsConfig = array_merge($existingIntegration->slots_config ?? [], $allocatedSlotsConfig);
 
-            $existingIntegration->update([
+            $updateData = [
                 'price_per_slot' => $bulkPurchase->price_per_slot,
                 'slots_count' => $newSlotsCount,
                 'paid_slots_count' => $newPaidSlotsCount,
                 'slots_config' => $mergedSlotsConfig,
-            ]);
+            ];
+
+            if (!empty($bulkPurchase->purchase_date)) {
+                $purchDate = \Carbon\Carbon::parse($bulkPurchase->purchase_date);
+                $targetEndDate = $purchDate->copy()->addDays(14);
+                if (!$existingIntegration->start_date || $purchDate->lt($existingIntegration->start_date)) {
+                    $updateData['start_date'] = $purchDate;
+                }
+                if (!$existingIntegration->end_date || $targetEndDate->gt($existingIntegration->end_date)) {
+                    $updateData['end_date'] = $targetEndDate;
+                }
+            }
+
+            $existingIntegration->update($updateData);
         } else {
             $token = Integration::generateCabinetToken($cleanBloggerName);
             $startDate = now();

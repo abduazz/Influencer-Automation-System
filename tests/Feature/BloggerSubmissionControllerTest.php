@@ -121,4 +121,57 @@ class BloggerSubmissionControllerTest extends TestCase
         $this->assertTrue(str_contains($req->body(), 'Оставшиеся слоты:</b> 1'));
         $this->assertFalse(str_contains($req->body(), 'Слот #1'));
     }
+
+    public function test_submission_rejects_cabinet_link(): void
+    {
+        $payload = [
+            'integrationId' => 'test-cabinet-token',
+            'lang' => 'ru',
+            'data' => [
+                'slot_1' => 'https://inf.khalilovdev.uz/c/sirojnice-gdzdfu',
+            ],
+        ];
+
+        $response = $this->postJson('/api/blogger-submissions', $payload);
+        $response->assertStatus(422);
+        $response->assertJsonFragment([
+            'message' => "Slot #1: Kabinet havolasini yuborish taqiqlangan. Iltimos, e'lon qilingan post havolasini kiriting!",
+        ]);
+    }
+
+    public function test_submission_rejects_invalid_platform_url(): void
+    {
+        $payload = [
+            'integrationId' => 'test-cabinet-token',
+            'lang' => 'ru',
+            'data' => [
+                'slot_1' => 'https://facebook.com/somepost',
+            ],
+        ];
+
+        $response = $this->postJson('/api/blogger-submissions', $payload);
+        $response->assertStatus(422);
+        $response->assertJsonFragment([
+            'message' => "Slot #1 (Instagram): Iltimos, haqiqiy Instagram havolasini kiriting!",
+        ]);
+    }
+
+    public function test_submission_accepts_valid_instagram_url(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $payload = [
+            'integrationId' => 'test-cabinet-token',
+            'lang' => 'ru',
+            'data' => [
+                'slot_1' => 'https://www.instagram.com/reel/C3xyz123/',
+            ],
+        ];
+
+        $response = $this->postJson('/api/blogger-submissions', $payload);
+        $response->assertStatus(201);
+    }
 }
+

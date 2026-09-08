@@ -18,6 +18,55 @@ export interface SlotConfig {
   projectId?: string | null;
 }
 
+export type KanbanStage = string;
+
+export interface KanbanColumn {
+  id: string;
+  title: string;
+  color: string;
+}
+
+export const INITIAL_KANBAN_COLUMNS: KanbanColumn[] = [
+  { id: 'wishlist', title: 'Желаемые', color: 'purple' },
+  { id: 'negotiation', title: 'Обговорить', color: 'amber' },
+  { id: 'requisites_pending', title: 'Получить реквизиты', color: 'blue' },
+  { id: 'ready_for_payment', title: 'Готов к оплате', color: 'indigo' },
+  { id: 'paid_in_progress', title: 'Оплачено / В работе', color: 'emerald' },
+  { id: 'completed', title: 'Завершено', color: 'neutral' },
+];
+
+export interface BloggerRequisites {
+  id: string;
+  integrationId: string;
+  bloggerName: string;
+  taxStatus: 'card_transfer' | 'contract' | 'individual' | 'self_employed' | 'individual_entrepreneur' | 'llc';
+  fullName: string;
+  passportSeriesNumber?: string;
+  pinflOrTin?: string;
+  passportIssueDate?: string;
+  passportIssuedBy?: string;
+  registrationAddress?: string;
+  passportFrontScan?: string;
+  passportBackScan?: string;
+  cardNumberOrIban: string;
+  bankName?: string;
+  bankInn?: string;
+  mfo?: string;
+  transitAccount?: string;
+  recipientName?: string;
+  phone?: string;
+  telegramHandle?: string;
+  submittedAt: string;
+  status: 'submitted' | 'verified' | 'rejected';
+}
+
+export interface DealComment {
+  id: string;
+  author: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface Integration {
   id: string;
   projectId: string;
@@ -33,8 +82,11 @@ export interface Integration {
   totalAmount: number; // calculated: pricePerSlot * slotsCount
   endDate: string;
   status: 'active' | 'completed' | 'paused';
+  kanbanStage?: KanbanStage;
   bloggerCabinetToken?: string;
+  requisites?: BloggerRequisites;
   slotsConfig?: SlotConfig[];
+  comments?: string | DealComment[];
 }
 
 export interface Report {

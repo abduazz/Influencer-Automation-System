@@ -55,6 +55,67 @@ class BloggerSubmissionController extends Controller
         Log::info('BloggerSubmission resolved integration: id=' . $integration->id . ' blogger=' . $integration->blogger_name);
         $integration->load('project');
 
+        // Server-side validation of slot URLs
+        $submittedData = $request->input('data', []);
+        $appHost = strtolower(parse_url(config('app.url', ''), PHP_URL_HOST) ?? '');
+
+        foreach ($submittedData as $key => $val) {
+            if (!is_string($val) || trim($val) === '' || str_starts_with($val, 'data:image/')) {
+                continue;
+            }
+
+            $slotNum = (int) str_replace('slot_', '', $key);
+            $slotConfig = $integration->slots_config[$slotNum - 1] ?? null;
+            $slotPlatform = $slotConfig['platform'] ?? $integration->platform ?? 'Instagram';
+
+            $trimmed = strtolower(trim($val));
+
+            // 1. Block cabinet links
+            if (
+                str_contains($trimmed, '/c/') ||
+                str_contains($trimmed, 'cabinet') ||
+                str_contains($trimmed, 'khalilovdev.uz') ||
+                ($appHost !== '' && str_contains($trimmed, $appHost))
+            ) {
+                return response()->json([
+                    'message' => "Slot #{$slotNum}: Kabinet havolasini yuborish taqiqlangan. Iltimos, e'lon qilingan post havolasini kiriting!",
+                    'errors' => [$key => ["Kabinet havolasini yuborish taqiqlangan."]]
+                ], 422);
+            }
+
+            // 2. Validate URL protocol
+            if (!str_starts_with($trimmed, 'http://') && !str_starts_with($trimmed, 'https://')) {
+                return response()->json([
+                    'message' => "Slot #{$slotNum} ({$slotPlatform}): Havola formati noto'g'ri.",
+                    'errors' => [$key => ["Havola formati noto'g'ri."]]
+                ], 422);
+            }
+
+            // 3. Platform specific domain validation
+            if ($slotPlatform === 'Instagram' && !str_contains($trimmed, 'instagram.com') && !str_contains($trimmed, 'instagr.am')) {
+                return response()->json([
+                    'message' => "Slot #{$slotNum} (Instagram): Iltimos, haqiqiy Instagram havolasini kiriting!",
+                    'errors' => [$key => ["Haqiqiy Instagram havolasi talab qilinadi."]]
+                ], 422);
+            } elseif ($slotPlatform === 'Telegram' && !str_contains($trimmed, 't.me') && !str_contains($trimmed, 'telegram.me') && !str_contains($trimmed, 'telegram.org')) {
+                return response()->json([
+                    'message' => "Slot #{$slotNum} (Telegram): Iltimos, haqiqiy Telegram havolasini kiriting!",
+                    'errors' => [$key => ["Haqiqiy Telegram havolasi talab qilinadi."]]
+                ], 422);
+            } elseif ($slotPlatform === 'YouTube' && !str_contains($trimmed, 'youtube.com') && !str_contains($trimmed, 'youtu.be')) {
+                return response()->json([
+                    'message' => "Slot #{$slotNum} (YouTube): Iltimos, haqiqiy YouTube havolasini kiriting!",
+                    'errors' => [$key => ["Haqiqiy YouTube havolasi talab qilinadi."]]
+                ], 422);
+            } elseif ($slotPlatform === 'TikTok' && !str_contains($trimmed, 'tiktok.com')) {
+                return response()->json([
+                    'message' => "Slot #{$slotNum} (TikTok): Iltimos, haqiqiy TikTok havolasini kiriting!",
+                    'errors' => [$key => ["Haqiqiy TikTok havolasi talab qilinadi."]]
+                ], 422);
+            }
+        }
+
+
         $existingSub = BloggerSubmission::where('integration_id', $integration->id)->first();
         $oldData = $existingSub ? ($existingSub->data ?? []) : [];
 

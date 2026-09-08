@@ -120,4 +120,86 @@ Artisan::command('reports:sync {--start-id= : Start from this report ID} {--end-
     $this->info("Done! Sync completed.");
 })->purpose('Sync/resend reports to Telegram group and/or Google Sheets');
 
+Artisan::command('integrations:recalculate-dates', function () {
+    $integrations = \App\Models\Integration::all();
+    $count = 0;
+
+    foreach ($integrations as $integration) {
+        $cleanName = strtolower(trim(str_replace(['@', '#'], '', $integration->blogger_name)));
+
+        // Get matching reports
+        $reports = \App\Models\Report::all()->filter(function ($rep) use ($integration, $cleanName) {
+            if (!$rep->channel_blogger) return false;
+            $repBlogger = strtolower(trim(str_replace(['@', '#'], '', $rep->channel_blogger)));
+            if ($repBlogger !== $cleanName) return false;
+            if ($rep->platform && strtolower($rep->platform) !== strtolower($integration->platform)) return false;
+
+            // Check project match (direct or in slotsConfig)
+            if ((string)$rep->project_id === (string)$integration->project_id) return true;
+            if (!empty($rep->slots_config) && is_array($rep->slots_config)) {
+                foreach ($rep->slots_config as $slot) {
+                    if (isset($slot['projectId']) && (string)$slot['projectId'] === (string)$integration->project_id) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+
+        // Get matching bulk purchases
+        $bulkPurchases = \App\Models\BulkPurchase::all()->filter(function ($bp) use ($integration, $cleanName) {
+            $bpBlogger = strtolower(trim(str_replace(['@', '#'], '', $bp->blogger_name)));
+            if ($bpBlogger !== $cleanName) return false;
+            if (strtolower($bp->platform) !== strtolower($integration->platform)) return false;
+            return true;
+        });
+
+        $dates = [];
+
+        foreach ($reports as $r) {
+            if ($r->date) {
+                $dates[] = \Carbon\Carbon::parse($r->date);
+            }
+        }
+
+        foreach ($bulkPurchases as $bp) {
+            if ($bp->purchase_date) {
+                $dates[] = \Carbon\Carbon::parse($bp->purchase_date);
+            }
+        }
+
+        if ($integration->start_date) {
+            $dates[] = \Carbon\Carbon::parse($integration->start_date);
+        }
+
+        if (empty($dates)) continue;
+
+        $minDate = $dates[0]->copy();
+        $maxDate = $dates[0]->copy();
+
+        foreach ($dates as $d) {
+            if ($d->lt($minDate)) $minDate = $d->copy();
+            if ($d->gt($maxDate)) $maxDate = $d->copy();
+        }
+
+        $newStart = $minDate->format('Y-m-d');
+        $newEnd = $maxDate->copy()->addDays(14)->format('Y-m-d');
+
+        $currentStart = $integration->start_date ? $integration->start_date->format('Y-m-d') : null;
+        $currentEnd = $integration->end_date ? $integration->end_date->format('Y-m-d') : null;
+
+        if ($newStart !== $currentStart || $newEnd !== $currentEnd) {
+            $integration->update([
+                'start_date' => $newStart,
+                'end_date' => $newEnd,
+            ]);
+            $this->info("Updated Integration ID {$integration->id} ({$integration->blogger_name}): start={$newStart}, end={$newEnd}");
+            $count++;
+        }
+    }
+
+    $this->info("Recalculation complete. Updated {$count} integration(s).");
+})->purpose('Recalculate and sync integration start and end dates based on all associated reports and bulk purchases');
+
+
 

@@ -52,7 +52,7 @@
     "src": "_instrument-sans-600-normal-DMks36a2.woff"
   },
   "resources/css/app.css": {
-    "file": "assets/app-Bw7RQiW9.css",
+    "file": "assets/app-CmQqjz-u.css",
     "name": "app",
     "names": [
       "app.css"
@@ -60,10 +60,27 @@
     "src": "resources/css/app.css",
     "isEntry": true
   },
+  "resources/images/id_card_sample_back.png": {
+    "file": "assets/id_card_sample_back-DuFROFNl.png",
+    "src": "resources/images/id_card_sample_back.png"
+  },
+  "resources/images/id_card_sample_front.png": {
+    "file": "assets/id_card_sample_front-DPZj7yiF.png",
+    "src": "resources/images/id_card_sample_front.png"
+  },
+  "resources/images/id_card_sample_full.png": {
+    "file": "assets/id_card_sample_full-CLPihGg2.png",
+    "src": "resources/images/id_card_sample_full.png"
+  },
   "resources/js/main.tsx": {
-    "file": "assets/main-WjekDuH8.js",
+    "file": "assets/main-Iabvw2Pt.js",
     "name": "main",
     "src": "resources/js/main.tsx",
-    "isEntry": true
+    "isEntry": true,
+    "assets": [
+      "assets/id_card_sample_front-DPZj7yiF.png",
+      "assets/id_card_sample_back-DuFROFNl.png",
+      "assets/id_card_sample_full-CLPihGg2.png"
+    ]
   }
 }

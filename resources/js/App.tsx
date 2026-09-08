@@ -21,6 +21,10 @@ import AccessManagementView from './components/AccessManagementView';
 import LogsView from './components/LogsView';
 import LoginView from './components/LoginView';
 import CodeViewer from './components/CodeViewer';
+import KanbanView from './components/KanbanView';
+import BloggerRequisitesView from './components/BloggerRequisitesView';
+import BloggerRequisitesDirectoryView from './components/BloggerRequisitesDirectoryView';
+import { KanbanStage, BloggerRequisites, KanbanColumn } from './data/mockData';
 import { Language, translations } from './translations';
 import {
   fetchAllowedUsers,
@@ -53,7 +57,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users } from 'lucide-react';
 
 export default function App() {
   // Language state (Uzbek by default)
@@ -84,7 +88,8 @@ export default function App() {
   });
 
   // Navigation Tabs State
-  const [activeTab, setActiveTab] = useState<'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs' | 'requisites'>('projects');
+  const [bloggerRequisitesList, setBloggerRequisitesList] = useState<BloggerRequisites[]>([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
   const [reportsInitialState, setReportsInitialState] = useState<{
@@ -92,6 +97,11 @@ export default function App() {
     bloggerName?: string;
     paymentType?: 'prepaid' | 'full' | 'other' | 'remaining';
   } | null>(null);
+
+  // Check if current URL route is for external Blogger Requisites form
+  const isRequisitesRoute = (new URLSearchParams(window.location.search).get('view') === 'requisites' ||
+                            window.location.pathname.startsWith('/requisites'));
+  const requisitesToken = new URLSearchParams(window.location.search).get('token') || undefined;
 
 
   const handleAddUser = async (name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[], password?: string) => {
@@ -311,6 +321,49 @@ export default function App() {
     });
   };
 
+  const handleUpdateIntegrationStage = (integrationId: string, newStage: KanbanStage) => {
+    setIntegrations((prev) => prev.map((item) => {
+      if (item.id === integrationId) {
+        return { ...item, kanbanStage: newStage };
+      }
+      return item;
+    }));
+  };
+
+  const handleAddIntegrationToKanban = async (newInt: Omit<Integration, 'id' | 'totalAmount'>) => {
+    try {
+      const created = await createIntegration(newInt);
+      const withStage = { ...created, kanbanStage: newInt.kanbanStage || 'wishlist' };
+      setIntegrations((prev) => [withStage, ...prev]);
+    } catch (err) {
+      console.error('Failed to create integration in Kanban:', err);
+    }
+  };
+
+  const handleSubmitRequisites = (integrationId: string, requisitesData: any) => {
+    const newReqRecord: BloggerRequisites = {
+      id: `req-${Date.now()}`,
+      submittedAt: new Date().toISOString(),
+      status: 'submitted',
+      ...requisitesData
+    };
+
+    // 1. Save into standalone requisites list
+    setBloggerRequisitesList((prev) => [newReqRecord, ...prev]);
+
+    // 2. Automatically advance the integration deal's kanbanStage to 'ready_for_payment'
+    setIntegrations((prev) => prev.map((item) => {
+      if (item.id === integrationId || (!integrationId && item)) {
+        return {
+          ...item,
+          kanbanStage: 'ready_for_payment',
+          requisites: newReqRecord
+        };
+      }
+      return item;
+    }));
+  };
+
   // URL Simulator router check
   // Watcher listening for simulated link-clicks (e.g. "?cabinet=true")
   // Watcher listening for URL search parameters to route between tabs
@@ -414,8 +467,8 @@ export default function App() {
     }
   }, [activeTab, allowedPages, currentUserRole, isBloggerCabinetRoute]);
 
-  // White-list Gate (bypass if it's the guest blogger cabinet page)
-  if (!isBloggerCabinetRoute && (!currentUserEmail || !currentUserRole)) {
+  // White-list Gate (bypass if it's the guest blogger cabinet or requisites form page)
+  if (!isBloggerCabinetRoute && !isRequisitesRoute && (!currentUserEmail || !currentUserRole)) {
     return (
       <LoginView
         allowedUsers={allowedUsers}
@@ -430,7 +483,7 @@ export default function App() {
   return (
     <div className={`flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans ${isSidebarCollapsed ? 'sidebar-collapsed' : ''} ${isTelegramWebApp ? 'telegram-webapp-view' : ''}`}>
       {/* Dynamic Navigation Rail Sidebar */}
-      {!isTelegramWebApp && !isBloggerCabinetRoute && (
+      {!isTelegramWebApp && !isBloggerCabinetRoute && !isRequisitesRoute && (
         <Sidebar 
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
@@ -448,7 +501,7 @@ export default function App() {
       )}
 
       {/* Mobile Top Header */}
-      {!isTelegramWebApp && !isBloggerCabinetRoute && (
+      {!isTelegramWebApp && !isBloggerCabinetRoute && !isRequisitesRoute && (
         <header className="fixed top-0 left-0 right-0 bg-white/90 border-b border-neutral-200/85 h-14 flex items-center justify-between px-4 z-50 md:hidden shadow-sm backdrop-blur-md">
           <div className="flex items-center gap-2">
             <span className="font-black text-xs tracking-wider uppercase text-neutral-800">
@@ -509,7 +562,15 @@ export default function App() {
         )}
 
         {/* Active Tab Router / Guest Blogger Route Gate */}
-        {isBloggerCabinetRoute ? (
+        {isRequisitesRoute || activeTab === 'requisites' ? (
+          <BloggerRequisitesView
+            integrationToken={requisitesToken}
+            integrations={integrations}
+            onSubmitRequisites={handleSubmitRequisites}
+            lang={lang}
+            setLang={handleSetLang}
+          />
+        ) : isBloggerCabinetRoute ? (
           <BloggerCabinetView
             projects={projects}
             integrations={integrations}
@@ -522,6 +583,28 @@ export default function App() {
           />
         ) : (
           <>
+            {activeTab === 'kanban' && (
+              <KanbanView
+                projects={projects}
+                integrations={integrations}
+                onUpdateIntegrationStage={handleUpdateIntegrationStage}
+                onAddIntegration={handleAddIntegrationToKanban}
+                onEditIntegration={handleEditIntegration}
+                onDeleteIntegration={currentUserRole === 'super_admin' ? handleDeleteIntegration : undefined}
+                lang={lang}
+                userRole={currentUserRole}
+                currentUserEmail={currentUserEmail}
+                onOpenRequisitesDirectory={() => setActiveTab('requisites_directory')}
+              />
+            )}
+            {activeTab === 'requisites_directory' && (
+              <BloggerRequisitesDirectoryView
+                requisitesList={bloggerRequisitesList}
+                integrations={integrations}
+                projects={projects}
+                lang={lang}
+              />
+            )}
             {activeTab === 'projects' && (
               currentUserRole === 'executive' ? (
                 <ExecutiveDashboardView
@@ -652,7 +735,7 @@ export default function App() {
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
-      {!isTelegramWebApp && !isBloggerCabinetRoute && !isInputFocused && (
+      {!isTelegramWebApp && !isBloggerCabinetRoute && !isRequisitesRoute && !isInputFocused && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200/80 h-16 flex items-center justify-around px-2 z-50 md:hidden shadow-lg backdrop-blur-md">
           {/* Projects Tab */}
           <button
@@ -664,6 +747,19 @@ export default function App() {
             <FolderKanban className="w-5 h-5" />
             <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
               {lang === 'ru' ? 'Проекты' : lang === 'uz' ? 'Loyihalar' : 'Projects'}
+            </span>
+          </button>
+
+          {/* Kanban Tab */}
+          <button
+            onClick={() => setActiveTab('kanban')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
+              activeTab === 'kanban' ? 'text-black scale-105 font-bold' : 'text-neutral-400 hover:text-neutral-600'
+            }`}
+          >
+            <Kanban className="w-5 h-5" />
+            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
+              {lang === 'ru' ? 'Канбан' : lang === 'uz' ? 'Kanban' : 'Kanban'}
             </span>
           </button>
 

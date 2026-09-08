@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { 
   FolderKanban, 
+  Kanban,
   FilePlus, 
   FileText,
   UserSquare2, 
@@ -26,8 +27,8 @@ import { Language, translations } from '../translations';
 import { AllowedUser } from '../data/mockData';
 
 interface SidebarProps {
-  activeTab: 'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
-  setActiveTab: (tab: 'projects' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
+  activeTab: 'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
+  setActiveTab: (tab: 'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
   projectsCount: number;
   integrationsCount: number;
   lang: Language;
@@ -120,7 +121,7 @@ export default function Sidebar({
               title={t.projectsAndIntegrations}
             >
               <div className="flex items-center gap-3.5">
-                <FolderKanban className="w-4 h-4" />
+                <FolderKanban className={`w-4 h-4 ${activeTab === 'projects' ? 'text-white' : 'text-black'}`} />
                 {!isCollapsed && <span>{t.projectsAndIntegrations}</span>}
               </div>
               {!isCollapsed && (
@@ -130,6 +131,42 @@ export default function Sidebar({
                   {projectsCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {hasAccess('projects') && (
+            <button
+              id="nav-kanban-btn"
+              onClick={() => setActiveTab('kanban')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'kanban'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={lang === 'uz' ? 'Jarayonlar Kanbani' : lang === 'en' ? 'Kanban Pipeline' : 'Канбан процессов'}
+            >
+              <div className="flex items-center gap-3.5">
+                <Kanban className={`w-4 h-4 ${activeTab === 'kanban' ? 'text-white' : 'text-black'}`} />
+                {!isCollapsed && <span>{lang === 'uz' ? 'Jarayonlar Kanbani' : lang === 'en' ? 'Kanban Pipeline' : 'Канбан процессов'}</span>}
+              </div>
+            </button>
+          )}
+
+          {hasAccess('projects') && (
+            <button
+              id="nav-requisites-directory-btn"
+              onClick={() => setActiveTab('requisites_directory')}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
+                activeTab === 'requisites_directory'
+                  ? 'bg-black text-white'
+                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
+              }`}
+              title={t.bloggerRequisitesNav || 'Реквизиты блогеров'}
+            >
+              <div className="flex items-center gap-3.5">
+                <Receipt className={`w-4 h-4 ${activeTab === 'requisites_directory' ? 'text-white' : 'text-black'}`} />
+                {!isCollapsed && <span>{t.bloggerRequisitesNav || 'Реквизиты блогеров'}</span>}
+              </div>
             </button>
           )}
 
@@ -145,7 +182,7 @@ export default function Sidebar({
               title={t.createReport}
             >
               <div className="flex items-center gap-3.5">
-                <FilePlus className="w-4 h-4" />
+                <FilePlus className={`w-4 h-4 ${activeTab === 'reports' ? 'text-white' : 'text-black'}`} />
                 {!isCollapsed && <span>{t.createReport}</span>}
               </div>
             </button>
@@ -163,7 +200,7 @@ export default function Sidebar({
               title={lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases'}
             >
               <div className="flex items-center gap-3.5">
-                <Layers className="w-4 h-4" />
+                <Layers className={`w-4 h-4 ${activeTab === 'bulk_purchases' ? 'text-white' : 'text-black'}`} />
                 {!isCollapsed && <span>{lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases'}</span>}
               </div>
             </button>
@@ -181,7 +218,7 @@ export default function Sidebar({
               title={t.reportsListTab || 'Reports List'}
             >
               <div className="flex items-center gap-3.5">
-                <FileText className="w-4 h-4" />
+                <FileText className={`w-4 h-4 ${activeTab === 'reports_feed' ? 'text-white' : 'text-black'}`} />
                 {!isCollapsed && <span>{t.reportsListTab || 'Reports List'}</span>}
               </div>
             </button>
@@ -199,7 +236,7 @@ export default function Sidebar({
               title={t.otherExpensesTab}
             >
               <div className="flex items-center gap-3.5">
-                <Receipt className="w-4 h-4" />
+                <Receipt className={`w-4 h-4 ${activeTab === 'other_expenses' ? 'text-white' : 'text-black'}`} />
                 {!isCollapsed && <span>{t.otherExpensesTab}</span>}
               </div>
             </button>
@@ -217,7 +254,7 @@ export default function Sidebar({
               title={t.bloggersTab || (lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers')}
             >
               <div className="flex items-center gap-3.5">
-                <Users className="w-4 h-4" />
+                <Users className={`w-4 h-4 ${activeTab === 'bloggers' ? 'text-white' : 'text-black'}`} />
                 {!isCollapsed && <span>{t.bloggersTab || (lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers')}</span>}
               </div>
             </button>
@@ -236,7 +273,7 @@ export default function Sidebar({
                 title={t.accessTab}
               >
                 <div className="flex items-center gap-3.5">
-                  <Shield className="w-4 h-4" />
+                  <Shield className={`w-4 h-4 ${activeTab === 'access' ? 'text-white' : 'text-black'}`} />
                   {!isCollapsed && <span>{t.accessTab}</span>}
                 </div>
               </button>
@@ -252,7 +289,7 @@ export default function Sidebar({
                 title={lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'System Logs'}
               >
                 <div className="flex items-center gap-3.5">
-                  <Terminal className="w-4 h-4" />
+                  <Terminal className={`w-4 h-4 ${activeTab === 'logs' ? 'text-white' : 'text-black'}`} />
                   {!isCollapsed && <span>{lang === 'ru' ? 'Системные логи' : lang === 'uz' ? 'Tizim loglari' : 'System Logs'}</span>}
                 </div>
               </button>
@@ -280,7 +317,7 @@ export default function Sidebar({
                 title={t.bloggerWorkCabinet}
               >
                 <div className="flex items-center gap-3.5">
-                  <UserSquare2 className="w-4 h-4" />
+                  <UserSquare2 className={`w-4 h-4 ${activeTab === 'blogger' ? 'text-white' : 'text-black'}`} />
                   {!isCollapsed && <span>{t.bloggerWorkCabinet}</span>}
                 </div>
               </button>

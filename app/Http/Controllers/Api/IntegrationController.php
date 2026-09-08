@@ -28,6 +28,7 @@ class IntegrationController extends Controller
                 'status' => $integration->status,
                 'bloggerCabinetToken' => $integration->blogger_cabinet_token,
                 'slotsConfig' => $integration->slots_config ?? [],
+                'comments' => $integration->comments ?? [],
             ];
         }));
     }
@@ -37,7 +38,7 @@ class IntegrationController extends Controller
         $request->validate([
             'projectId' => 'required|exists:projects,id',
             'bloggerName' => 'required|string|max:255',
-            'bloggerPageLink' => 'required|string',
+            'bloggerPageLink' => 'nullable|string',
             'startDate' => 'required|date',
             'platform' => 'required|in:Telegram,Instagram,YouTube,MAX,TikTok',
             'referralLink' => 'nullable|string',
@@ -47,6 +48,7 @@ class IntegrationController extends Controller
             'endDate' => 'required|date',
             'status' => 'nullable|in:active,completed,paused',
             'slotsConfig' => 'nullable|array',
+            'comments' => 'nullable',
         ]);
 
         $integration = Integration::create([
@@ -62,6 +64,7 @@ class IntegrationController extends Controller
             'end_date' => $request->endDate,
             'status' => $request->status ?? 'active',
             'slots_config' => $request->slotsConfig,
+            'comments' => $request->comments,
         ]);
 
         // Reload to get calculated values
@@ -84,12 +87,14 @@ class IntegrationController extends Controller
             'status' => $integration->status,
             'bloggerCabinetToken' => $integration->blogger_cabinet_token,
             'slotsConfig' => $integration->slots_config ?? [],
+            'comments' => $integration->comments ?? [],
         ], 201);
     }
 
     public function update(Request $request, Integration $integration)
     {
         $request->validate([
+            'projectId' => 'sometimes|required|exists:projects,id',
             'bloggerName' => 'sometimes|required|string|max:255',
             'bloggerPageLink' => 'nullable|string',
             'startDate' => 'sometimes|required|date',
@@ -98,12 +103,15 @@ class IntegrationController extends Controller
             'pricePerSlot' => 'sometimes|required|numeric|min:0',
             'slotsCount' => 'sometimes|required|integer|min:1',
             'paidSlotsCount' => 'nullable|integer|min:0',
+            'paidAmount' => 'nullable|numeric|min:0',
             'endDate' => 'sometimes|required|date',
             'status' => 'sometimes|required|in:active,completed,paused',
             'slotsConfig' => 'nullable|array',
+            'comments' => 'nullable',
         ]);
 
         $updateData = [];
+        if ($request->has('projectId')) $updateData['project_id'] = $request->projectId;
         if ($request->has('bloggerName')) $updateData['blogger_name'] = $request->bloggerName;
         if ($request->has('bloggerPageLink')) $updateData['blogger_page_link'] = $request->bloggerPageLink;
         if ($request->has('startDate')) $updateData['start_date'] = $request->startDate;
@@ -112,9 +120,11 @@ class IntegrationController extends Controller
         if ($request->has('pricePerSlot')) $updateData['price_per_slot'] = $request->pricePerSlot;
         if ($request->has('slotsCount')) $updateData['slots_count'] = $request->slotsCount;
         if ($request->has('paidSlotsCount')) $updateData['paid_slots_count'] = $request->paidSlotsCount;
+        if ($request->has('paidAmount')) $updateData['paid_amount'] = $request->paidAmount;
         if ($request->has('endDate')) $updateData['end_date'] = $request->endDate;
         if ($request->has('status')) $updateData['status'] = $request->status;
         if ($request->has('slotsConfig')) $updateData['slots_config'] = $request->slotsConfig;
+        if ($request->has('comments')) $updateData['comments'] = $request->comments;
 
         $integration->update($updateData);
 
@@ -135,6 +145,7 @@ class IntegrationController extends Controller
             'status' => $integration->status,
             'bloggerCabinetToken' => $integration->blogger_cabinet_token,
             'slotsConfig' => $integration->slots_config ?? [],
+            'comments' => $integration->comments ?? [],
         ]);
     }
 

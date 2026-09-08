@@ -244,6 +244,53 @@ export default function BloggerCabinetView({
     }));
   };
 
+  const validateSlotUrl = (url: string, platform: string): { valid: boolean; errorKey?: 'cabinetUrlForbidden' | 'invalidPlatformUrl' } => {
+    if (!url || typeof url !== 'string' || !url.trim()) {
+      return { valid: true };
+    }
+
+    if (url.startsWith('data:image/')) {
+      return { valid: true };
+    }
+
+    const trimmed = url.trim().toLowerCase();
+
+    // 1. Block cabinet links
+    const isCabinetLink = trimmed.includes('/c/') || 
+                          trimmed.includes('cabinet') || 
+                          (window.location.host && trimmed.includes(window.location.host.toLowerCase())) || 
+                          trimmed.includes('khalilovdev.uz');
+    if (isCabinetLink) {
+      return { valid: false, errorKey: 'cabinetUrlForbidden' };
+    }
+
+    // 2. Validate HTTP/HTTPS protocol
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      return { valid: false, errorKey: 'invalidPlatformUrl' };
+    }
+
+    // 3. Platform specific rules
+    if (platform === 'Instagram') {
+      if (!trimmed.includes('instagram.com') && !trimmed.includes('instagr.am')) {
+        return { valid: false, errorKey: 'invalidPlatformUrl' };
+      }
+    } else if (platform === 'Telegram') {
+      if (!trimmed.includes('t.me') && !trimmed.includes('telegram.me') && !trimmed.includes('telegram.org')) {
+        return { valid: false, errorKey: 'invalidPlatformUrl' };
+      }
+    } else if (platform === 'YouTube') {
+      if (!trimmed.includes('youtube.com') && !trimmed.includes('youtu.be')) {
+        return { valid: false, errorKey: 'invalidPlatformUrl' };
+      }
+    } else if (platform === 'TikTok') {
+      if (!trimmed.includes('tiktok.com')) {
+        return { valid: false, errorKey: 'invalidPlatformUrl' };
+      }
+    }
+
+    return { valid: true };
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -266,8 +313,28 @@ export default function BloggerCabinetView({
       return;
     }
 
+    // Validate all filled new inputs
+    for (let idx = 0; idx < activeSlotsCount; idx++) {
+      const slotNum = idx + 1;
+      const key = `slot_${slotNum}`;
+      const val = formData[key];
+      if (!submittedData[key] && val && val.trim() !== '') {
+        const slotConfig = selectedIntegration?.slotsConfig?.[idx];
+        const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
+        const validation = validateSlotUrl(val, slotPlatform);
+        if (!validation.valid) {
+          const errorMsg = validation.errorKey === 'cabinetUrlForbidden'
+            ? `Slot #${slotNum} (${slotPlatform}): ${t.cabinetUrlForbidden}`
+            : `Slot #${slotNum} (${slotPlatform}): ${t.invalidPlatformUrl.replace('{platform}', slotPlatform)}`;
+          alert(errorMsg);
+          return;
+        }
+      }
+    }
+
     setShowConfirm(true);
   };
+
 
   const handleFinalSubmit = () => {
     const confirmText = lang === 'ru' 
@@ -621,34 +688,64 @@ export default function BloggerCabinetView({
                             </div>
                           ) : (
                             /* URL TEXT INPUT FIELD FOR ALL POSTS/REELS/RELEASES (INCLUDING INSTAGRAM REELS/POSTS) */
-                            <div className="relative">
-                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Link className="w-3.5 h-3.5 text-neutral-400" />
-                              </div>
-                              <input
-                                type="text"
-                                disabled={isSlotSubmitted}
-                                placeholder={
-                                  slotPlatform === 'Instagram'
-                                    ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
-                                    : slotPlatform === 'Telegram' 
-                                    ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
-                                    : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
-                                }
-                                value={formData[slotKey] || ''}
-                                onChange={(e) => handleLinkChange(slotKey, e.target.value)}
-                                className={`w-full pl-9 pr-10 py-1.5 border focus:border-black rounded-md text-xs focus:outline-none transition ${
-                                  isSlotSubmitted 
-                                    ? 'bg-neutral-100 border-neutral-200 text-neutral-400 font-mono font-bold select-all' 
-                                    : 'bg-white border-neutral-200 text-black font-medium'
-                                }`}
-                              />
-                              {isSlotSubmitted && (
-                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                            <div>
+                              <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                  <Link className="w-3.5 h-3.5 text-neutral-400" />
                                 </div>
-                              )}
+                                {(() => {
+                                  const slotVal = formData[slotKey] || '';
+                                  const isInvalid = !isSlotSubmitted && slotVal.trim() !== '' && !validateSlotUrl(slotVal, slotPlatform).valid;
+                                  return (
+                                    <input
+                                      type="text"
+                                      disabled={isSlotSubmitted}
+                                      placeholder={
+                                        slotPlatform === 'Instagram'
+                                          ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
+                                          : slotPlatform === 'Telegram' 
+                                          ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
+                                          : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
+                                      }
+                                      value={slotVal}
+                                      onChange={(e) => handleLinkChange(slotKey, e.target.value)}
+                                      className={`w-full pl-9 pr-10 py-1.5 border focus:outline-none rounded-md text-xs transition ${
+                                        isSlotSubmitted 
+                                          ? 'bg-neutral-100 border-neutral-200 text-neutral-400 font-mono font-bold select-all' 
+                                          : isInvalid
+                                          ? 'bg-red-50 border-red-500 text-red-900 focus:border-red-600'
+                                          : 'bg-white border-neutral-200 text-black font-medium focus:border-black'
+                                      }`}
+                                    />
+                                  );
+                                })()}
+                                {isSlotSubmitted && (
+                                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                  </div>
+                                )}
+                              </div>
+                              {(() => {
+                                const slotVal = formData[slotKey] || '';
+                                if (!isSlotSubmitted && slotVal.trim() !== '') {
+                                  const v = validateSlotUrl(slotVal, slotPlatform);
+                                  if (!v.valid) {
+                                    return (
+                                      <p className="text-[10px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                                        <AlertCircle className="w-3 h-3 text-red-600 shrink-0" />
+                                        <span>
+                                          {v.errorKey === 'cabinetUrlForbidden'
+                                            ? t.cabinetUrlForbidden
+                                            : t.invalidPlatformUrl.replace('{platform}', slotPlatform)}
+                                        </span>
+                                      </p>
+                                    );
+                                  }
+                                }
+                                return null;
+                              })()}
                             </div>
+
                           )}
                         </div>
                       );

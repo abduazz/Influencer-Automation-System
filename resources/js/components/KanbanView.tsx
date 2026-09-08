@@ -84,8 +84,26 @@ export default function KanbanView({
     return [];
   };
 
-  // Columns State
-  const [columns, setColumns] = useState<KanbanColumn[]>(initialColumns || INITIAL_KANBAN_COLUMNS);
+  // Columns State (Persisted in localStorage, defaults to empty array so users create custom columns)
+  const [columns, setColumns] = useState<KanbanColumn[]>(() => {
+    try {
+      const saved = localStorage.getItem('kanban_custom_columns');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return initialColumns && initialColumns.length > 0 ? initialColumns : [];
+  });
+
+  const updateAndSaveColumns = (newCols: KanbanColumn[]) => {
+    setColumns(newCols);
+    try {
+      localStorage.setItem('kanban_custom_columns', JSON.stringify(newCols));
+    } catch {}
+    if (onUpdateColumns) onUpdateColumns(newCols);
+  };
+
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
 
@@ -153,21 +171,14 @@ export default function KanbanView({
     });
   }, [integrations, searchQuery, selectedProjectId, selectedPlatform]);
 
-  // Grouped Integrations by Column ID
+  // Grouped Integrations by Column ID (Only include integrations explicitly created with kanbanStage)
   const columnDataMap = useMemo(() => {
     const map = new Map<string, Integration[]>();
     columns.forEach(c => map.set(c.id, []));
 
     filteredIntegrations.forEach((item) => {
-      const stage = item.kanbanStage || (item.status === 'completed' ? 'completed' : 'negotiation');
-      if (!map.has(stage)) {
-        // Fallback to first column if custom stage deleted
-        const fallbackCol = columns[0]?.id || 'wishlist';
-        if (map.has(fallbackCol)) {
-          map.get(fallbackCol)!.push(item);
-        }
-      } else {
-        map.get(stage)!.push(item);
+      if (item.kanbanStage && map.has(item.kanbanStage)) {
+        map.get(item.kanbanStage)!.push(item);
       }
     });
 
@@ -370,8 +381,7 @@ export default function KanbanView({
     if (editingColumnId) {
       // Edit
       const updated = columns.map(c => c.id === editingColumnId ? { ...c, title: columnTitleInput.trim() } : c);
-      setColumns(updated);
-      if (onUpdateColumns) onUpdateColumns(updated);
+      updateAndSaveColumns(updated);
     } else {
       // Add
       const newCol: KanbanColumn = {
@@ -380,8 +390,7 @@ export default function KanbanView({
         color: 'indigo'
       };
       const updated = [...columns, newCol];
-      setColumns(updated);
-      if (onUpdateColumns) onUpdateColumns(updated);
+      updateAndSaveColumns(updated);
     }
 
     setColumnTitleInput('');
@@ -389,14 +398,9 @@ export default function KanbanView({
   };
 
   const handleDeleteColumn = (colId: string) => {
-    if (columns.length <= 1) {
-      alert('Нельзя удалить единственный столбец!');
-      return;
-    }
-    if (!window.confirm('Вы уверены, что хотите удалить этот столбец? Сделки переместятся в первый доступный столбец.')) return;
+    if (!window.confirm('Вы уверены, что хотите удалить этот столбец?')) return;
     const updated = columns.filter(c => c.id !== colId);
-    setColumns(updated);
-    if (onUpdateColumns) onUpdateColumns(updated);
+    updateAndSaveColumns(updated);
   };
 
   return (
@@ -470,7 +474,11 @@ export default function KanbanView({
           )}
 
           <button
-            onClick={() => setIsColumnModalOpen(true)}
+            onClick={() => {
+              setEditingColumnId(null);
+              setColumnTitleInput('');
+              setIsColumnModalOpen(true);
+            }}
             className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 transition cursor-pointer"
           >
             <Settings2 className="w-4 h-4 text-slate-600" />
@@ -488,10 +496,34 @@ export default function KanbanView({
       </div>
 
       {/* Kanban Dynamic Columns Horizontal Scroll Container */}
-      <div className="flex gap-5 items-start overflow-x-auto pb-8 pt-2 snap-x">
-        {columns.map((column) => {
-          const columnDeals = columnDataMap.get(column.id) || [];
-          const totalColumnBudget = columnDeals.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
+      <div className="flex gap-5 items-start overflow-x-auto pb-8 pt-2 snap-x min-h-[400px]">
+        {columns.length === 0 ? (
+          <div className="w-full flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-300 text-center px-6 shadow-xs">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4 text-slate-600">
+              <Plus className="w-7 h-7" />
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900 mb-1.5">
+              У вас пока нет этапов на доске
+            </h3>
+            <p className="text-xs text-slate-500 max-w-md mb-6 leading-relaxed">
+              Создайте свои собственные этапы (столбцы) для работы со сделками. Предыдущие блогеры не добавлены сюда автоматически.
+            </p>
+            <button
+              onClick={() => {
+                setEditingColumnId(null);
+                setColumnTitleInput('');
+                setIsColumnModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-5 py-3 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Создать первый этап</span>
+            </button>
+          </div>
+        ) : (
+          columns.map((column) => {
+            const columnDeals = columnDataMap.get(column.id) || [];
+            const totalColumnBudget = columnDeals.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
           const isOver = dragOverColumnId === column.id;
 
           return (
@@ -717,7 +749,7 @@ export default function KanbanView({
               </div>
             </div>
           );
-        })}
+        }))}
       </div>
 
       {/* Column Management Modal */}

@@ -59,6 +59,8 @@ export default function AccessManagementView({
   const [pagesPermissions, setPagesPermissions] = useState<Record<string, boolean>>({
     super_admin: false,
     projects: true,
+    kanban: true,
+    requisites_directory: true,
     bloggers: true,
     reports: true,
     bulk_purchases: true,
@@ -163,6 +165,8 @@ export default function AccessManagementView({
       setPagesPermissions({
         super_admin: false,
         projects: true,
+        kanban: true,
+        requisites_directory: true,
         bloggers: true,
         reports: true,
         bulk_purchases: true,
@@ -498,7 +502,7 @@ export default function AccessManagementView({
                     {lang === 'ru' ? 'Доступные страницы' : lang === 'uz' ? 'Ruxsat berilgan bo‘limlar' : 'Allowed Menu Pages'}
                   </span>
                   <span className="text-[9px] font-extrabold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">
-                    {selectedPagesCount}/7
+                    {selectedPagesCount}/9
                   </span>
                 </div>
                 {openAccordion === 'pages' ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
@@ -510,6 +514,8 @@ export default function AccessManagementView({
                     {[
                       { key: 'super_admin', label: t.pageSuperAdmin },
                       { key: 'projects', label: t.pageProjects },
+                      { key: 'kanban', label: t.pageKanban },
+                      { key: 'requisites_directory', label: t.pageRequisitesDirectory },
                       { key: 'bloggers', label: t.pageBloggers },
                       { key: 'reports', label: t.pageReports },
                       { key: 'bulk_purchases', label: lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases' },
@@ -647,7 +653,11 @@ export default function AccessManagementView({
                     setPagesPermissions({
                       super_admin: false,
                       projects: true,
+                      kanban: true,
+                      requisites_directory: true,
+                      bloggers: true,
                       reports: true,
+                      bulk_purchases: true,
                       reports_feed: true,
                       other_expenses: true
                     });
@@ -778,11 +788,15 @@ export default function AccessManagementView({
                           <span className="text-[10px] text-neutral-400 font-semibold mt-0.5">{user.email}</span>
                           {!isExecutive && (
                             <div className="flex flex-wrap gap-1 mt-1.5">
-                              {(user.allowedPages || ['projects', 'reports', 'reports_feed', 'other_expenses']).map((pageKey) => {
+                              {(user.allowedPages || ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).map((pageKey) => {
                                 let pageLabel = pageKey;
                                 if (pageKey === 'super_admin') pageLabel = t.pageSuperAdmin;
                                 else if (pageKey === 'projects') pageLabel = t.pageProjects;
+                                else if (pageKey === 'kanban') pageLabel = t.pageKanban;
+                                else if (pageKey === 'requisites_directory') pageLabel = t.pageRequisitesDirectory;
+                                else if (pageKey === 'bloggers') pageLabel = t.pageBloggers;
                                 else if (pageKey === 'reports') pageLabel = t.pageReports;
+                                else if (pageKey === 'bulk_purchases') pageLabel = lang === 'ru' ? 'Оптовые закупки' : lang === 'uz' ? 'Ommaviy xaridlar' : 'Bulk Purchases';
                                 else if (pageKey === 'reports_feed') pageLabel = t.pageReportsFeed;
                                 else if (pageKey === 'other_expenses') pageLabel = t.pageOtherExpenses;
                                 return (
@@ -847,12 +861,16 @@ export default function AccessManagementView({
                               });
 
                               // Load pages
-                              const defaultPages = ['projects', 'reports', 'reports_feed', 'other_expenses'];
+                              const defaultPages = ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
                               const userPages = user.allowedPages || defaultPages;
                               setPagesPermissions({
                                 super_admin: user.role === 'super_admin' || userPages.includes('super_admin'),
                                 projects: userPages.includes('projects'),
+                                kanban: userPages.includes('kanban'),
+                                requisites_directory: userPages.includes('requisites_directory'),
+                                bloggers: userPages.includes('bloggers'),
                                 reports: userPages.includes('reports'),
+                                bulk_purchases: userPages.includes('bulk_purchases'),
                                 reports_feed: userPages.includes('reports_feed'),
                                 other_expenses: userPages.includes('other_expenses'),
                               });

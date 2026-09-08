@@ -46,7 +46,7 @@ class UserController extends Controller
             'email' => $user->email,
             'role' => $user->role->value,
             'allowedMetrics' => $user->allowed_metrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-            'allowedPages' => $user->allowed_pages ?? ['projects', 'bloggers', 'reports', 'reports_feed', 'other_expenses'],
+            'allowedPages' => $user->allowed_pages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
             'allowedProjects' => $user->allowed_projects ?? [],
             'createdAt' => $user->created_at->format('Y-m-d'),
         ]);
@@ -61,7 +61,7 @@ class UserController extends Controller
                 'email' => $user->email,
                 'role' => $user->role->value,
                 'allowedMetrics' => $user->allowed_metrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-                'allowedPages' => $user->allowed_pages ?? ['projects', 'bloggers', 'reports', 'reports_feed', 'other_expenses'],
+                'allowedPages' => $user->allowed_pages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
                 'allowedProjects' => $user->allowed_projects ?? [],
                 'createdAt' => $user->created_at->format('Y-m-d'),
             ];
@@ -88,7 +88,7 @@ class UserController extends Controller
             'role' => $request->role,
             'password' => Hash::make($plainPassword),
             'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-            'allowed_pages' => $request->allowedPages ?? ['projects', 'bloggers', 'reports', 'reports_feed', 'other_expenses'],
+            'allowed_pages' => $request->allowedPages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
             'allowed_projects' => $request->allowedProjects ?? [],
         ]);
 

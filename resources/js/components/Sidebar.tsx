@@ -63,8 +63,8 @@ export default function Sidebar({
       const execPages = allowedPages || ['projects', 'reports_feed'];
       return execPages.includes(pageKey) && (pageKey === 'projects' || pageKey === 'reports_feed');
     }
-    if (pageKey === 'bulk_purchases' || pageKey === 'bloggers') return true;
-    return (allowedPages || ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
+    if (pageKey === 'bulk_purchases' || pageKey === 'bloggers' || pageKey === 'kanban' || pageKey === 'requisites_directory') return true;
+    return (allowedPages || ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
   };
 
   return (
@@ -134,7 +134,7 @@ export default function Sidebar({
             </button>
           )}
 
-          {hasAccess('projects') && (
+          {hasAccess('kanban') && (
             <button
               id="nav-kanban-btn"
               onClick={() => setActiveTab('kanban')}
@@ -152,7 +152,7 @@ export default function Sidebar({
             </button>
           )}
 
-          {hasAccess('projects') && (
+          {hasAccess('requisites_directory') && (
             <button
               id="nav-requisites-directory-btn"
               onClick={() => setActiveTab('requisites_directory')}

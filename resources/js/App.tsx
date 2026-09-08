@@ -445,7 +445,7 @@ export default function App() {
 
   // Resolve allowed pages and projects for the active user
   const activeUser = (allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase());
-  const allowedPages = activeUser?.allowedPages || ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
+  const allowedPages = activeUser?.allowedPages || ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
   const userAllowedProjects = activeUser?.allowedProjects;
 
   const accessibleProjects = (currentUserRole === 'super_admin' || !userAllowedProjects || userAllowedProjects.length === 0)
@@ -457,7 +457,7 @@ export default function App() {
     if (isBloggerCabinetRoute) return;
     if (!currentUserRole || currentUserRole === 'super_admin') return;
 
-    const isAllowedTab = (activeTab === 'bulk_purchases' || activeTab === 'bloggers') ? true : allowedPages.includes(activeTab);
+    const isAllowedTab = (activeTab === 'bulk_purchases' || activeTab === 'bloggers' || activeTab === 'kanban' || activeTab === 'requisites_directory') ? true : allowedPages.includes(activeTab);
     const isSystemTab = ['access', 'logs', 'blogger'].includes(activeTab);
 
     if (!isAllowedTab && !isSystemTab) {

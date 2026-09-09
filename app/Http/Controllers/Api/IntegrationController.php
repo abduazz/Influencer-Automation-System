@@ -16,6 +16,7 @@ class IntegrationController extends Controller
                 'projectId' => (string) $integration->project_id,
                 'bloggerName' => $integration->blogger_name,
                 'bloggerPageLink' => $integration->blogger_page_link ?? '',
+                'telegramUsername' => $integration->telegram_username ?? '',
                 'startDate' => $integration->start_date->format('Y-m-d'),
                 'platform' => $integration->platform,
                 'referralLink' => $integration->referral_link ?? '',
@@ -41,6 +42,7 @@ class IntegrationController extends Controller
             'projectId' => 'required|exists:projects,id',
             'bloggerName' => 'required|string|max:255',
             'bloggerPageLink' => 'nullable|string',
+            'telegramUsername' => 'nullable|string',
             'startDate' => 'nullable|date',
             'platform' => 'required|in:Telegram,Instagram,YouTube,MAX,TikTok',
             'referralLink' => 'nullable|string',
@@ -68,6 +70,7 @@ class IntegrationController extends Controller
             'project_id' => $request->projectId,
             'blogger_name' => $request->bloggerName,
             'blogger_page_link' => $request->bloggerPageLink,
+            'telegram_username' => $request->input('telegramUsername'),
             'start_date' => $request->startDate ?? now()->format('Y-m-d'),
             'platform' => $request->platform,
             'referral_link' => $request->referralLink,
@@ -90,6 +93,7 @@ class IntegrationController extends Controller
             'projectId' => (string) $integration->project_id,
             'bloggerName' => $integration->blogger_name,
             'bloggerPageLink' => $integration->blogger_page_link ?? '',
+            'telegramUsername' => $integration->telegram_username ?? '',
             'startDate' => $integration->start_date->format('Y-m-d'),
             'platform' => $integration->platform,
             'referralLink' => $integration->referral_link ?? '',
@@ -114,6 +118,7 @@ class IntegrationController extends Controller
             'projectId' => 'sometimes|required|exists:projects,id',
             'bloggerName' => 'sometimes|required|string|max:255',
             'bloggerPageLink' => 'nullable|string',
+            'telegramUsername' => 'nullable|string',
             'startDate' => 'nullable|date',
             'platform' => 'sometimes|required|in:Telegram,Instagram,YouTube,MAX,TikTok',
             'referralLink' => 'nullable|string',
@@ -133,6 +138,7 @@ class IntegrationController extends Controller
         if ($request->has('projectId')) $updateData['project_id'] = $request->projectId;
         if ($request->has('bloggerName')) $updateData['blogger_name'] = $request->bloggerName;
         if ($request->has('bloggerPageLink')) $updateData['blogger_page_link'] = $request->bloggerPageLink;
+        if ($request->has('telegramUsername')) $updateData['telegram_username'] = $request->input('telegramUsername');
         if ($request->filled('startDate')) $updateData['start_date'] = $request->startDate;
         if ($request->has('platform')) $updateData['platform'] = $request->platform;
         if ($request->has('referralLink')) $updateData['referral_link'] = $request->referralLink;
@@ -154,6 +160,7 @@ class IntegrationController extends Controller
             'projectId' => (string) $integration->project_id,
             'bloggerName' => $integration->blogger_name,
             'bloggerPageLink' => $integration->blogger_page_link ?? '',
+            'telegramUsername' => $integration->telegram_username ?? '',
             'startDate' => $integration->start_date->format('Y-m-d'),
             'platform' => $integration->platform,
             'referralLink' => $integration->referral_link ?? '',

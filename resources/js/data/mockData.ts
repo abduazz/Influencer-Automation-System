@@ -72,6 +72,7 @@ export interface Integration {
   projectId: string;
   bloggerName: string;
   bloggerPageLink?: string;
+  telegramUsername?: string;
   startDate?: string;
   platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
   referralLink?: string;

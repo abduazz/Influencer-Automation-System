@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { Project, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
+import { getPlatformBadgeClasses, formatTelegramLink, formatTelegramHandle } from '../utils/platform';
 import { 
   Users, 
   Search, 
@@ -26,7 +27,8 @@ import {
   Sparkles,
   Copy,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  Send
 } from 'lucide-react';
 
 interface BloggersViewProps {
@@ -41,6 +43,7 @@ export interface BloggerSummary {
   cleanName: string;
   displayName: string;
   bloggerPageLink?: string;
+  telegramUsername?: string;
   projects: { project: Project; count: number }[];
   platforms: string[];
   totalIntegrations: number;
@@ -112,6 +115,7 @@ export default function BloggersView({
           rawName: raw,
           displayName: formattedName,
           bloggerPageLink: item.bloggerPageLink ? String(item.bloggerPageLink) : undefined,
+          telegramUsername: item.telegramUsername ? String(item.telegramUsername) : undefined,
           projectMap: new Map(),
           platformsSet: new Set(),
           integrations: [],
@@ -125,6 +129,9 @@ export default function BloggersView({
       // Update blogger page link if available
       if (!record.bloggerPageLink && item.bloggerPageLink) {
         record.bloggerPageLink = String(item.bloggerPageLink);
+      }
+      if (!record.telegramUsername && item.telegramUsername) {
+        record.telegramUsername = String(item.telegramUsername);
       }
 
       // Add project reference
@@ -177,6 +184,7 @@ export default function BloggersView({
         cleanName,
         displayName: data.displayName,
         bloggerPageLink: data.bloggerPageLink,
+        telegramUsername: data.telegramUsername,
         projects: Array.from(data.projectMap.values()),
         platforms: Array.from(data.platformsSet),
         totalIntegrations: data.integrations.length,
@@ -437,6 +445,20 @@ export default function BloggersView({
                             <span className="hidden sm:inline">{currentLang === 'ru' ? 'Профиль' : 'Profile'}</span>
                           </a>
                         )}
+
+                        {blogger.telegramUsername && (
+                          <a
+                            href={formatTelegramLink(blogger.telegramUsername)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-500 hover:text-white px-2 py-0.5 rounded-md border border-sky-200 transition shadow-2xs group/tg"
+                            title={currentLang === 'ru' ? 'Написать в Telegram' : 'Chat in Telegram'}
+                          >
+                            <Send className="w-2.5 h-2.5 text-sky-500 group-hover/tg:text-white transition-colors" />
+                            <span>{formatTelegramHandle(blogger.telegramUsername)}</span>
+                          </a>
+                        )}
                       </div>
 
                       {/* Project Badges */}
@@ -471,7 +493,7 @@ export default function BloggersView({
                       {(blogger.platforms || []).map((plat) => (
                         <span
                           key={plat}
-                          className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-700 border border-neutral-200"
+                          className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${getPlatformBadgeClasses(plat)}`}
                         >
                           {plat}
                         </span>
@@ -538,7 +560,23 @@ export default function BloggersView({
                                   {proj ? proj.name : (currentLang === 'ru' ? 'Общий проект' : 'General')}
                                 </td>
                                 <td className="px-3.5 py-3">
-                                  <span className="font-semibold text-neutral-800">{item.platform}</span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`px-2 py-0.5 text-[9px] font-black rounded-md uppercase ${getPlatformBadgeClasses(item.platform)}`}>
+                                      {item.platform}
+                                    </span>
+                                    {item.telegramUsername && (
+                                      <a
+                                        href={formatTelegramLink(item.telegramUsername)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 hover:text-sky-800 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100 transition"
+                                        title="Написать в Telegram"
+                                      >
+                                        <Send className="w-2.5 h-2.5 text-sky-500" />
+                                        <span>{formatTelegramHandle(item.telegramUsername)}</span>
+                                      </a>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-3.5 py-3">
                                   {item.paidSlotsCount ?? item.slotsCount} / {item.slotsCount}

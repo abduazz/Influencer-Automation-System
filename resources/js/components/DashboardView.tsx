@@ -11,6 +11,7 @@ import {
   BloggerSubmission
 } from '../data/mockData';
 import { getCabinetUrl } from '../utils/url';
+import { getPlatformBadgeClasses, formatTelegramLink, formatTelegramHandle } from '../utils/platform';
 import { 
   Plus, 
   Trash2, 
@@ -92,6 +93,7 @@ export default function DashboardView({
   // New / Editing Integration Form state
   const [bloggerName, setBloggerName] = useState('');
   const [bloggerPageLink, setBloggerPageLink] = useState('');
+  const [telegramUsername, setTelegramUsername] = useState('');
   const [startDate, setStartDate] = useState('2026-07-10');
   const [endDate, setEndDate] = useState('2026-07-17');
   const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Telegram');
@@ -161,6 +163,7 @@ export default function DashboardView({
     setEditingIntegration(integration);
     setBloggerName(integration.bloggerName);
     setBloggerPageLink(integration.bloggerPageLink || '');
+    setTelegramUsername(integration.telegramUsername || '');
     setStartDate(integration.startDate);
     setEndDate(integration.endDate);
     setPlatform(integration.platform);
@@ -243,6 +246,7 @@ export default function DashboardView({
       onEditIntegration(editingIntegration.id, {
         bloggerName,
         bloggerPageLink,
+        telegramUsername: telegramUsername.trim() || undefined,
         startDate,
         endDate,
         platform,
@@ -258,6 +262,7 @@ export default function DashboardView({
         projectId: selectedProjectId,
         bloggerName,
         bloggerPageLink,
+        telegramUsername: telegramUsername.trim() || undefined,
         startDate,
         endDate,
         platform,
@@ -267,6 +272,8 @@ export default function DashboardView({
         status: 'active',
         slotsConfig: finalSlotsConfig
       });
+      setEditingIntegration(null);
+      setTelegramUsername('');
     }
     setShowAddIntegrationModal(false);
   };
@@ -1003,6 +1010,19 @@ export default function DashboardView({
                     className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
                   />
                 </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                    {lang === 'ru' ? 'Личный Telegram блогера' : lang === 'uz' ? 'Blogger shaxsiy Telegrami' : 'Personal Telegram'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="@username или https://t.me/..."
+                    value={telegramUsername}
+                    onChange={(e) => setTelegramUsername(e.target.value)}
+                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1289,9 +1309,11 @@ export default function DashboardView({
               <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200/50">
                 <div>
                   <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.platformColumn || 'Platform'}</p>
-                  <p className="font-bold text-neutral-800 mt-0.5">
-                    {selectedIntegrationForDetails.platform || ''}
-                  </p>
+                  <div className="mt-1">
+                    <span className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase ${getPlatformBadgeClasses(selectedIntegrationForDetails.platform)}`}>
+                      {selectedIntegrationForDetails.platform || '—'}
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
@@ -1365,6 +1387,29 @@ export default function DashboardView({
 
               {/* Links */}
               <div className="space-y-3">
+                {selectedIntegrationForDetails.telegramUsername && (
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                      {lang === 'ru' ? 'Личный Telegram блогера' : lang === 'uz' ? 'Blogger shaxsiy Telegrami' : 'Personal Telegram'}
+                    </p>
+                    <div className="flex items-center justify-between gap-2 bg-sky-50/60 p-2 rounded-lg border border-sky-100">
+                      <span className="font-bold text-sky-900 text-xs flex items-center gap-1.5">
+                        <Send className="w-3.5 h-3.5 text-sky-500" />
+                        {formatTelegramHandle(selectedIntegrationForDetails.telegramUsername)}
+                      </span>
+                      <a
+                        href={formatTelegramLink(selectedIntegrationForDetails.telegramUsername)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-md text-[10px] font-bold inline-flex items-center gap-1 shadow-xs transition shrink-0"
+                        title="Открыть чат в Telegram"
+                      >
+                        <span>Написать</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </div>
+                  </div>
+                )}
                 {selectedIntegrationForDetails.bloggerPageLink && (
                   <div className="space-y-1">
                     <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
@@ -1472,8 +1517,11 @@ export default function DashboardView({
                         <div key={index} className="flex justify-between items-center py-1.5 border-b border-neutral-50 last:border-b-0">
                           <div>
                             <span className="font-bold text-neutral-700">{(t.slotNumberLabel || 'Slot') + ' #' + (index + 1)}: </span>
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-neutral-100 border border-neutral-200">
-                              {slot.platform || ''} {slot.format || ''}
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${getPlatformBadgeClasses(slot.platform)}`}>
+                              {slot.platform || ''}
+                            </span>
+                            <span className="ml-1 text-[10px] font-bold text-neutral-600">
+                              {slot.format || ''}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">

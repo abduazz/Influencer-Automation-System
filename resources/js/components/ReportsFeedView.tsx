@@ -3,6 +3,7 @@ import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link, 
 import { Project, Report, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
+import { getPlatformBadgeClasses } from '../utils/platform';
 
 interface ReportsFeedViewProps {
   projects: Project[];
@@ -436,16 +437,6 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                   const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
                   const cabinetUrl = token ? getCabinetUrl(token) : '';
 
-                  // Platform Badge Colors
-                  let platformBadgeClass = "bg-neutral-50 text-neutral-600 border-neutral-200";
-                  if (rep.platform === 'Telegram') {
-                    platformBadgeClass = "bg-blue-50 text-blue-600 border-blue-100";
-                  } else if (rep.platform === 'Instagram') {
-                    platformBadgeClass = "bg-pink-50 text-pink-600 border-pink-100";
-                  } else if (rep.platform === 'YouTube') {
-                    platformBadgeClass = "bg-red-50 text-red-600 border-red-100";
-                  }
-
                   return (
                     <tr
                       key={rep.id}
@@ -475,7 +466,7 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                         {isOther ? (
                           <span className="text-neutral-400">—</span>
                         ) : (
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md border ${platformBadgeClass}`}>
+                          <span className={`px-2 py-0.5 text-[9px] font-black rounded-md uppercase tracking-wider ${getPlatformBadgeClasses(rep.platform)}`}>
                             {rep.platform}
                           </span>
                         )}
@@ -622,9 +613,13 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                 <div className="grid grid-cols-3 gap-1.5 py-1 text-[10px] text-left border border-neutral-100 rounded-lg p-2 bg-neutral-50/50">
                   <div>
                     <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">{t.platformColumn}</span>
-                    <span className="font-bold text-neutral-800">
-                      {isOther ? '—' : rep.platform}
-                    </span>
+                    {isOther ? (
+                      <span className="font-bold text-neutral-400">—</span>
+                    ) : (
+                      <span className={`px-2 py-0.5 text-[9px] font-black rounded-md uppercase inline-block mt-0.5 ${getPlatformBadgeClasses(rep.platform)}`}>
+                        {rep.platform}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">
@@ -726,9 +721,15 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                 </div>
                 <div>
                   <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.platformColumn}</p>
-                  <p className="font-bold text-neutral-800 mt-0.5">
-                    {selectedReport.paymentType === 'other' ? '—' : selectedReport.platform}
-                  </p>
+                  <div className="mt-1">
+                    {selectedReport.paymentType === 'other' ? (
+                      <span className="font-bold text-neutral-400">—</span>
+                    ) : (
+                      <span className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase ${getPlatformBadgeClasses(selectedReport.platform)}`}>
+                        {selectedReport.platform}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.paymentTypeLabel}</p>

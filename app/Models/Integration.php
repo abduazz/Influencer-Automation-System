@@ -16,6 +16,7 @@ class Integration extends Model
         'project_id',
         'blogger_name',
         'blogger_page_link',
+        'telegram_username',
         'start_date',
         'platform',
         'referral_link',

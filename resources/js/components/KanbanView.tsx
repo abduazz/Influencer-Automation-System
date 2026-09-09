@@ -45,6 +45,7 @@ interface KanbanViewProps {
   userRole?: string | null;
   currentUserEmail?: string | null;
   onOpenRequisitesDirectory?: () => void;
+  onClearStage?: (stageId: string) => void | Promise<void>;
 }
 
 export default function KanbanView({
@@ -59,7 +60,8 @@ export default function KanbanView({
   lang = 'ru',
   userRole,
   currentUserEmail,
-  onOpenRequisitesDirectory
+  onOpenRequisitesDirectory,
+  onClearStage
 }: KanbanViewProps) {
   const t = translations[lang] || translations['ru'];
 
@@ -167,16 +169,34 @@ export default function KanbanView({
     setEditCommentsList((prev) => prev.filter(c => c.id !== commentId));
   };
 
-  // Filtered Integrations
+  // Filtered Integrations: only include deals that belong to a kanban stage
   const filteredIntegrations = useMemo(() => {
     return integrations.filter((item) => {
+      if (!item.kanbanStage) return false;
       const matchSearch = item.bloggerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (item.referralLink && item.referralLink.toLowerCase().includes(searchQuery.toLowerCase()));
-      const matchProject = selectedProjectId === 'all' || item.projectId === selectedProjectId;
+      const matchProject = selectedProjectId === 'all' || String(item.projectId) === String(selectedProjectId);
       const matchPlatform = selectedPlatform === 'all' || item.platform === selectedPlatform;
       return matchSearch && matchProject && matchPlatform;
     });
   }, [integrations, searchQuery, selectedProjectId, selectedPlatform]);
+
+  // Count deals per project (only deals with active kanban stage)
+  const projectDealCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    integrations.forEach((item) => {
+      if (item.kanbanStage && item.projectId) {
+        const pid = String(item.projectId);
+        counts[pid] = (counts[pid] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [integrations]);
+
+  // Total active kanban cards
+  const totalKanbanCards = useMemo(() => {
+    return integrations.filter(i => Boolean(i.kanbanStage)).length;
+  }, [integrations]);
 
   // Grouped Integrations by Column ID
   const columnDataMap = useMemo(() => {
@@ -184,11 +204,10 @@ export default function KanbanView({
     columns.forEach(c => map.set(c.id, []));
 
     filteredIntegrations.forEach((item) => {
-      const stage = item.kanbanStage || columns[0]?.id || 'wishlist';
+      if (!item.kanbanStage) return;
+      const stage = item.kanbanStage;
       if (map.has(stage)) {
         map.get(stage)!.push(item);
-      } else if (columns[0] && map.has(columns[0].id)) {
-        map.get(columns[0].id)!.push(item);
       }
     });
 
@@ -416,6 +435,62 @@ export default function KanbanView({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 min-h-screen p-4 md:p-8 space-y-6 font-sans">
+      {/* Project Quick Filter Tabs */}
+      {projects && projects.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none flex-wrap">
+          <button
+            type="button"
+            onClick={() => setSelectedProjectId('all')}
+            className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs transition-all duration-150 cursor-pointer shrink-0 ${
+              selectedProjectId === 'all'
+                ? 'bg-black text-white font-bold shadow-xs'
+                : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-black font-semibold border border-neutral-200 shadow-2xs'
+            }`}
+          >
+            <Layers className={`w-3.5 h-3.5 ${selectedProjectId === 'all' ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+            <span>{lang === 'ru' ? 'Все проекты' : lang === 'uz' ? 'Barcha loyihalar' : 'All Projects'}</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${
+                selectedProjectId === 'all'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
+              }`}
+            >
+              {totalKanbanCards}
+            </span>
+          </button>
+
+          {projects.map((project) => {
+            const isSelected = String(selectedProjectId) === String(project.id);
+            const count = projectDealCounts[String(project.id)] || 0;
+
+            return (
+              <button
+                key={project.id}
+                type="button"
+                onClick={() => setSelectedProjectId(isSelected ? 'all' : String(project.id))}
+                className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs transition-all duration-150 cursor-pointer shrink-0 ${
+                  isSelected
+                    ? 'bg-black text-white font-bold shadow-xs'
+                    : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-black font-semibold border border-neutral-200 shadow-2xs'
+                }`}
+              >
+                <span>{project.name}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${
+                    isSelected
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Search, Filter & Actions Bar */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-xl border border-neutral-200 shadow-xs">
         <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 flex-1">
@@ -559,14 +634,33 @@ export default function KanbanView({
                     {columnDeals.length}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleOpenCreateDealModal(column.id)}
-                  title={`Добавить карточку в "${column.title}"`}
-                  className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-black transition cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {columnDeals.length > 0 && onClearStage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(lang === 'ru' 
+                          ? `Убрать все карточки (${columnDeals.length}) из столбца "${column.title}" с доски? Сами интеграции и статистика блогеров останутся в системе.`
+                          : `Remove all cards (${columnDeals.length}) from "${column.title}"? Integrations and blogger statistics will remain preserved.`
+                        )) {
+                          onClearStage(column.id);
+                        }
+                      }}
+                      title={`Очистить столбец "${column.title}" (убрать карточки с доски)`}
+                      className="p-1 rounded-lg hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCreateDealModal(column.id)}
+                    title={`Добавить карточку в "${column.title}"`}
+                    className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-black transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Column Total Budget */}
@@ -612,7 +706,7 @@ export default function KanbanView({
                               {deal.platform}
                             </span>
                             {project && (
-                              <span className="px-2 py-0.5 bg-slate-100 text-slate-800 text-[9px] font-bold rounded-md truncate max-w-[100px]">
+                              <span className="px-2.5 py-1 bg-slate-100 text-slate-800 text-xs font-bold rounded-md truncate max-w-[130px]">
                                 {project.name}
                               </span>
                             )}

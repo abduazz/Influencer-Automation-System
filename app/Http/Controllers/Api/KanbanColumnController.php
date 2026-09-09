@@ -84,4 +84,13 @@ class KanbanColumnController extends Controller
             ];
         }));
     }
+
+    public function clearStage(Request $request)
+    {
+        $stage = $request->input('stage');
+        if ($stage) {
+            \App\Models\Integration::where('kanban_stage', $stage)->update(['kanban_stage' => null]);
+        }
+        return response()->json(['success' => true]);
+    }
 }

@@ -98,6 +98,12 @@ export function saveKanbanColumns(columns: KanbanColumn[]): Promise<KanbanColumn
     body: JSON.stringify({ columns }),
   });
 }
+export function clearKanbanStageApi(stage: string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>('/api/kanban-columns/clear-stage', {
+    method: 'POST',
+    body: JSON.stringify({ stage }),
+  });
+}
 
 // Reports API
 export function fetchReports(): Promise<Report[]> {

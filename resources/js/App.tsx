@@ -47,6 +47,7 @@ import {
   fetchBulkPurchases,
   fetchKanbanColumns,
   saveKanbanColumns,
+  clearKanbanStageApi,
 } from './services/api';
 
 import {
@@ -316,6 +317,21 @@ export default function App() {
       await updateIntegration(integrationId, { kanbanStage: newStage }, currentUserEmail || undefined);
     } catch (err) {
       console.error('Failed to persist integration stage to backend:', err);
+    }
+  };
+
+  const handleClearKanbanStage = async (stage: string) => {
+    setIntegrations((prev) => prev.map((item) => {
+      if (item.kanbanStage === stage) {
+        return { ...item, kanbanStage: undefined };
+      }
+      return item;
+    }));
+
+    try {
+      await clearKanbanStageApi(stage);
+    } catch (err) {
+      console.error('Failed to clear kanban stage on backend:', err);
     }
   };
 
@@ -598,6 +614,7 @@ export default function App() {
                 userRole={currentUserRole}
                 currentUserEmail={currentUserEmail}
                 onOpenRequisitesDirectory={() => setActiveTab('requisites_directory')}
+                onClearStage={handleClearKanbanStage}
               />
             )}
             {activeTab === 'requisites_directory' && (

@@ -28,6 +28,7 @@ Route::delete('/integrations/{integration}', [IntegrationController::class, 'des
 
 Route::get('/kanban-columns', [KanbanColumnController::class, 'index']);
 Route::post('/kanban-columns', [KanbanColumnController::class, 'sync']);
+Route::post('/kanban-columns/clear-stage', [KanbanColumnController::class, 'clearStage']);
 
 Route::get('/reports', [ReportController::class, 'index']);
 Route::post('/reports', [ReportController::class, 'store']);

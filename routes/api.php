@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\BloggerSubmissionController;
 use App\Http\Controllers\Api\IntegrationController;
+use App\Http\Controllers\Api\KanbanColumnController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\UserController;
@@ -24,6 +25,9 @@ Route::get('/integrations', [IntegrationController::class, 'index']);
 Route::post('/integrations', [IntegrationController::class, 'store']);
 Route::put('/integrations/{integration}', [IntegrationController::class, 'update']);
 Route::delete('/integrations/{integration}', [IntegrationController::class, 'destroy']);
+
+Route::get('/kanban-columns', [KanbanColumnController::class, 'index']);
+Route::post('/kanban-columns', [KanbanColumnController::class, 'sync']);
 
 Route::get('/reports', [ReportController::class, 'index']);
 Route::post('/reports', [ReportController::class, 'store']);

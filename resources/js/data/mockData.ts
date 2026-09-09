@@ -26,7 +26,14 @@ export interface KanbanColumn {
   color: string;
 }
 
-export const INITIAL_KANBAN_COLUMNS: KanbanColumn[] = [];
+export const INITIAL_KANBAN_COLUMNS: KanbanColumn[] = [
+  { id: 'wishlist', title: 'Желаемые', color: 'purple' },
+  { id: 'negotiation', title: 'Обговорить', color: 'amber' },
+  { id: 'requisites_pending', title: 'Получить реквизиты', color: 'blue' },
+  { id: 'ready_for_payment', title: 'Готов к оплате', color: 'indigo' },
+  { id: 'paid_in_progress', title: 'Оплачено / В работе', color: 'emerald' },
+  { id: 'completed', title: 'Завершено', color: 'neutral' },
+];
 
 export interface BloggerRequisites {
   id: string;
@@ -65,17 +72,18 @@ export interface Integration {
   projectId: string;
   bloggerName: string;
   bloggerPageLink?: string;
-  startDate: string;
+  startDate?: string;
   platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
-  referralLink: string;
+  referralLink?: string;
   pricePerSlot: number;
   slotsCount: number;
   paidSlotsCount?: number;
   paidAmount?: number;
   totalAmount: number; // calculated: pricePerSlot * slotsCount
-  endDate: string;
+  endDate?: string;
   status: 'active' | 'completed' | 'paused';
   kanbanStage?: KanbanStage;
+  createdBy?: string | null;
   bloggerCabinetToken?: string;
   requisites?: BloggerRequisites;
   slotsConfig?: SlotConfig[];

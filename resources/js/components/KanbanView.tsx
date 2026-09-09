@@ -84,17 +84,24 @@ export default function KanbanView({
     return [];
   };
 
-  // Columns State (Persisted in localStorage, defaults to empty array so users create custom columns)
+  // Columns State (Synchronized with server, defaults to INITIAL_KANBAN_COLUMNS)
   const [columns, setColumns] = useState<KanbanColumn[]>(() => {
+    if (initialColumns && initialColumns.length > 0) return initialColumns;
     try {
       const saved = localStorage.getItem('kanban_custom_columns');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return initialColumns && initialColumns.length > 0 ? initialColumns : [];
+    return INITIAL_KANBAN_COLUMNS;
   });
+
+  React.useEffect(() => {
+    if (initialColumns && initialColumns.length > 0) {
+      setColumns(initialColumns);
+    }
+  }, [initialColumns]);
 
   const updateAndSaveColumns = (newCols: KanbanColumn[]) => {
     setColumns(newCols);
@@ -120,9 +127,9 @@ export default function KanbanView({
   const [editPlatform, setEditPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Instagram');
   const [editProjectId, setEditProjectId] = useState('');
   const [editKanbanStage, setEditKanbanStage] = useState('');
-  const [editPricePerSlot, setEditPricePerSlot] = useState<number>(0);
-  const [editSlotsCount, setEditSlotsCount] = useState<number>(1);
-  const [editPaidAmount, setEditPaidAmount] = useState<number>(0);
+  const [editPricePerSlot, setEditPricePerSlot] = useState<number | ''>(0);
+  const [editSlotsCount, setEditSlotsCount] = useState<number | ''>(1);
+  const [editPaidAmount, setEditPaidAmount] = useState<number | ''>(0);
   const [editPaidSlotsCount, setEditPaidSlotsCount] = useState<number>(0);
   const [editStartDate, setEditStartDate] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
@@ -171,14 +178,17 @@ export default function KanbanView({
     });
   }, [integrations, searchQuery, selectedProjectId, selectedPlatform]);
 
-  // Grouped Integrations by Column ID (Only include integrations explicitly created with kanbanStage)
+  // Grouped Integrations by Column ID
   const columnDataMap = useMemo(() => {
     const map = new Map<string, Integration[]>();
     columns.forEach(c => map.set(c.id, []));
 
     filteredIntegrations.forEach((item) => {
-      if (item.kanbanStage && map.has(item.kanbanStage)) {
-        map.get(item.kanbanStage)!.push(item);
+      const stage = item.kanbanStage || columns[0]?.id || 'wishlist';
+      if (map.has(stage)) {
+        map.get(stage)!.push(item);
+      } else if (columns[0] && map.has(columns[0].id)) {
+        map.get(columns[0].id)!.push(item);
       }
     });
 
@@ -237,7 +247,7 @@ export default function KanbanView({
     setEditPlatform('Instagram');
     setEditProjectId(selectedProjectId !== 'all' ? selectedProjectId : (projects[0]?.id || ''));
     setEditKanbanStage(stageId || columns[0]?.id || 'wishlist');
-    setEditPricePerSlot(1000000);
+    setEditPricePerSlot(0);
     setEditSlotsCount(1);
     setEditPaidAmount(0);
     setEditPaidSlotsCount(0);
@@ -259,7 +269,7 @@ export default function KanbanView({
     setEditPlatform(deal.platform || 'Instagram');
     setEditProjectId(deal.projectId || (projects[0] ? projects[0].id : ''));
     setEditKanbanStage(deal.kanbanStage || columns[0]?.id || 'wishlist');
-    setEditPricePerSlot(deal.pricePerSlot || 0);
+    setEditPricePerSlot(deal.pricePerSlot ?? 0);
     setEditSlotsCount(deal.slotsCount || 1);
     setEditPaidAmount(deal.paidAmount || 0);
     setEditPaidSlotsCount(deal.paidSlotsCount ?? (deal.paidAmount && deal.pricePerSlot ? Math.min(deal.slotsCount, Math.floor(deal.paidAmount / deal.pricePerSlot)) : 0));
@@ -294,7 +304,7 @@ export default function KanbanView({
 
     setIsSavingEdit(true);
     try {
-      const calculatedTotal = Number(editPricePerSlot) * Number(editSlotsCount);
+      const calculatedTotal = Number(editPricePerSlot || 0) * Number(editSlotsCount || 0);
 
       // Append typed comment in input box if user didn't explicitly click "Отправить"
       let finalComments = [...editCommentsList];
@@ -312,8 +322,8 @@ export default function KanbanView({
       if (isCreateMode) {
         await onAddIntegration({
           projectId: targetProjectId,
-          bloggerName: editBloggerName,
-          bloggerPageLink: editBloggerLink || '',
+          bloggerName: editBloggerName.trim(),
+          bloggerPageLink: editBloggerLink.trim() || '',
           platform: editPlatform,
           pricePerSlot: Number(editPricePerSlot) || 0,
           slotsCount: Number(editSlotsCount) || 1,
@@ -321,25 +331,26 @@ export default function KanbanView({
           paidAmount: Number(editPaidAmount) || 0,
           startDate: editStartDate || new Date().toISOString().split('T')[0],
           endDate: editEndDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-          referralLink: editReferralLink || (editBloggerName ? `https://${editBloggerName.replace('@', '')}.ref.link` : ''),
+          referralLink: editReferralLink.trim() || '',
           comments: finalComments,
           status: editStatus,
-          kanbanStage: editKanbanStage
+          kanbanStage: editKanbanStage,
+          createdBy: currentUserEmail || undefined,
         });
       } else if (selectedDeal) {
         const updatedFields: Partial<Integration> = {
-          bloggerName: editBloggerName,
-          bloggerPageLink: editBloggerLink,
+          bloggerName: editBloggerName.trim(),
+          bloggerPageLink: editBloggerLink.trim(),
           platform: editPlatform,
           projectId: targetProjectId,
-          pricePerSlot: Number(editPricePerSlot),
-          slotsCount: Number(editSlotsCount),
+          pricePerSlot: Number(editPricePerSlot) || 0,
+          slotsCount: Number(editSlotsCount) || 1,
           totalAmount: calculatedTotal,
-          paidAmount: Number(editPaidAmount),
-          paidSlotsCount: Number(editPaidSlotsCount),
-          startDate: editStartDate,
-          endDate: editEndDate,
-          referralLink: editReferralLink,
+          paidAmount: Number(editPaidAmount) || 0,
+          paidSlotsCount: Number(editPaidSlotsCount) || 0,
+          startDate: selectedDeal.startDate || editStartDate || new Date().toISOString().split('T')[0],
+          endDate: selectedDeal.endDate || editEndDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          referralLink: editReferralLink.trim(),
           comments: finalComments,
           status: editStatus,
           kanbanStage: editKanbanStage
@@ -679,6 +690,14 @@ export default function KanbanView({
                           })()}
                         </div>
 
+                        {/* Creator Info */}
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1">
+                          <User className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="truncate">
+                            Создал: <strong className="text-slate-800 font-bold">{deal.createdBy || 'Не указан'}</strong>
+                          </span>
+                        </div>
+
                         {/* Amount & Requisites */}
                         <div className="space-y-1.5 pt-2 border-t border-slate-100">
                           <div className="flex items-center justify-between text-xs font-bold text-slate-800">
@@ -929,6 +948,21 @@ export default function KanbanView({
 
             {/* Scrollable Form Body */}
             <form id="deal-edit-form" onSubmit={handleSaveDealEdit} className="space-y-5 overflow-y-auto pr-1 flex-1">
+              {/* Creator Info (when viewing/editing) */}
+              {!isCreateMode && selectedDeal && (
+                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-slate-500 shrink-0" />
+                    <span>Создатель карточки: <strong className="text-slate-900 font-bold">{selectedDeal.createdBy || 'Не указан'}</strong></span>
+                  </div>
+                  {selectedDeal.startDate && (
+                    <span className="text-slate-400 text-[11px]">
+                      Дата старта: {selectedDeal.startDate}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* Basic Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
@@ -1044,7 +1078,7 @@ export default function KanbanView({
                       min="1"
                       required
                       value={editSlotsCount}
-                      onChange={(e) => setEditSlotsCount(parseInt(e.target.value, 10) || 1)}
+                      onChange={(e) => setEditSlotsCount(e.target.value === '' ? '' : parseInt(e.target.value, 10) || 1)}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black"
                     />
                   </div>
@@ -1058,7 +1092,7 @@ export default function KanbanView({
                       min="0"
                       required
                       value={editPricePerSlot}
-                      onChange={(e) => setEditPricePerSlot(parseFloat(e.target.value) || 0)}
+                      onChange={(e) => setEditPricePerSlot(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black"
                     />
                   </div>
@@ -1071,51 +1105,25 @@ export default function KanbanView({
                       type="number"
                       min="0"
                       value={editPaidAmount}
-                      onChange={(e) => setEditPaidAmount(parseFloat(e.target.value) || 0)}
+                      onChange={(e) => setEditPaidAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Dates & Referral Link */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Дата начала
-                  </label>
-                  <input
-                    type="date"
-                    value={editStartDate}
-                    onChange={(e) => setEditStartDate(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Дата окончания
-                  </label>
-                  <input
-                    type="date"
-                    value={editEndDate}
-                    onChange={(e) => setEditEndDate(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Реферальная ссылка
-                  </label>
-                  <input
-                    type="text"
-                    value={editReferralLink}
-                    onChange={(e) => setEditReferralLink(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
-                  />
-                </div>
+              {/* Referral Link */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Реферальная ссылка
+                </label>
+                <input
+                  type="text"
+                  value={editReferralLink}
+                  onChange={(e) => setEditReferralLink(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
+                />
               </div>
 
               {/* Comments Section / Лента комментариев */}

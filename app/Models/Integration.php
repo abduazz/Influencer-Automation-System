@@ -29,6 +29,8 @@ class Integration extends Model
         'blogger_cabinet_token',
         'slots_config',
         'comments',
+        'kanban_stage',
+        'created_by',
     ];
 
     protected $casts = [

@@ -1,4 +1,4 @@
-import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase } from '../data/mockData';
+import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase, KanbanColumn } from '../data/mockData';
 
 // Fetch helper that handles errors
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -61,20 +61,42 @@ export function deleteProject(id: string, userEmail?: string): Promise<void> {
 export function fetchIntegrations(): Promise<Integration[]> {
   return request<Integration[]>('/api/integrations');
 }
-export function createIntegration(data: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'>): Promise<Integration> {
+export function createIntegration(
+  data: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'>,
+  userEmail?: string
+): Promise<Integration> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
   return request<Integration>('/api/integrations', {
     method: 'POST',
+    headers,
     body: JSON.stringify(data),
   });
 }
-export function updateIntegration(id: string, data: Partial<Integration>): Promise<Integration> {
+export function updateIntegration(
+  id: string,
+  data: Partial<Integration>,
+  userEmail?: string
+): Promise<Integration> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
   return request<Integration>(`/api/integrations/${id}`, {
     method: 'PUT',
+    headers,
     body: JSON.stringify(data),
   });
 }
 export function deleteIntegration(id: string): Promise<void> {
   return request<void>(`/api/integrations/${id}`, { method: 'DELETE' });
+}
+
+// Kanban Columns API
+export function fetchKanbanColumns(): Promise<KanbanColumn[]> {
+  return request<KanbanColumn[]>('/api/kanban-columns');
+}
+export function saveKanbanColumns(columns: KanbanColumn[]): Promise<KanbanColumn[]> {
+  return request<KanbanColumn[]>('/api/kanban-columns', {
+    method: 'POST',
+    body: JSON.stringify({ columns }),
+  });
 }
 
 // Reports API

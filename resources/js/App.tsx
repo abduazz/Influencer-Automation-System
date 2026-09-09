@@ -24,7 +24,7 @@ import CodeViewer from './components/CodeViewer';
 import KanbanView from './components/KanbanView';
 import BloggerRequisitesView from './components/BloggerRequisitesView';
 import BloggerRequisitesDirectoryView from './components/BloggerRequisitesDirectoryView';
-import { KanbanStage, BloggerRequisites, KanbanColumn } from './data/mockData';
+import { KanbanStage, BloggerRequisites, KanbanColumn, INITIAL_KANBAN_COLUMNS } from './data/mockData';
 import { Language, translations } from './translations';
 import {
   fetchAllowedUsers,
@@ -45,6 +45,8 @@ import {
   fetchSubmissions,
   createSubmission,
   fetchBulkPurchases,
+  fetchKanbanColumns,
+  saveKanbanColumns,
 } from './services/api';
 
 import {
@@ -57,7 +59,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt } from 'lucide-react';
 
 export default function App() {
   // Language state (Uzbek by default)
@@ -134,39 +136,6 @@ export default function App() {
     localStorage.removeItem('ff_user_role');
   };
 
-  const [isInputFocused, setIsInputFocused] = useState(false);
-
-  useEffect(() => {
-    const handleFocusIn = (e: FocusEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
-        setIsInputFocused(true);
-        setTimeout(() => {
-          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 200);
-      }
-    };
-
-    const handleFocusOut = (e: FocusEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
-        setTimeout(() => {
-          const activeEl = document.activeElement;
-          if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA' && activeEl.tagName !== 'SELECT')) {
-            setIsInputFocused(false);
-          }
-        }, 100);
-      }
-    };
-
-    document.addEventListener('focusin', handleFocusIn);
-    document.addEventListener('focusout', handleFocusOut);
-    return () => {
-      document.removeEventListener('focusin', handleFocusIn);
-      document.removeEventListener('focusout', handleFocusOut);
-    };
-  }, []);
-
   // Mapped URL simulated routing parameters state
   const [simulatedUrlParams, setSimulatedUrlParams] = useState<{
     platform?: string;
@@ -185,19 +154,22 @@ export default function App() {
   const [reports, setReports] = useState<Report[]>([]);
   const [submissions, setSubmissions] = useState<BloggerSubmission[]>([]);
   const [bulkPurchases, setBulkPurchases] = useState<BulkPurchase[]>([]);
+  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>(INITIAL_KANBAN_COLUMNS);
 
   const handleRefreshAllData = async () => {
     try {
-      const [projs, ints, reps, bulks] = await Promise.all([
+      const [projs, ints, reps, bulks, cols] = await Promise.all([
         fetchProjects(),
         fetchIntegrations(),
         fetchReports(),
         fetchBulkPurchases(),
+        fetchKanbanColumns(),
       ]);
       setProjects(projs);
       setIntegrations(ints);
       setReports(reps);
       setBulkPurchases(bulks);
+      if (cols && cols.length > 0) setKanbanColumns(cols);
     } catch (err) {
       console.error("Failed to refresh data", err);
     }
@@ -209,13 +181,14 @@ export default function App() {
 
     async function loadData() {
       try {
-        const [users, projs, ints, reps, subs, bulks] = await Promise.all([
+        const [users, projs, ints, reps, subs, bulks, cols] = await Promise.all([
           fetchAllowedUsers(),
           fetchProjects(),
           fetchIntegrations(),
           fetchReports(),
           fetchSubmissions(),
           fetchBulkPurchases(),
+          fetchKanbanColumns(),
         ]);
 
         if (!cancelled) {
@@ -225,6 +198,7 @@ export default function App() {
           setReports(reps);
           setSubmissions(subs);
           setBulkPurchases(bulks);
+          if (cols && cols.length > 0) setKanbanColumns(cols);
         }
       } catch (err) {
         console.error("Failed to load backend data", err);
@@ -282,13 +256,13 @@ export default function App() {
   };
 
   const handleAddIntegration = async (newInt: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'>) => {
-    const integration = await createIntegration(newInt);
+    const integration = await createIntegration(newInt, currentUserEmail || undefined);
     setIntegrations((prev) => [...prev, integration]);
   };
 
   const handleEditIntegration = async (id: string, updatedFields: Partial<Integration>) => {
-    const integration = await updateIntegration(id, updatedFields);
-    setIntegrations((prev) => prev.map(item => item.id === id ? integration : item));
+    const integration = await updateIntegration(id, updatedFields, currentUserEmail || undefined);
+    setIntegrations((prev) => prev.map(item => item.id === id ? { ...item, ...integration } : item));
   };
 
   const handleDeleteIntegration = async (id: string) => {
@@ -321,20 +295,37 @@ export default function App() {
     });
   };
 
-  const handleUpdateIntegrationStage = (integrationId: string, newStage: KanbanStage) => {
+  const handleUpdateKanbanColumns = async (newCols: KanbanColumn[]) => {
+    setKanbanColumns(newCols);
+    try {
+      await saveKanbanColumns(newCols);
+    } catch (err) {
+      console.error('Failed to save kanban columns to backend:', err);
+    }
+  };
+
+  const handleUpdateIntegrationStage = async (integrationId: string, newStage: KanbanStage) => {
     setIntegrations((prev) => prev.map((item) => {
       if (item.id === integrationId) {
         return { ...item, kanbanStage: newStage };
       }
       return item;
     }));
+
+    try {
+      await updateIntegration(integrationId, { kanbanStage: newStage }, currentUserEmail || undefined);
+    } catch (err) {
+      console.error('Failed to persist integration stage to backend:', err);
+    }
   };
 
   const handleAddIntegrationToKanban = async (newInt: Omit<Integration, 'id' | 'totalAmount'>) => {
     try {
-      const created = await createIntegration(newInt);
-      const withStage = { ...created, kanbanStage: newInt.kanbanStage || 'wishlist' };
-      setIntegrations((prev) => [withStage, ...prev]);
+      const created = await createIntegration({
+        ...newInt,
+        createdBy: currentUserEmail || undefined,
+      }, currentUserEmail || undefined);
+      setIntegrations((prev) => [created, ...prev]);
     } catch (err) {
       console.error('Failed to create integration in Kanban:', err);
     }
@@ -452,6 +443,16 @@ export default function App() {
     ? projects
     : projects.filter(p => userAllowedProjects.includes(p.id));
 
+  const hasPageAccess = (pageKey: string) => {
+    if (currentUserRole === 'super_admin') return true;
+    if (currentUserRole === 'executive') {
+      const execPages = allowedPages || ['projects', 'reports_feed'];
+      return execPages.includes(pageKey);
+    }
+    if (pageKey === 'bulk_purchases' || pageKey === 'bloggers' || pageKey === 'kanban' || pageKey === 'requisites_directory') return true;
+    return allowedPages.includes(pageKey);
+  };
+
   // Enforce page-level access control: redirect user to their first allowed page if active tab is forbidden
   useEffect(() => {
     if (isBloggerCabinetRoute) return;
@@ -501,8 +502,8 @@ export default function App() {
       )}
 
       {/* Mobile Top Header */}
-      {!isTelegramWebApp && !isBloggerCabinetRoute && !isRequisitesRoute && (
-        <header className="fixed top-0 left-0 right-0 bg-white/90 border-b border-neutral-200/85 h-14 flex items-center justify-between px-4 z-50 md:hidden shadow-sm backdrop-blur-md">
+      {!isBloggerCabinetRoute && !isRequisitesRoute && (
+        <header className="fixed top-0 left-0 right-0 bg-white/95 border-b border-neutral-200/85 h-14 flex items-center justify-between px-4 z-50 md:hidden shadow-sm backdrop-blur-md">
           <div className="flex items-center gap-2">
             <span className="font-black text-xs tracking-wider uppercase text-neutral-800">
               Tezi.uz
@@ -539,7 +540,7 @@ export default function App() {
       )}
 
       {/* Main Core View Area */}
-      <main className={`flex-1 overflow-y-auto h-screen relative ${isTelegramWebApp ? 'p-0' : 'pt-18 p-4 pb-24 md:p-8 lg:p-12 md:pt-8'}`}>
+      <main className="flex-1 overflow-y-auto h-screen relative pt-16 p-4 pb-28 md:p-8 lg:p-12 md:pt-8">
         {/* Dynamic Simulated Query Parameter Info Bar */}
         {simulatedUrlParams.platform && currentUserRole === 'super_admin' && (
           <div className="mb-6 p-4 bg-white border-2 border-black rounded-lg flex items-center justify-between text-left text-xs text-black shadow-sm">
@@ -587,6 +588,8 @@ export default function App() {
               <KanbanView
                 projects={projects}
                 integrations={integrations}
+                columns={kanbanColumns}
+                onUpdateColumns={handleUpdateKanbanColumns}
                 onUpdateIntegrationStage={handleUpdateIntegrationStage}
                 onAddIntegration={handleAddIntegrationToKanban}
                 onEditIntegration={handleEditIntegration}
@@ -735,138 +738,162 @@ export default function App() {
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
-      {!isTelegramWebApp && !isBloggerCabinetRoute && !isRequisitesRoute && !isInputFocused && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200/80 h-16 flex items-center justify-around px-2 z-50 md:hidden shadow-lg backdrop-blur-md">
-          {/* Projects Tab */}
-          <button
-            onClick={() => setActiveTab('projects')}
-            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-              activeTab === 'projects' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-            }`}
-          >
-            <FolderKanban className="w-5 h-5" />
-            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-              {lang === 'ru' ? 'Проекты' : lang === 'uz' ? 'Loyihalar' : 'Projects'}
-            </span>
-          </button>
+      {!isBloggerCabinetRoute && !isRequisitesRoute && (
+        <nav 
+          className="fixed bottom-0 left-0 right-0 bg-white/95 border-t border-neutral-200/90 z-50 md:hidden shadow-lg backdrop-blur-md overflow-x-auto"
+          style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom))' }}
+        >
+          <div className="flex items-center justify-around min-w-full h-16 px-1 gap-1">
+            {/* Projects Tab */}
+            {hasPageAccess('projects') && (
+              <button
+                onClick={() => setActiveTab('projects')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'projects' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <FolderKanban className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Проекты' : lang === 'uz' ? 'Loyihalar' : 'Projects'}
+                </span>
+              </button>
+            )}
 
-          {/* Kanban Tab */}
-          <button
-            onClick={() => setActiveTab('kanban')}
-            className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-              activeTab === 'kanban' ? 'text-black scale-105 font-bold' : 'text-neutral-400 hover:text-neutral-600'
-            }`}
-          >
-            <Kanban className="w-5 h-5" />
-            <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-              {lang === 'ru' ? 'Канбан' : lang === 'uz' ? 'Kanban' : 'Kanban'}
-            </span>
-          </button>
+            {/* Kanban Tab */}
+            {hasPageAccess('kanban') && (
+              <button
+                onClick={() => setActiveTab('kanban')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'kanban' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <Kanban className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Канбан' : lang === 'uz' ? 'Kanban' : 'Kanban'}
+                </span>
+              </button>
+            )}
 
-          {/* Bloggers Tab */}
-          {currentUserRole !== 'executive' && (
-            <button
-              onClick={() => setActiveTab('bloggers')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-                activeTab === 'bloggers' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              <Users className="w-5 h-5" />
-              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-                {lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers'}
-              </span>
-            </button>
-          )}
+            {/* Bloggers Tab */}
+            {hasPageAccess('bloggers') && (
+              <button
+                onClick={() => setActiveTab('bloggers')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'bloggers' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <Users className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Блогеры' : lang === 'uz' ? 'Bloggerlar' : 'Bloggers'}
+                </span>
+              </button>
+            )}
 
-          {/* Create Report Tab */}
-          {currentUserRole !== 'product_manager' && currentUserRole !== 'executive' && (
-            <button
-              onClick={() => setActiveTab('reports')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-                activeTab === 'reports' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              <FilePlus className="w-5 h-5" />
-              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-                {lang === 'ru' ? 'Отчет' : lang === 'uz' ? 'Hisobot' : 'Report'}
-              </span>
-            </button>
-          )}
+            {/* Create Report Tab */}
+            {currentUserRole !== 'product_manager' && hasPageAccess('reports') && (
+              <button
+                onClick={() => setActiveTab('reports')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'reports' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <FilePlus className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Отчет' : lang === 'uz' ? 'Hisobot' : 'Report'}
+                </span>
+              </button>
+            )}
 
-          {/* Bulk Purchases Tab */}
-          {currentUserRole !== 'executive' && (
-            <button
-              onClick={() => setActiveTab('bulk_purchases')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-                activeTab === 'bulk_purchases' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              <Layers className="w-5 h-5" />
-              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-                {lang === 'ru' ? 'Оптовая' : lang === 'uz' ? 'Ommaviy' : 'Bulk'}
-              </span>
-            </button>
-          )}
+            {/* Bulk Purchases Tab */}
+            {hasPageAccess('bulk_purchases') && (
+              <button
+                onClick={() => setActiveTab('bulk_purchases')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'bulk_purchases' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <Layers className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Оптовая' : lang === 'uz' ? 'Ommaviy' : 'Bulk'}
+                </span>
+              </button>
+            )}
 
-          {/* Reports Feed Tab */}
-          {currentUserRole !== 'product_manager' && (
-            <button
-              onClick={() => setActiveTab('reports_feed')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-                activeTab === 'reports_feed' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              <FileText className="w-5 h-5" />
-              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-                {lang === 'ru' ? 'Лента' : lang === 'uz' ? 'Lenta' : 'Feed'}
-              </span>
-            </button>
-          )}
+            {/* Reports Feed Tab */}
+            {currentUserRole !== 'product_manager' && hasPageAccess('reports_feed') && (
+              <button
+                onClick={() => setActiveTab('reports_feed')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'reports_feed' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <FileText className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Лента' : lang === 'uz' ? 'Lenta' : 'Feed'}
+                </span>
+              </button>
+            )}
 
-          {/* Blogger Cabinet Tab */}
-          {currentUserRole === 'super_admin' && (
-            <button
-              onClick={() => setActiveTab('blogger')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-                activeTab === 'blogger' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              <UserSquare2 className="w-5 h-5" />
-              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-                {lang === 'ru' ? 'Кабинет' : lang === 'uz' ? 'Kabinet' : 'Cabinet'}
-              </span>
-            </button>
-          )}
+            {/* Other Expenses Tab */}
+            {currentUserRole !== 'product_manager' && hasPageAccess('other_expenses') && (
+              <button
+                onClick={() => setActiveTab('other_expenses')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'other_expenses' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <Receipt className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Расходы' : lang === 'uz' ? 'Xarajat' : 'Expenses'}
+                </span>
+              </button>
+            )}
 
-          {/* Access Management Tab */}
-          {currentUserRole === 'super_admin' && (
-            <button
-              onClick={() => setActiveTab('access')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-                activeTab === 'access' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              <Shield className="w-5 h-5" />
-              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-                {lang === 'ru' ? 'Доступ' : lang === 'uz' ? 'Ruxsat' : 'Access'}
-              </span>
-            </button>
-          )}
+            {/* Blogger Cabinet Tab */}
+            {currentUserRole === 'super_admin' && (
+              <button
+                onClick={() => setActiveTab('blogger')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'blogger' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <UserSquare2 className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Кабинет' : lang === 'uz' ? 'Kabinet' : 'Cabinet'}
+                </span>
+              </button>
+            )}
 
-          {/* System Logs Tab */}
-          {currentUserRole === 'super_admin' && (
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`flex flex-col items-center justify-center flex-1 py-1 text-center transition-all duration-150 ${
-                activeTab === 'logs' ? 'text-black scale-105' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              <Terminal className="w-5 h-5" />
-              <span className="text-[9px] font-black mt-1 truncate max-w-[70px]">
-                {lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'Logs'}
-              </span>
-            </button>
-          )}
+            {/* Access Management Tab */}
+            {currentUserRole === 'super_admin' && (
+              <button
+                onClick={() => setActiveTab('access')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'access' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <Shield className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Доступ' : lang === 'uz' ? 'Ruxsat' : 'Access'}
+                </span>
+              </button>
+            )}
+
+            {/* System Logs Tab */}
+            {currentUserRole === 'super_admin' && (
+              <button
+                onClick={() => setActiveTab('logs')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
+                  activeTab === 'logs' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                }`}
+              >
+                <Terminal className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'Logs'}
+                </span>
+              </button>
+            )}
+          </div>
         </nav>
       )}
     </div>

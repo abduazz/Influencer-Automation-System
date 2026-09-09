@@ -61,7 +61,7 @@ export default function Sidebar({
     if (userRole === 'super_admin') return true;
     if (userRole === 'executive') {
       const execPages = allowedPages || ['projects', 'reports_feed'];
-      return execPages.includes(pageKey) && (pageKey === 'projects' || pageKey === 'reports_feed');
+      return execPages.includes(pageKey);
     }
     if (pageKey === 'bulk_purchases' || pageKey === 'bloggers' || pageKey === 'kanban' || pageKey === 'requisites_directory') return true;
     return (allowedPages || ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);

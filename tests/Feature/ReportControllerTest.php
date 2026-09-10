@@ -373,5 +373,52 @@ class ReportControllerTest extends TestCase
         $response2->assertStatus(422);
         $response2->assertJsonValidationErrors(['amount']);
     }
+
+    public function test_creating_report_with_null_destination_and_receipt(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $project = Project::create([
+            'name' => 'Campaign Null Destination',
+            'description' => 'Testing Null Destination',
+        ]);
+
+        $fakeBase64 = 'data:image/jpeg;base64,' . base64_encode('fake image content');
+
+        $payload = [
+            'paymentType' => 'full',
+            'date' => '2026-09-10',
+            'projectId' => $project->id,
+            'destination' => null,
+            'channelBlogger' => 'blogger_without_destination',
+            'bloggerPageLink' => 'https://instagram.com/blogger_without_destination',
+            'platform' => 'Instagram',
+            'slotsCount' => 1,
+            'paidSlotsCount' => 1,
+            'pricePerSlot' => 500000,
+            'receipt' => $fakeBase64,
+            'lang' => 'uz',
+        ];
+
+        $response = $this->postJson('/api/reports', $payload);
+        $response->assertStatus(201);
+        $response->assertJson([
+            'destination' => null,
+            'receipt' => $fakeBase64,
+            'channelBlogger' => 'blogger_without_destination',
+        ]);
+
+        $this->assertDatabaseHas('reports', [
+            'channel_blogger' => 'blogger_without_destination',
+            'destination' => null,
+        ]);
+
+        $report = \App\Models\Report::where('channel_blogger', 'blogger_without_destination')->first();
+        $this->assertNotNull($report);
+        $this->assertEquals($fakeBase64, $report->receipt);
+    }
 }
+
 

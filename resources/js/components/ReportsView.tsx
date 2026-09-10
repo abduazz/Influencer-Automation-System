@@ -101,7 +101,7 @@ const parsePrice = (str: string): number | '' => {
   return isNaN(num) ? '' : num;
 };
 
-const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.7): Promise<string> => {
+const compressImage = (file: File, maxWidth = 1000, maxHeight = 1000, quality = 0.65): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
       const reader = new FileReader();
@@ -429,7 +429,7 @@ export default function ReportsView({
 
     const payload: any = {
       date,
-      destination,
+      destination: destination.trim(),
       comments,
       paymentType,
       receipt,
@@ -1313,8 +1313,14 @@ export default function ReportsView({
                           onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (file) {
+                              if (file.size > 8 * 1024 * 1024) {
+                                alert(lang === 'ru' ? 'Размер файла не должен превышать 8 МБ' : lang === 'uz' ? 'Fayl hajmi 8 MB dan oshmasligi kerak' : 'File size must not exceed 8 MB');
+                                e.target.value = '';
+                                setReceipt(null);
+                                return;
+                              }
                               try {
-                                const compressed = await compressImage(file);
+                                const compressed = await compressImage(file, 1000, 1000, 0.65);
                                 setReceipt(compressed);
                               } catch (err) {
                                 console.error('Image compression failed:', err);
@@ -1330,6 +1336,30 @@ export default function ReportsView({
                           }}
                           className="w-full text-sm text-neutral-500 file:mr-4 file:py-3.5 file:px-8 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-neutral-100 file:text-neutral-700 hover:file:bg-neutral-250 cursor-pointer"
                         />
+                        {receipt && (
+                          <div className="mt-2 flex items-center justify-between p-2 bg-neutral-50 rounded-lg border border-neutral-200">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              {receipt.startsWith('data:image/') ? (
+                                <img src={receipt} alt="Receipt Preview" className="w-8 h-8 object-cover rounded border border-neutral-300" />
+                              ) : (
+                                <div className="w-8 h-8 bg-neutral-200 rounded flex items-center justify-center text-[10px] font-bold text-neutral-600">PDF</div>
+                              )}
+                              <span className="text-[10px] text-neutral-600 font-medium truncate">
+                                {lang === 'ru' ? 'Файл прикреплен' : lang === 'uz' ? 'Fayl biriktirildi' : 'File attached'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReceipt(null);
+                                setFileInputKey(prev => prev + 1);
+                              }}
+                              className="text-[10px] text-red-600 hover:text-red-700 font-bold px-2 py-1 hover:bg-red-50 rounded transition"
+                            >
+                              ✕ {lang === 'ru' ? 'Удалить' : lang === 'uz' ? 'O‘chirish' : 'Remove'}
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Submit inside TG Mini App */}

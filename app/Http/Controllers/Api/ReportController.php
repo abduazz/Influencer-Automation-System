@@ -78,8 +78,9 @@ class ReportController extends Controller
             'payment_type' => $paymentType,
             'date' => $request->date,
             'project_id' => $request->projectId ?: null,
-            'destination' => $request->destination,
+            'destination' => $request->destination ?: null,
             'comments' => $request->comments,
+            'receipt' => $request->receipt ?: null,
             'created_by' => $createdByName,
         ];
 
@@ -311,7 +312,7 @@ class ReportController extends Controller
             'comments' => $report->comments ?? '',
             'slotsConfig' => $report->slots_config ?? [],
             'paymentType' => $report->payment_type,
-            'receipt' => null,
+            'receipt' => $report->receipt,
             'bloggerCabinetToken' => $cabinetToken,
             'createdBy' => $report->created_by,
         ], 201);

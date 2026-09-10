@@ -4,10 +4,11 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { Project, Integration } from '../data/mockData';
+import { Project, Integration, SubscriberHistoryItem } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
 import { getPlatformBadgeClasses, formatTelegramLink, formatTelegramHandle } from '../utils/platform';
+import BloggerAudienceCard from './BloggerAudienceCard';
 import { 
   Users, 
   Search, 
@@ -36,6 +37,8 @@ interface BloggersViewProps {
   integrations?: Integration[];
   lang?: Language;
   userRole?: string | null;
+  onRefreshSubscribers?: (integrationId: string) => Promise<void>;
+  onAddManualSnapshot?: (integrationId: string, date: string, count: number, note?: string) => Promise<void>;
 }
 
 export interface BloggerSummary {
@@ -51,6 +54,10 @@ export interface BloggerSummary {
   totalSpend: number;
   latestDate: string;
   integrations: Integration[];
+  subscribersCount?: number | null;
+  subscribersUpdatedAt?: string | null;
+  subscribersHistory?: SubscriberHistoryItem[];
+  representativeIntegration?: Integration;
 }
 
 const BADGE_COLORS = [
@@ -72,15 +79,25 @@ export default function BloggersView({
   projects = [],
   integrations = [],
   lang = 'ru',
-  userRole
+  userRole,
+  onRefreshSubscribers,
+  onAddManualSnapshot
 }: BloggersViewProps) {
   const currentLang = lang || 'ru';
   const t = translations[currentLang] || translations['ru'] || {};
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
+    return localStorage.getItem('tezi_bloggers_project_id') || 'all';
+  });
+
+  const handleSelectProject = (id: string) => {
+    setSelectedProjectId(id);
+    localStorage.setItem('tezi_bloggers_project_id', id);
+  };
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'integrations' | 'spend' | 'date'>('name');
+  const [selectedAudienceTier, setSelectedAudienceTier] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'name' | 'integrations' | 'spend' | 'date' | 'subscribers'>('name');
   const [expandedBlogger, setExpandedBlogger] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
@@ -93,12 +110,17 @@ export default function BloggersView({
       rawName: string;
       displayName: string;
       bloggerPageLink?: string;
+      telegramUsername?: string;
       projectMap: Map<string, { project: Project; count: number }>;
       platformsSet: Set<string>;
       integrations: Integration[];
       totalSlots: number;
       totalSpend: number;
       latestDate: string;
+      subscribersCount?: number | null;
+      subscribersUpdatedAt?: string | null;
+      subscribersHistory?: SubscriberHistoryItem[];
+      representativeIntegration?: Integration;
     }>();
 
     safeIntegrations.forEach((item) => {
@@ -121,7 +143,11 @@ export default function BloggersView({
           integrations: [],
           totalSlots: 0,
           totalSpend: 0,
-          latestDate: item.startDate ? String(item.startDate) : ''
+          latestDate: item.startDate ? String(item.startDate) : '',
+          subscribersCount: item.subscribersCount ?? null,
+          subscribersUpdatedAt: item.subscribersUpdatedAt ?? null,
+          subscribersHistory: item.subscribersHistory ?? [],
+          representativeIntegration: item
         };
         map.set(clean, record);
       }
@@ -132,6 +158,14 @@ export default function BloggersView({
       }
       if (!record.telegramUsername && item.telegramUsername) {
         record.telegramUsername = String(item.telegramUsername);
+      }
+
+      // Update subscribers info if this item has newer or higher information
+      if (item.subscribersCount !== undefined && item.subscribersCount !== null) {
+        record.subscribersCount = item.subscribersCount;
+        record.subscribersUpdatedAt = item.subscribersUpdatedAt;
+        record.subscribersHistory = item.subscribersHistory;
+        record.representativeIntegration = item;
       }
 
       // Add project reference
@@ -191,7 +225,11 @@ export default function BloggersView({
         totalSlots: data.totalSlots,
         totalSpend: data.totalSpend,
         latestDate: data.latestDate,
-        integrations: data.integrations
+        integrations: data.integrations,
+        subscribersCount: data.subscribersCount,
+        subscribersUpdatedAt: data.subscribersUpdatedAt,
+        subscribersHistory: data.subscribersHistory,
+        representativeIntegration: data.representativeIntegration || data.integrations[0]
       };
     });
 
@@ -221,8 +259,20 @@ export default function BloggersView({
         if (!matchesPlat) return false;
       }
 
+      // Audience Tier filter
+      if (selectedAudienceTier !== 'all') {
+        const cnt = blogger.subscribersCount || 0;
+        if (selectedAudienceTier === 'nano' && (cnt <= 0 || cnt >= 15000)) return false;
+        if (selectedAudienceTier === 'micro' && (cnt < 15000 || cnt >= 100000)) return false;
+        if (selectedAudienceTier === 'mid' && (cnt < 100000 || cnt >= 500000)) return false;
+        if (selectedAudienceTier === 'macro' && cnt < 500000) return false;
+      }
+
       return true;
     }).sort((a, b) => {
+      if (sortBy === 'subscribers') {
+        return (b.subscribersCount || 0) - (a.subscribersCount || 0);
+      }
       if (sortBy === 'name') {
         return (a.cleanName || '').localeCompare(b.cleanName || '');
       }
@@ -237,7 +287,7 @@ export default function BloggersView({
       }
       return 0;
     });
-  }, [bloggerSummaries, searchQuery, selectedProjectId, selectedPlatform, sortBy]);
+  }, [bloggerSummaries, searchQuery, selectedProjectId, selectedPlatform, selectedAudienceTier, sortBy]);
 
   // Total summary stats
   const totalUniqueBloggers = bloggerSummaries.length;
@@ -335,7 +385,7 @@ export default function BloggersView({
             <FolderKanban className="w-3.5 h-3.5 text-neutral-400 mr-1.5 shrink-0" />
             <select
               value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
+              onChange={(e) => handleSelectProject(e.target.value)}
               className="bg-transparent font-medium text-neutral-700 text-xs focus:outline-none cursor-pointer"
             >
               <option value="all">{currentLang === 'ru' ? 'Все проекты' : currentLang === 'uz' ? 'Barcha loyihalar' : 'All Projects'}</option>
@@ -364,6 +414,22 @@ export default function BloggersView({
             </select>
           </div>
 
+          {/* Audience Filter */}
+          <div className="flex items-center bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs">
+            <Users className="w-3.5 h-3.5 text-neutral-400 mr-1.5 shrink-0" />
+            <select
+              value={selectedAudienceTier}
+              onChange={(e) => setSelectedAudienceTier(e.target.value)}
+              className="bg-transparent font-medium text-neutral-700 text-xs focus:outline-none cursor-pointer"
+            >
+              <option value="all">{currentLang === 'ru' ? 'Все размеры аудитории' : currentLang === 'uz' ? 'Barcha auditoriyalar' : 'All Audience Sizes'}</option>
+              <option value="nano">{currentLang === 'ru' ? 'Nano (<15K)' : 'Nano (<15K)'}</option>
+              <option value="micro">{currentLang === 'ru' ? 'Micro (15K-100K)' : 'Micro (15K-100K)'}</option>
+              <option value="mid">{currentLang === 'ru' ? 'Mid-tier (100K-500K)' : 'Mid-tier (100K-500K)'}</option>
+              <option value="macro">{currentLang === 'ru' ? 'Macro (500K+)' : 'Macro (500K+)'}</option>
+            </select>
+          </div>
+
           {/* Sort By */}
           <div className="flex items-center bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs">
             <ArrowUpDown className="w-3.5 h-3.5 text-neutral-400 mr-1.5 shrink-0" />
@@ -372,6 +438,7 @@ export default function BloggersView({
               onChange={(e) => setSortBy(e.target.value as any)}
               className="bg-transparent font-medium text-neutral-700 text-xs focus:outline-none cursor-pointer"
             >
+              <option value="subscribers">{currentLang === 'ru' ? 'По подписчикам (max)' : currentLang === 'uz' ? 'Obunachilar bo‘yicha' : 'By Subscribers'}</option>
               <option value="name">{currentLang === 'ru' ? 'По имени (А-Я)' : currentLang === 'uz' ? 'Ism bo‘yicha' : 'By Name'}</option>
               <option value="integrations">{currentLang === 'ru' ? 'По кол-ву сделок' : currentLang === 'uz' ? 'Bitimlar soni bo‘yicha' : 'By Deals Count'}</option>
               <option value="spend">{currentLang === 'ru' ? 'По бюджету' : currentLang === 'uz' ? 'Byudjet bo‘yicha' : 'By Total Spent'}</option>
@@ -514,7 +581,7 @@ export default function BloggersView({
                     {/* Expand Chevron button */}
                     <button
                       type="button"
-                      className="p-1.5 text-neutral-400 hover:text-black hover:bg-neutral-100 rounded-lg transition"
+                      className="p-1.5 text-neutral-400 hover:text-black hover:bg-neutral-100 rounded-lg transition cursor-pointer"
                       title={isExpanded ? "Collapse" : "Expand Details"}
                     >
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -524,7 +591,20 @@ export default function BloggersView({
 
                 {/* Expanded Integrations List Accordion */}
                 {isExpanded && (
-                  <div className="border-t border-neutral-200/80 bg-neutral-50/70 p-4 md:p-5 space-y-3">
+                  <div className="border-t border-neutral-200/80 bg-neutral-50/70 p-4 md:p-5 space-y-4">
+                    {/* Blogger Audience & Growth Widget */}
+                    {blogger.representativeIntegration && (
+                      <div className="max-w-xl">
+                        <BloggerAudienceCard
+                          integration={blogger.representativeIntegration}
+                          lang={currentLang}
+                          onRefreshSubscribers={onRefreshSubscribers}
+                          onAddManualSnapshot={onAddManualSnapshot}
+                          isCollapsible={false}
+                        />
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-black text-neutral-800 uppercase tracking-wider flex items-center gap-2">
                         <Layers className="w-3.5 h-3.5 text-neutral-500" />

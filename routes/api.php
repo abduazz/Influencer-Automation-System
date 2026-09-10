@@ -25,6 +25,8 @@ Route::get('/integrations', [IntegrationController::class, 'index']);
 Route::post('/integrations', [IntegrationController::class, 'store']);
 Route::put('/integrations/{integration}', [IntegrationController::class, 'update']);
 Route::delete('/integrations/{integration}', [IntegrationController::class, 'destroy']);
+Route::post('/integrations/{integration}/refresh-subscribers', [IntegrationController::class, 'refreshSubscribers']);
+Route::post('/integrations/{integration}/subscribers-history', [IntegrationController::class, 'addSubscriberHistory']);
 
 Route::get('/kanban-columns', [KanbanColumnController::class, 'index']);
 Route::post('/kanban-columns', [KanbanColumnController::class, 'sync']);

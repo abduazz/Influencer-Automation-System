@@ -24,9 +24,11 @@ export interface KanbanColumn {
   id: string;
   title: string;
   color: string;
+  hidden?: boolean;
 }
 
 export const INITIAL_KANBAN_COLUMNS: KanbanColumn[] = [
+  { id: 'backlog', title: 'Backlog', color: 'slate', hidden: true },
   { id: 'wishlist', title: 'Желаемые', color: 'purple' },
   { id: 'negotiation', title: 'Обговорить', color: 'amber' },
   { id: 'requisites_pending', title: 'Получить реквизиты', color: 'blue' },
@@ -67,6 +69,13 @@ export interface DealComment {
   createdAt: string;
 }
 
+export interface SubscriberHistoryItem {
+  date: string;
+  count: number;
+  source?: 'api' | 'manual' | 'historical' | string;
+  note?: string | null;
+}
+
 export interface Integration {
   id: string;
   projectId: string;
@@ -89,6 +98,9 @@ export interface Integration {
   requisites?: BloggerRequisites;
   slotsConfig?: SlotConfig[];
   comments?: string | DealComment[];
+  subscribersCount?: number | null;
+  subscribersUpdatedAt?: string | null;
+  subscribersHistory?: SubscriberHistoryItem[];
 }
 
 export interface Report {

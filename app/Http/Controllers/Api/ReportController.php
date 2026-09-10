@@ -59,6 +59,7 @@ class ReportController extends Controller
             'amount' => 'required_if:paymentType,other|nullable|numeric|gt:0',
             'receipt' => 'nullable|string',
             'lang' => 'nullable|string|in:ru,en,uz',
+            'integrationId' => 'nullable|string',
         ], [
             'pricePerSlot.gt' => 'Сумма не должна быть равна нулю.',
             'amount.gt' => 'Сумма не должна быть равна нулю.',
@@ -136,10 +137,16 @@ class ReportController extends Controller
             }
 
             foreach ($projectGroups as $targetProjectId => $group) {
-                $existingIntegration = Integration::where('project_id', $targetProjectId)
-                    ->where('platform', $report->platform)
-                    ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
-                    ->first();
+                $existingIntegration = null;
+                if ($request->filled('integrationId')) {
+                    $existingIntegration = Integration::find($request->input('integrationId'));
+                }
+                if (!$existingIntegration) {
+                    $existingIntegration = Integration::where('project_id', $targetProjectId)
+                        ->where('platform', $report->platform)
+                        ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                        ->first();
+                }
 
                 $groupSlotsCount = $group['slots_count'];
                 $groupSlotsConfig = $group['slots_config'];
@@ -163,6 +170,18 @@ class ReportController extends Controller
                         if (!empty($report->blogger_page_link)) {
                             $existingIntegrationUpdate['blogger_page_link'] = $report->blogger_page_link;
                         }
+                    } else if ($existingIntegration->kanban_stage === 'ready_for_payment') {
+                        // The deal was at "ready_for_payment" stage in Kanban; this report fulfills it.
+                        $existingIntegrationUpdate = [
+                            'price_per_slot' => $report->price_per_slot,
+                            'slots_count' => max($existingIntegration->slots_count, $groupSlotsCount),
+                            'paid_slots_count' => max($existingIntegration->paid_slots_count, $groupPaidSlotsCount),
+                            'slots_config' => !empty($groupSlotsConfig) ? $groupSlotsConfig : $existingIntegration->slots_config,
+                            'kanban_stage' => 'paid_in_progress',
+                        ];
+                        if (!empty($report->blogger_page_link)) {
+                            $existingIntegrationUpdate['blogger_page_link'] = $report->blogger_page_link;
+                        }
                     } else {
                         $newSlotsCount = $existingIntegration->slots_count + $groupSlotsCount;
                         $newPaidSlotsCount = $existingIntegration->paid_slots_count + $groupPaidSlotsCount;
@@ -177,6 +196,14 @@ class ReportController extends Controller
                         if (!empty($report->blogger_page_link)) {
                             $existingIntegrationUpdate['blogger_page_link'] = $report->blogger_page_link;
                         }
+                    }
+
+                    if ($existingIntegration->kanban_stage === 'ready_for_payment') {
+                        $existingIntegrationUpdate['kanban_stage'] = 'paid_in_progress';
+                    }
+
+                    if (!empty($report->destination) && empty($existingIntegration->referral_link)) {
+                        $existingIntegrationUpdate['referral_link'] = $report->destination;
                     }
 
                     $reportDate = \Carbon\Carbon::parse($report->date);

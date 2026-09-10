@@ -32,6 +32,9 @@ class Integration extends Model
         'comments',
         'kanban_stage',
         'created_by',
+        'subscribers_count',
+        'subscribers_updated_at',
+        'subscribers_history',
     ];
 
     protected $casts = [
@@ -44,6 +47,9 @@ class Integration extends Model
         'paid_slots_count' => 'integer',
         'slots_config' => 'array',
         'comments' => 'array',
+        'subscribers_count' => 'integer',
+        'subscribers_updated_at' => 'datetime',
+        'subscribers_history' => 'array',
     ];
 
     public static function generateCabinetToken(string $bloggerName): string

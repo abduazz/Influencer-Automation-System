@@ -14,9 +14,11 @@ class KanbanColumn extends Model
         'title',
         'color',
         'position',
+        'is_hidden',
     ];
 
     protected $casts = [
         'position' => 'integer',
+        'is_hidden' => 'boolean',
     ];
 }

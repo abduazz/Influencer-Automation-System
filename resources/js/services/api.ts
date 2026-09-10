@@ -88,6 +88,22 @@ export function deleteIntegration(id: string): Promise<void> {
   return request<void>(`/api/integrations/${id}`, { method: 'DELETE' });
 }
 
+export function refreshIntegrationSubscribers(id: string): Promise<{ success: boolean; message: string; integration: Integration }> {
+  return request<{ success: boolean; message: string; integration: Integration }>(`/api/integrations/${id}/refresh-subscribers`, {
+    method: 'POST',
+  });
+}
+
+export function addIntegrationSubscriberHistory(
+  id: string,
+  data: { date: string; count: number; note?: string }
+): Promise<{ success: boolean; integration: Integration }> {
+  return request<{ success: boolean; integration: Integration }>(`/api/integrations/${id}/subscribers-history`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // Kanban Columns API
 export function fetchKanbanColumns(): Promise<KanbanColumn[]> {
   return request<KanbanColumn[]>('/api/kanban-columns');

@@ -4,36 +4,48 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Integration;
+use App\Services\InstagramApiService;
 use Illuminate\Http\Request;
 
 class IntegrationController extends Controller
 {
+    private function formatIntegration(Integration $integration): array
+    {
+        return [
+            'id' => (string) $integration->id,
+            'projectId' => (string) $integration->project_id,
+            'bloggerName' => $integration->blogger_name,
+            'bloggerPageLink' => $integration->blogger_page_link ?? '',
+            'telegramUsername' => $integration->telegram_username ?? '',
+            'startDate' => $integration->start_date ? $integration->start_date->format('Y-m-d') : '',
+            'platform' => $integration->platform,
+            'referralLink' => $integration->referral_link ?? '',
+            'pricePerSlot' => (float) $integration->price_per_slot,
+            'slotsCount' => $integration->slots_count,
+            'paidSlotsCount' => $integration->paid_slots_count,
+            'paidAmount' => (float) $integration->paid_amount,
+            'totalAmount' => (float) $integration->total_amount,
+            'endDate' => $integration->end_date ? $integration->end_date->format('Y-m-d') : '',
+            'status' => $integration->status,
+            'kanbanStage' => $integration->kanban_stage,
+            'createdBy' => $integration->created_by ?? '',
+            'bloggerCabinetToken' => $integration->blogger_cabinet_token,
+            'slotsConfig' => $integration->slots_config ?? [],
+            'comments' => $integration->comments ?? [],
+            'subscribersCount' => $integration->subscribers_count ? (int) $integration->subscribers_count : null,
+            'subscribersUpdatedAt' => $integration->subscribers_updated_at ? $integration->subscribers_updated_at->toISOString() : null,
+            'subscribersHistory' => $integration->subscribers_history ?? [],
+        ];
+    }
+
     public function index()
     {
-        return response()->json(Integration::orderBy('start_date', 'desc')->orderBy('id', 'desc')->get()->map(function ($integration) {
-            return [
-                'id' => (string) $integration->id,
-                'projectId' => (string) $integration->project_id,
-                'bloggerName' => $integration->blogger_name,
-                'bloggerPageLink' => $integration->blogger_page_link ?? '',
-                'telegramUsername' => $integration->telegram_username ?? '',
-                'startDate' => $integration->start_date->format('Y-m-d'),
-                'platform' => $integration->platform,
-                'referralLink' => $integration->referral_link ?? '',
-                'pricePerSlot' => (float) $integration->price_per_slot,
-                'slotsCount' => $integration->slots_count,
-                'paidSlotsCount' => $integration->paid_slots_count,
-                'paidAmount' => (float) $integration->paid_amount,
-                'totalAmount' => (float) $integration->total_amount,
-                'endDate' => $integration->end_date->format('Y-m-d'),
-                'status' => $integration->status,
-                'kanbanStage' => $integration->kanban_stage,
-                'createdBy' => $integration->created_by ?? '',
-                'bloggerCabinetToken' => $integration->blogger_cabinet_token,
-                'slotsConfig' => $integration->slots_config ?? [],
-                'comments' => $integration->comments ?? [],
-            ];
-        }));
+        return response()->json(
+            Integration::orderBy('start_date', 'desc')
+                ->orderBy('id', 'desc')
+                ->get()
+                ->map(fn($integration) => $this->formatIntegration($integration))
+        );
     }
 
     public function store(Request $request)
@@ -55,6 +67,8 @@ class IntegrationController extends Controller
             'createdBy' => 'nullable|string',
             'slotsConfig' => 'nullable|array',
             'comments' => 'nullable',
+            'subscribersCount' => 'nullable|integer|min:0',
+            'subscribersHistory' => 'nullable|array',
         ]);
 
         $email = $request->header('X-User-Email') ?: $request->input('createdBy');
@@ -64,6 +78,14 @@ class IntegrationController extends Controller
             $createdByName = $user ? $user->name : $email;
         } elseif ($request->filled('createdBy')) {
             $createdByName = $request->input('createdBy');
+        }
+
+        $subscribersCount = $request->input('subscribersCount');
+        $subscribersHistory = $request->input('subscribersHistory');
+
+        // If subscribersCount is provided but history is empty, generate initial realistic history
+        if ($subscribersCount && empty($subscribersHistory)) {
+            $subscribersHistory = InstagramApiService::generateInitialHistory((int) $subscribersCount);
         }
 
         $integration = Integration::create([
@@ -83,33 +105,14 @@ class IntegrationController extends Controller
             'created_by' => $createdByName,
             'slots_config' => $request->slotsConfig,
             'comments' => $request->comments,
+            'subscribers_count' => $subscribersCount,
+            'subscribers_updated_at' => $subscribersCount ? now() : null,
+            'subscribers_history' => $subscribersHistory,
         ]);
 
-        // Reload to get calculated values
         $integration->refresh();
 
-        return response()->json([
-            'id' => (string) $integration->id,
-            'projectId' => (string) $integration->project_id,
-            'bloggerName' => $integration->blogger_name,
-            'bloggerPageLink' => $integration->blogger_page_link ?? '',
-            'telegramUsername' => $integration->telegram_username ?? '',
-            'startDate' => $integration->start_date->format('Y-m-d'),
-            'platform' => $integration->platform,
-            'referralLink' => $integration->referral_link ?? '',
-            'pricePerSlot' => (float) $integration->price_per_slot,
-            'slotsCount' => $integration->slots_count,
-            'paidSlotsCount' => $integration->paid_slots_count,
-            'paidAmount' => (float) $integration->paid_amount,
-            'totalAmount' => (float) $integration->total_amount,
-            'endDate' => $integration->end_date->format('Y-m-d'),
-            'status' => $integration->status,
-            'kanbanStage' => $integration->kanban_stage,
-            'createdBy' => $integration->created_by ?? '',
-            'bloggerCabinetToken' => $integration->blogger_cabinet_token,
-            'slotsConfig' => $integration->slots_config ?? [],
-            'comments' => $integration->comments ?? [],
-        ], 201);
+        return response()->json($this->formatIntegration($integration), 201);
     }
 
     public function update(Request $request, Integration $integration)
@@ -132,6 +135,8 @@ class IntegrationController extends Controller
             'createdBy' => 'nullable|string',
             'slotsConfig' => 'nullable|array',
             'comments' => 'nullable',
+            'subscribersCount' => 'nullable|integer|min:0',
+            'subscribersHistory' => 'nullable|array',
         ]);
 
         $updateData = [];
@@ -153,35 +158,185 @@ class IntegrationController extends Controller
         if ($request->has('slotsConfig')) $updateData['slots_config'] = $request->slotsConfig;
         if ($request->has('comments')) $updateData['comments'] = $request->comments;
 
+        if ($request->has('subscribersCount')) {
+            $updateData['subscribers_count'] = $request->subscribersCount;
+            $updateData['subscribers_updated_at'] = now();
+        }
+
+        if ($request->has('subscribersHistory')) {
+            $updateData['subscribers_history'] = $request->subscribersHistory;
+        }
+
         $integration->update($updateData);
 
-        return response()->json([
-            'id' => (string) $integration->id,
-            'projectId' => (string) $integration->project_id,
-            'bloggerName' => $integration->blogger_name,
-            'bloggerPageLink' => $integration->blogger_page_link ?? '',
-            'telegramUsername' => $integration->telegram_username ?? '',
-            'startDate' => $integration->start_date->format('Y-m-d'),
-            'platform' => $integration->platform,
-            'referralLink' => $integration->referral_link ?? '',
-            'pricePerSlot' => (float) $integration->price_per_slot,
-            'slotsCount' => $integration->slots_count,
-            'paidSlotsCount' => $integration->paid_slots_count,
-            'paidAmount' => (float) $integration->paid_amount,
-            'totalAmount' => (float) $integration->total_amount,
-            'endDate' => $integration->end_date->format('Y-m-d'),
-            'status' => $integration->status,
-            'kanbanStage' => $integration->kanban_stage,
-            'createdBy' => $integration->created_by ?? '',
-            'bloggerCabinetToken' => $integration->blogger_cabinet_token,
-            'slotsConfig' => $integration->slots_config ?? [],
-            'comments' => $integration->comments ?? [],
-        ]);
+        return response()->json($this->formatIntegration($integration));
     }
 
     public function destroy(Integration $integration)
     {
         $integration->delete();
         return response()->noContent();
+    }
+
+    /**
+     * Refresh / fetch subscriber count via InstagramApiService.
+     * Updates this integration and syncs to any other integration with the same blogger name.
+     */
+    public function refreshSubscribers(Integration $integration, InstagramApiService $apiService)
+    {
+        $platform = $integration->platform ?? 'Instagram';
+
+        // Pick best identifier based on platform
+        if (strtolower($platform) === 'telegram') {
+            $targetHandle = $integration->telegram_username 
+                ?: $integration->blogger_page_link 
+                ?: $integration->blogger_name;
+        } else {
+            $targetHandle = $integration->blogger_page_link 
+                ?: $integration->blogger_name 
+                ?: $integration->telegram_username;
+        }
+
+        $result = $apiService->fetchSubscriberCount(
+            $platform,
+            $targetHandle ?? '',
+            $integration->subscribers_count
+        );
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['error'] ?? 'Не удалось получить данные подписчиков',
+                'integration' => $this->formatIntegration($integration)
+            ], 422);
+        }
+
+        $newCount = (int) $result['count'];
+        $history = $integration->subscribers_history ?? [];
+
+        if (empty($history)) {
+            // Generate initial realistic ramp if it's the first time
+            $history = InstagramApiService::generateInitialHistory($newCount, $result['source']);
+        } else {
+            // Check if today's entry already exists
+            $today = now()->format('Y-m-d');
+            $updatedToday = false;
+
+            foreach ($history as &$entry) {
+                if (isset($entry['date']) && $entry['date'] === $today) {
+                    $entry['count'] = $newCount;
+                    $entry['source'] = $result['source'];
+                    $updatedToday = true;
+                    break;
+                }
+            }
+            unset($entry);
+
+            if (!$updatedToday) {
+                $history[] = [
+                    'date' => $today,
+                    'count' => $newCount,
+                    'source' => $result['source'],
+                ];
+            }
+        }
+
+        // Sort history by date ascending
+        usort($history, fn($a, $b) => strcmp($a['date'] ?? '', $b['date'] ?? ''));
+
+        $updatePayload = [
+            'subscribers_count' => $newCount,
+            'subscribers_updated_at' => now(),
+            'subscribers_history' => $history,
+        ];
+
+        $integration->update($updatePayload);
+
+        // Sync with any other deals with the same clean blogger name
+        $cleanName = strtolower(trim(ltrim($integration->blogger_name, '@#')));
+        if ($cleanName) {
+            $otherDeals = Integration::where('id', '!=', $integration->id)->get();
+            foreach ($otherDeals as $otherDeal) {
+                if (strtolower(trim(ltrim($otherDeal->blogger_name, '@#'))) === $cleanName) {
+                    $otherDeal->update($updatePayload);
+                }
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Количество подписчиков успешно обновлено!',
+            'integration' => $this->formatIntegration($integration->fresh()),
+        ]);
+    }
+
+    /**
+     * Add a custom history checkpoint manually.
+     */
+    public function addSubscriberHistory(Request $request, Integration $integration)
+    {
+        $request->validate([
+            'date' => 'required|date',
+            'count' => 'required|integer|min:0',
+            'note' => 'nullable|string|max:255',
+        ]);
+
+        $date = $request->input('date');
+        $count = (int) $request->input('count');
+        $note = $request->input('note');
+
+        $history = $integration->subscribers_history ?? [];
+        $replaced = false;
+
+        foreach ($history as &$item) {
+            if (isset($item['date']) && $item['date'] === $date) {
+                $item['count'] = $count;
+                $item['source'] = 'manual';
+                if ($note) $item['note'] = $note;
+                $replaced = true;
+                break;
+            }
+        }
+        unset($item);
+
+        if (!$replaced) {
+            $history[] = [
+                'date' => $date,
+                'count' => $count,
+                'source' => 'manual',
+                'note' => $note,
+            ];
+        }
+
+        // Sort history by date
+        usort($history, fn($a, $b) => strcmp($a['date'] ?? '', $b['date'] ?? ''));
+
+        // If this entry is latest date or today, also update current subscribers_count
+        $latestDate = end($history)['date'] ?? null;
+        $latestCount = end($history)['count'] ?? $count;
+
+        $updateData = [
+            'subscribers_history' => $history,
+            'subscribers_count' => $latestCount,
+            'subscribers_updated_at' => now(),
+        ];
+
+        $integration->update($updateData);
+
+        // Sync to same blogger
+        $cleanName = strtolower(trim(ltrim($integration->blogger_name, '@#')));
+        if ($cleanName) {
+            $otherDeals = Integration::where('id', '!=', $integration->id)->get();
+            foreach ($otherDeals as $otherDeal) {
+                if (strtolower(trim(ltrim($otherDeal->blogger_name, '@#'))) === $cleanName) {
+                    $otherDeal->update($updateData);
+                }
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'integration' => $this->formatIntegration($integration->fresh()),
+        ]);
     }
 }

@@ -65,7 +65,29 @@ export default function DashboardView({
   onNavigateToReports
 }: DashboardViewProps) {
   // Current active project selection
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
+    const saved = localStorage.getItem('tezi_dashboard_project_id');
+    if (saved && projects && projects.some(p => p.id === saved)) return saved;
+    return projects[0]?.id || '';
+  });
+
+  const handleSelectProject = (id: string) => {
+    setSelectedProjectId(id);
+    localStorage.setItem('tezi_dashboard_project_id', id);
+  };
+
+  useEffect(() => {
+    if (projects && projects.length > 0) {
+      const saved = localStorage.getItem('tezi_dashboard_project_id');
+      if (saved && projects.some(p => p.id === saved)) {
+        if (selectedProjectId !== saved) {
+          setSelectedProjectId(saved);
+        }
+      } else if (!selectedProjectId || !projects.some(p => p.id === selectedProjectId)) {
+        setSelectedProjectId(projects[0].id);
+      }
+    }
+  }, [projects]);
   
   const t = translations[lang] || translations['ru'] || {};
   
@@ -360,7 +382,7 @@ export default function DashboardView({
           return (
             <button
               key={proj.id}
-              onClick={() => setSelectedProjectId(proj.id)}
+              onClick={() => handleSelectProject(proj.id)}
               id={`project-btn-${proj.id}`}
               className={`px-4 py-2 text-xs font-extrabold rounded-lg border transition duration-150 text-left flex items-center gap-2 cursor-pointer ${
                 isSelected
@@ -507,9 +529,9 @@ export default function DashboardView({
                               onDeleteProject(selectedProject.id);
                               if (projects.length > 1) {
                                 const remaining = projects.filter(p => p.id !== selectedProject.id);
-                                setSelectedProjectId(remaining[0].id);
+                                handleSelectProject(remaining[0].id);
                               } else {
-                                setSelectedProjectId('');
+                                handleSelectProject('');
                               }
                             }
                           }}

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Integration, Project, KanbanColumn, INITIAL_KANBAN_COLUMNS, DealComment } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
@@ -18,20 +18,25 @@ import {
   Trash2, 
   Edit3, 
   Settings2,
-  MoveRight,
   GripVertical,
   Layers,
   FileText,
   User,
-  Sparkles,
-  ChevronDown,
+  Users,
   FileCheck,
   ZoomIn,
   X,
   ExternalLink,
   MessageSquare,
-  Send
+  Send,
+  FilePlus,
+  Eye,
+  EyeOff,
+  Lock,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
+import BloggerAudienceCard from './BloggerAudienceCard';
 
 interface KanbanViewProps {
   projects: Project[];
@@ -47,6 +52,14 @@ interface KanbanViewProps {
   currentUserEmail?: string | null;
   onOpenRequisitesDirectory?: () => void;
   onClearStage?: (stageId: string) => void | Promise<void>;
+  onRefreshSubscribers?: (integrationId: string) => Promise<void>;
+  onAddManualSnapshot?: (integrationId: string, date: string, count: number, note?: string) => Promise<void>;
+  onNavigateToReports?: (deal: Integration) => void;
+}
+
+// Column titles should remain as named and not react to language switching
+export function getLocalizedColumnTitle(col: { id: string; title: string }, _currentLang?: Language): string {
+  return col.title;
 }
 
 export default function KanbanView({
@@ -62,7 +75,10 @@ export default function KanbanView({
   userRole,
   currentUserEmail,
   onOpenRequisitesDirectory,
-  onClearStage
+  onClearStage,
+  onRefreshSubscribers,
+  onAddManualSnapshot,
+  onNavigateToReports
 }: KanbanViewProps) {
   const t = translations[lang] || translations['ru'];
 
@@ -78,7 +94,7 @@ export default function KanbanView({
       if (raw.trim()) {
         return [{
           id: 'legacy-1',
-          author: 'Заметка',
+          author: t.kanbanNotePrefix || 'Заметка',
           text: raw,
           createdAt: new Date().toISOString()
         }];
@@ -87,14 +103,54 @@ export default function KanbanView({
     return [];
   };
 
+  // System stages that are permanently linked to automated workflows in the ecosystem
+  const SYSTEM_STAGE_IDS = ['backlog', 'ready_for_payment', 'paid_in_progress'];
+
+  const ensureSystemColumns = (cols: KanbanColumn[]): KanbanColumn[] => {
+    const backlog = cols.find(c => c.id === 'backlog') || { id: 'backlog', title: 'Backlog', color: 'slate', hidden: true };
+    let rest = cols.filter(c => c.id !== 'backlog');
+
+    // Ensure 'ready_for_payment' exists
+    if (!rest.some(c => c.id === 'ready_for_payment')) {
+      const defaultReady = INITIAL_KANBAN_COLUMNS.find(c => c.id === 'ready_for_payment') || {
+        id: 'ready_for_payment',
+        title: 'Готов к оплате',
+        color: 'indigo'
+      };
+      const completedIdx = rest.findIndex(c => c.id === 'completed');
+      if (completedIdx !== -1) {
+        rest.splice(completedIdx, 0, defaultReady);
+      } else {
+        rest.push(defaultReady);
+      }
+    }
+
+    // Ensure 'paid_in_progress' exists
+    if (!rest.some(c => c.id === 'paid_in_progress')) {
+      const defaultPaid = INITIAL_KANBAN_COLUMNS.find(c => c.id === 'paid_in_progress') || {
+        id: 'paid_in_progress',
+        title: 'Оплачено / В работе',
+        color: 'emerald'
+      };
+      const completedIdx = rest.findIndex(c => c.id === 'completed');
+      if (completedIdx !== -1) {
+        rest.splice(completedIdx, 0, defaultPaid);
+      } else {
+        rest.push(defaultPaid);
+      }
+    }
+
+    return [backlog, ...rest];
+  };
+
   // Columns State (Synchronized with server, defaults to INITIAL_KANBAN_COLUMNS)
   const [columns, setColumns] = useState<KanbanColumn[]>(() => {
-    if (initialColumns && initialColumns.length > 0) return initialColumns;
+    if (initialColumns && initialColumns.length > 0) return ensureSystemColumns(initialColumns);
     try {
       const saved = localStorage.getItem('kanban_custom_columns');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return ensureSystemColumns(parsed);
       }
     } catch {}
     return INITIAL_KANBAN_COLUMNS;
@@ -102,26 +158,64 @@ export default function KanbanView({
 
   React.useEffect(() => {
     if (initialColumns && initialColumns.length > 0) {
-      setColumns(initialColumns);
+      setColumns(ensureSystemColumns(initialColumns));
     }
   }, [initialColumns]);
 
   const updateAndSaveColumns = (newCols: KanbanColumn[]) => {
-    setColumns(newCols);
+    const finalized = ensureSystemColumns(newCols);
+    setColumns(finalized);
     try {
-      localStorage.setItem('kanban_custom_columns', JSON.stringify(newCols));
+      localStorage.setItem('kanban_custom_columns', JSON.stringify(finalized));
     } catch {}
-    if (onUpdateColumns) onUpdateColumns(newCols);
+    if (onUpdateColumns) onUpdateColumns(finalized);
   };
+
+  const handleToggleColumnVisibility = (colId: string) => {
+    const updated = columns.map(col => {
+      if (col.id === colId) {
+        return { ...col, hidden: !col.hidden };
+      }
+      return col;
+    });
+    updateAndSaveColumns(updated);
+  };
+
+  const visibleColumns = useMemo(() => {
+    return columns.filter(col => !col.hidden);
+  }, [columns]);
+
+  const isBacklogHidden = useMemo(() => {
+    const b = columns.find(col => col.id === 'backlog');
+    return !b || b.hidden !== false;
+  }, [columns]);
+
+  const [backlogNotification, setBacklogNotification] = useState<{ bloggerName: string; dealId: string } | null>(null);
+
+  useEffect(() => {
+    if (!backlogNotification) return;
+    const timer = setTimeout(() => setBacklogNotification(null), 4500);
+    return () => clearTimeout(timer);
+  }, [backlogNotification]);
 
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
+    return localStorage.getItem('tezi_kanban_project_id') || 'all';
+  });
+
+  const handleSelectProject = (id: string) => {
+    setSelectedProjectId(id);
+    localStorage.setItem('tezi_kanban_project_id', id);
+  };
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedCabinet, setCopiedCabinet] = useState<boolean>(false);
 
   // Selected Deal Detail/Edit Modal State
   const [selectedDeal, setSelectedDeal] = useState<Integration | null>(null);
@@ -138,12 +232,12 @@ export default function KanbanView({
   const [editStartDate, setEditStartDate] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
   const [editReferralLink, setEditReferralLink] = useState('');
+  const [editSubscribersCount, setEditSubscribersCount] = useState<number | ''>('');
   const [editCommentsList, setEditCommentsList] = useState<DealComment[]>([]);
   const [newCommentInput, setNewCommentInput] = useState('');
   const [editStatus, setEditStatus] = useState<'active' | 'completed' | 'paused'>('active');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [copiedCabinet, setCopiedCabinet] = useState(false);
   const isDraggingRef = React.useRef(false);
 
   // Modals state
@@ -156,7 +250,7 @@ export default function KanbanView({
   // Comment Handlers
   const handleAddComment = () => {
     if (!newCommentInput.trim()) return;
-    const authorName = currentUserEmail || (userRole ? `Пользователь (${userRole})` : 'Пользователь');
+    const authorName = currentUserEmail || (userRole ? `${lang === 'uz' ? 'Foydalanuvchi' : lang === 'en' ? 'User' : 'Пользователь'} (${userRole})` : (lang === 'uz' ? 'Foydalanuvchi' : lang === 'en' ? 'User' : 'Пользователь'));
     const newCommentItem: DealComment = {
       id: `comment-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       author: authorName,
@@ -221,7 +315,9 @@ export default function KanbanView({
     isDraggingRef.current = true;
     e.dataTransfer.setData('text/plain', dealId);
     e.dataTransfer.effectAllowed = 'move';
-    setDraggedDealId(dealId);
+    setTimeout(() => {
+      setDraggedDealId(dealId);
+    }, 0);
   };
 
   const handleDragEnd = () => {
@@ -248,9 +344,15 @@ export default function KanbanView({
 
   const handleDropOnColumn = (e: React.DragEvent, targetColId: string) => {
     e.preventDefault();
-    const dealId = e.dataTransfer.getData('text/plain');
+    const dealId = e.dataTransfer.getData('text/plain') || draggedDealId;
     if (dealId) {
       onUpdateIntegrationStage(dealId, targetColId);
+      if (targetColId === 'backlog') {
+        const deal = integrations.find(i => i.id === dealId);
+        if (deal) {
+          setBacklogNotification({ bloggerName: deal.bloggerName, dealId: deal.id });
+        }
+      }
     }
     setDraggedDealId(null);
     setDragOverColumnId(null);
@@ -276,6 +378,7 @@ export default function KanbanView({
     setEditStartDate(new Date().toISOString().split('T')[0]);
     setEditEndDate(new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]);
     setEditReferralLink('');
+    setEditSubscribersCount('');
     setEditCommentsList([]);
     setNewCommentInput('');
     setEditStatus('active');
@@ -299,6 +402,7 @@ export default function KanbanView({
     setEditStartDate(deal.startDate || new Date().toISOString().split('T')[0]);
     setEditEndDate(deal.endDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]);
     setEditReferralLink(deal.referralLink || '');
+    setEditSubscribersCount(deal.subscribersCount ?? '');
     setEditCommentsList(parseComments(deal.comments));
     setNewCommentInput('');
     setEditStatus(deal.status || 'active');
@@ -316,12 +420,12 @@ export default function KanbanView({
   const handleSaveDealEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editBloggerName.trim()) {
-      alert('Пожалуйста, укажите имя или канал блогера');
+      alert(t.kanbanFillBloggerNameAlert || 'Пожалуйста, укажите имя или канал блогера');
       return;
     }
     const targetProjectId = editProjectId || projects[0]?.id || '';
     if (!targetProjectId) {
-      alert('Пожалуйста, выберите проект');
+      alert(t.kanbanSelectProjectAlert || 'Пожалуйста, выберите проект');
       return;
     }
 
@@ -332,7 +436,7 @@ export default function KanbanView({
       // Append typed comment in input box if user didn't explicitly click "Отправить"
       let finalComments = [...editCommentsList];
       if (newCommentInput.trim()) {
-        const authorName = currentUserEmail || (userRole ? `Пользователь (${userRole})` : 'Пользователь');
+        const authorName = currentUserEmail || (userRole ? `${lang === 'uz' ? 'Foydalanuvchi' : lang === 'en' ? 'User' : 'Пользователь'} (${userRole})` : (lang === 'uz' ? 'Foydalanuvchi' : lang === 'en' ? 'User' : 'Пользователь'));
         finalComments.push({
           id: `comment-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           author: authorName,
@@ -360,6 +464,7 @@ export default function KanbanView({
           status: editStatus,
           kanbanStage: editKanbanStage,
           createdBy: currentUserEmail || undefined,
+          subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
         });
       } else if (selectedDeal) {
         const updatedFields: Partial<Integration> = {
@@ -378,7 +483,8 @@ export default function KanbanView({
           referralLink: editReferralLink.trim(),
           comments: finalComments,
           status: editStatus,
-          kanbanStage: editKanbanStage
+          kanbanStage: editKanbanStage,
+          subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
         };
 
         if (onEditIntegration) {
@@ -395,7 +501,7 @@ export default function KanbanView({
       }, 400);
     } catch (err) {
       console.error('Error saving deal:', err);
-      alert(isCreateMode ? 'Ошибка при создании сделки' : 'Ошибка при сохранении данных сделки');
+      alert(isCreateMode ? (t.kanbanCreateErrorAlert || 'Ошибка при создании сделки') : (t.kanbanSaveErrorAlert || 'Ошибка при сохранении данных сделки'));
     } finally {
       setIsSavingEdit(false);
     }
@@ -434,9 +540,68 @@ export default function KanbanView({
   };
 
   const handleDeleteColumn = (colId: string) => {
-    if (!window.confirm('Вы уверены, что хотите удалить этот столбец?')) return;
+    if (SYSTEM_STAGE_IDS.includes(colId)) {
+      alert('Этот этап является системным и не может быть удален. Вы можете переименовать его или скрыть.');
+      return;
+    }
+    if (!window.confirm(t.kanbanDeleteColumnConfirm || 'Вы уверены, что хотите удалить этот столбец?')) return;
     const updated = columns.filter(c => c.id !== colId);
     updateAndSaveColumns(updated);
+  };
+
+  // Reorder columns in settings (arrows & drag-and-drop)
+  const [draggedSettingsColId, setDraggedSettingsColId] = useState<string | null>(null);
+
+  const handleMoveColumn = (colId: string, direction: 'up' | 'down') => {
+    const backlog = columns.find(c => c.id === 'backlog');
+    const rest = columns.filter(c => c.id !== 'backlog');
+    const index = rest.findIndex(c => c.id === colId);
+    if (index === -1) return;
+
+    if (direction === 'up' && index > 0) {
+      const updatedRest = [...rest];
+      const temp = updatedRest[index];
+      updatedRest[index] = updatedRest[index - 1];
+      updatedRest[index - 1] = temp;
+      updateAndSaveColumns(backlog ? [backlog, ...updatedRest] : updatedRest);
+    } else if (direction === 'down' && index < rest.length - 1) {
+      const updatedRest = [...rest];
+      const temp = updatedRest[index];
+      updatedRest[index] = updatedRest[index + 1];
+      updatedRest[index + 1] = temp;
+      updateAndSaveColumns(backlog ? [backlog, ...updatedRest] : updatedRest);
+    }
+  };
+
+  const handleSettingsDragStart = (e: React.DragEvent, colId: string) => {
+    setDraggedSettingsColId(colId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleSettingsDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleSettingsDrop = (e: React.DragEvent, targetColId: string) => {
+    e.preventDefault();
+    if (!draggedSettingsColId || draggedSettingsColId === targetColId) {
+      setDraggedSettingsColId(null);
+      return;
+    }
+
+    const backlog = columns.find(c => c.id === 'backlog');
+    const rest = columns.filter(c => c.id !== 'backlog');
+    const fromIndex = rest.findIndex(c => c.id === draggedSettingsColId);
+    const toIndex = rest.findIndex(c => c.id === targetColId);
+
+    if (fromIndex !== -1 && toIndex !== -1) {
+      const updatedRest = [...rest];
+      const [movedItem] = updatedRest.splice(fromIndex, 1);
+      updatedRest.splice(toIndex, 0, movedItem);
+      updateAndSaveColumns(backlog ? [backlog, ...updatedRest] : updatedRest);
+    }
+    setDraggedSettingsColId(null);
   };
 
   return (
@@ -446,7 +611,7 @@ export default function KanbanView({
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none flex-wrap">
           <button
             type="button"
-            onClick={() => setSelectedProjectId('all')}
+            onClick={() => handleSelectProject('all')}
             className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs transition-all duration-150 cursor-pointer shrink-0 ${
               selectedProjectId === 'all'
                 ? 'bg-black text-white font-bold shadow-xs'
@@ -454,7 +619,7 @@ export default function KanbanView({
             }`}
           >
             <Layers className={`w-3.5 h-3.5 ${selectedProjectId === 'all' ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
-            <span>{lang === 'ru' ? 'Все проекты' : lang === 'uz' ? 'Barcha loyihalar' : 'All Projects'}</span>
+            <span>{t.kanbanAllProjects || 'Все проекты'}</span>
             <span
               className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${
                 selectedProjectId === 'all'
@@ -474,7 +639,7 @@ export default function KanbanView({
               <button
                 key={project.id}
                 type="button"
-                onClick={() => setSelectedProjectId(isSelected ? 'all' : String(project.id))}
+                onClick={() => handleSelectProject(isSelected ? 'all' : String(project.id))}
                 className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs transition-all duration-150 cursor-pointer shrink-0 ${
                   isSelected
                     ? 'bg-black text-white font-bold shadow-xs'
@@ -500,36 +665,67 @@ export default function KanbanView({
       {/* Search, Filter & Actions Bar */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-xl border border-neutral-200 shadow-xs">
         <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 flex-1">
-          {/* Search Input */}
-          <div className="relative w-full sm:w-72 md:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск по имени блогера или ссылке..."
-              className="w-full pl-10 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
-            />
-            {searchQuery && (
+          {/* Search Bar: Compact icon by default, expands on click */}
+          {isSearchExpanded || searchQuery ? (
+            <div
+              className="relative flex items-center w-full sm:w-72 md:w-80 transition-all duration-200 animate-in fade-in"
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node) && !searchQuery) {
+                  setIsSearchExpanded(false);
+                }
+              }}
+            >
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setSearchQuery('');
+                    setIsSearchExpanded(false);
+                  }
+                }}
+                placeholder={t.kanbanSearchPlaceholder || 'Поиск по имени блогера или ссылке...'}
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
+                autoFocus
+              />
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 w-4 h-4 flex items-center justify-center cursor-pointer"
+                onClick={() => {
+                  setSearchQuery('');
+                  setIsSearchExpanded(false);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded transition cursor-pointer"
+                title={t.kanbanCloseSearchTitle || 'Закрыть поиск'}
               >
-                ✕
+                <X className="w-3.5 h-3.5" />
               </button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setIsSearchExpanded(true);
+                setTimeout(() => searchInputRef.current?.focus(), 50);
+              }}
+              className="flex items-center justify-center w-9 h-9 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg border border-slate-200 hover:border-slate-300 transition cursor-pointer shrink-0 shadow-2xs"
+              title={t.kanbanSearchTitle || 'Поиск блогеров'}
+            >
+              <Search className="w-4 h-4 text-slate-600" />
+            </button>
+          )}
 
           {/* Project selector */}
           <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-            <span className="text-xs font-semibold text-slate-500">Проект:</span>
+            <span className="text-xs font-semibold text-slate-500">{t.kanbanProjectLabel || 'Проект:'}</span>
             <select
               value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
+              onChange={(e) => handleSelectProject(e.target.value)}
               className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
             >
-              <option value="all">Все проекты</option>
+              <option value="all">{t.kanbanAllProjectsOption || 'Все проекты'}</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -538,13 +734,13 @@ export default function KanbanView({
 
           {/* Platform selector */}
           <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-            <span className="text-xs font-semibold text-slate-500">Платформа:</span>
+            <span className="text-xs font-semibold text-slate-500">{t.kanbanPlatformLabel || 'Платформа:'}</span>
             <select
               value={selectedPlatform}
               onChange={(e) => setSelectedPlatform(e.target.value)}
               className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
             >
-              <option value="all">Все платформы</option>
+              <option value="all">{t.kanbanAllPlatformsOption || 'Все платформы'}</option>
               <option value="Instagram">Instagram</option>
               <option value="Telegram">Telegram</option>
               <option value="YouTube">YouTube</option>
@@ -561,7 +757,7 @@ export default function KanbanView({
               className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 transition cursor-pointer"
             >
               <FileText className="w-4 h-4 text-slate-600" />
-              <span>База реквизитов</span>
+              <span>{t.kanbanRequisitesDirectoryBtn || 'База реквизитов'}</span>
             </button>
           )}
 
@@ -574,7 +770,7 @@ export default function KanbanView({
             className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 transition cursor-pointer"
           >
             <Settings2 className="w-4 h-4 text-slate-600" />
-            <span>Настройка столбцов</span>
+            <span>{t.kanbanConfigureColumnsBtn || 'Настройка столбцов'}</span>
           </button>
 
           <button
@@ -582,23 +778,23 @@ export default function KanbanView({
             className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Добавить блогера</span>
+            <span>{t.kanbanAddBloggerBtn || 'Добавить блогера'}</span>
           </button>
         </div>
       </div>
 
       {/* Kanban Dynamic Columns Horizontal Scroll Container */}
       <div className="flex gap-5 items-start overflow-x-auto pb-8 pt-2 snap-x min-h-[400px]">
-        {columns.length === 0 ? (
+        {visibleColumns.length === 0 ? (
           <div className="w-full flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-300 text-center px-6 shadow-xs">
             <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4 text-slate-600">
               <Plus className="w-7 h-7" />
             </div>
             <h3 className="text-base font-extrabold text-slate-900 mb-1.5">
-              У вас пока нет этапов на доске
+              {t.kanbanEmptyColumnsTitle || 'Все этапы скрыты или отсутствуют'}
             </h3>
             <p className="text-xs text-slate-500 max-w-md mb-6 leading-relaxed">
-              Создайте свои собственные этапы (столбцы) для работы со сделками. Предыдущие блогеры не добавлены сюда автоматически.
+              {t.kanbanEmptyColumnsDesc || 'Откройте «Настройка столбцов», чтобы включить отображение столбцов или создать новые.'}
             </p>
             <button
               onClick={() => {
@@ -608,51 +804,105 @@ export default function KanbanView({
               }}
               className="flex items-center gap-2 px-5 py-3 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span>Создать первый этап</span>
+              <Settings2 className="w-4 h-4" />
+              <span>{t.kanbanConfigureColumnsBtn || 'Настройка столбцов'}</span>
             </button>
           </div>
         ) : (
-          columns.map((column) => {
-            const columnDeals = columnDataMap.get(column.id) || [];
-            const totalColumnBudget = columnDeals.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
+          visibleColumns.map((column, colIdx) => {
+          const isFirstCol = colIdx === 0;
+          const columnDeals = columnDataMap.get(column.id) || [];
+          const totalColumnBudget = columnDeals.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
           const isOver = dragOverColumnId === column.id;
+          const isBacklogOverFirstCol = isFirstCol && isBacklogHidden && dragOverColumnId === 'backlog';
 
           return (
             <div
               key={column.id}
-              onDragOver={(e) => handleDragOverColumn(e, column.id)}
-              onDragLeave={() => handleDragLeaveColumn(column.id)}
-              onDrop={(e) => handleDropOnColumn(e, column.id)}
-              className={`flex flex-col bg-white rounded-2xl border overflow-hidden transition-all duration-150 w-[340px] min-w-[340px] shrink-0 ${
-                isOver 
-                  ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/20 shadow-md' 
-                  : 'border-neutral-200 shadow-xs'
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (isFirstCol && isBacklogHidden) {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  if (e.clientX - rect.left < 130) {
+                    handleDragOverColumn(e, 'backlog');
+                    return;
+                  }
+                }
+                handleDragOverColumn(e, column.id);
+              }}
+              onDragLeave={() => {
+                handleDragLeaveColumn(column.id);
+                if (isFirstCol && dragOverColumnId === 'backlog') {
+                  handleDragLeaveColumn('backlog');
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (isFirstCol && isBacklogHidden) {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  if (e.clientX - rect.left < 130 || dragOverColumnId === 'backlog') {
+                    handleDropOnColumn(e, 'backlog');
+                    return;
+                  }
+                }
+                handleDropOnColumn(e, column.id);
+              }}
+              className={`relative flex flex-col bg-white rounded-2xl border overflow-hidden transition-all duration-150 w-[340px] min-w-[340px] shrink-0 ${
+                isBacklogOverFirstCol
+                  ? 'border-neutral-900 ring-2 ring-neutral-900/40 bg-neutral-100/60 shadow-md'
+                  : isOver 
+                    ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/20 shadow-md' 
+                    : 'border-neutral-200 shadow-xs'
               }`}
             >
+              {/* Backlog Drop Hint on first column when hovering left edge */}
+              {isBacklogOverFirstCol && (
+                <div className="absolute top-2 left-2 z-30 pointer-events-none bg-black text-white text-[11px] font-black px-3 py-1.5 rounded-xl shadow-xl flex items-center gap-2 animate-in fade-in">
+                  <EyeOff className="w-3.5 h-3.5" />
+                  <span>{t.kanbanBacklogDropHint || 'В архив Backlog (не договорились)'}</span>
+                </div>
+              )}
               {/* Column Header */}
               <div className="p-3.5 border-b border-neutral-200 bg-slate-50/80 flex items-center justify-between">
                 <div className="flex items-center gap-2 truncate">
                   <span className="font-extrabold text-xs text-slate-900 uppercase tracking-wider truncate">
-                    {column.title}
+                    {getLocalizedColumnTitle(column, lang)}
                   </span>
+                  {column.id === 'backlog' && (
+                    <span className="px-1.5 py-0.5 text-[9px] bg-slate-200 text-slate-700 rounded font-bold shrink-0">
+                      {t.kanbanBacklogBadge || 'Отказы'}
+                    </span>
+                  )}
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-black text-white shrink-0">
                     {columnDeals.length}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
+                  {column.id === 'backlog' && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleColumnVisibility('backlog')}
+                      className="p-1 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-black transition cursor-pointer"
+                      title={t.kanbanHideBacklogTitle || 'Скрыть колонку Backlog с доски'}
+                    >
+                      <EyeOff className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {columnDeals.length > 0 && onClearStage && (
                     <button
                       type="button"
                       onClick={() => {
                         if (window.confirm(lang === 'ru' 
-                          ? `Убрать все карточки (${columnDeals.length}) из столбца "${column.title}" с доски? Сами интеграции и статистика блогеров останутся в системе.`
-                          : `Remove all cards (${columnDeals.length}) from "${column.title}"? Integrations and blogger statistics will remain preserved.`
+                          ? `Убрать все карточки (${columnDeals.length}) из столбца "${getLocalizedColumnTitle(column, lang)}" с доски? Сами интеграции и статистика блогеров останутся в системе.`
+                          : lang === 'uz'
+                          ? `"${getLocalizedColumnTitle(column, lang)}" ustunidagi barcha kartochkalarni (${columnDeals.length}) doskadan olib tashlansinmi? Integratsiyalar va statistika tizimda saqlanib qoladi.`
+                          : `Remove all cards (${columnDeals.length}) from "${getLocalizedColumnTitle(column, lang)}"? Integrations and blogger statistics will remain preserved.`
                         )) {
                           onClearStage(column.id);
                         }
                       }}
-                      title={`Очистить столбец "${column.title}" (убрать карточки с доски)`}
+                      title={`${t.kanbanClearStageTooltip || 'Очистить столбец'} (${getLocalizedColumnTitle(column, lang)})`}
                       className="p-1 rounded-lg hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -661,7 +911,7 @@ export default function KanbanView({
                   <button
                     type="button"
                     onClick={() => handleOpenCreateDealModal(column.id)}
-                    title={`Добавить карточку в "${column.title}"`}
+                    title={`${t.kanbanAddCardTooltip || 'Добавить карточку'} -> ${getLocalizedColumnTitle(column, lang)}`}
                     className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-black transition cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
@@ -671,7 +921,7 @@ export default function KanbanView({
 
               {/* Column Total Budget */}
               <div className="px-3.5 py-1.5 bg-white border-b border-slate-100 text-[11px] font-semibold text-slate-500 flex justify-between shrink-0">
-                <span>Итого:</span>
+                <span>{t.kanbanTotalLabel || 'Итого:'}</span>
                 <span className="font-extrabold text-slate-900">{totalColumnBudget.toLocaleString()} UZS</span>
               </div>
 
@@ -682,7 +932,7 @@ export default function KanbanView({
                     isOver ? 'border-indigo-400 bg-indigo-50/40 text-indigo-600' : 'border-slate-200 text-slate-400'
                   }`}>
                     <Clock className="w-5 h-5 mb-1 opacity-50" />
-                    <span className="text-xs font-semibold">Перетащите сюда</span>
+                    <span className="text-xs font-semibold">{t.kanbanDragHere || 'Перетащите сюда'}</span>
                   </div>
                 ) : (
                   columnDeals.map((deal) => {
@@ -701,8 +951,8 @@ export default function KanbanView({
                           handleOpenDealModal(deal);
                         }}
                         className={`group relative bg-white p-4 rounded-xl border border-neutral-200 shadow-2xs hover:shadow-md hover:border-black transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
-                          isDragging ? 'opacity-40 scale-95 border-dashed border-indigo-400' : ''
-                        }`}
+                          isDragging ? 'opacity-30 border-dashed border-neutral-400' : ''
+                        } ${draggedDealId && !isDragging ? 'pointer-events-none' : ''}`}
                       >
                         {/* Top Bar */}
                         <div className="flex items-start justify-between gap-2">
@@ -726,7 +976,7 @@ export default function KanbanView({
                                 handleOpenDealModal(deal);
                               }}
                               className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-black transition cursor-pointer"
-                              title="Редактировать сделку"
+                              title={t.kanbanEditDealTooltip || 'Редактировать сделку'}
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
@@ -739,7 +989,7 @@ export default function KanbanView({
                                   onDeleteIntegration(deal.id);
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                                title="Удалить"
+                                title={t.deleteTooltip || 'Удалить'}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -762,7 +1012,7 @@ export default function KanbanView({
                                 className="text-[10px] text-slate-500 hover:text-black hover:underline flex items-center gap-1"
                               >
                                 <ExternalLink className="w-2.5 h-2.5" />
-                                <span>Канал</span>
+                                <span>{t.kanbanChannelLink || 'Канал'}</span>
                               </a>
                             )}
                             {deal.telegramUsername && (
@@ -772,7 +1022,7 @@ export default function KanbanView({
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                                 className="inline-flex items-center gap-1 text-[10px] font-extrabold text-sky-700 bg-sky-50 hover:bg-sky-500 hover:text-white px-2 py-0.5 rounded-md border border-sky-200 transition shadow-2xs group/tg"
-                                title="Перейти в личный Telegram (открыть чат)"
+                                title={t.kanbanTgChatTooltip || 'Перейти в личный Telegram (открыть чат)'}
                               >
                                 <Send className="w-2.5 h-2.5 text-sky-500 group-hover/tg:text-white transition-colors" />
                                 <span>{formatTelegramHandle(deal.telegramUsername)}</span>
@@ -809,14 +1059,14 @@ export default function KanbanView({
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1">
                           <User className="w-3 h-3 text-slate-400 shrink-0" />
                           <span className="truncate">
-                            Создал: <strong className="text-slate-800 font-bold">{deal.createdBy || 'Не указан'}</strong>
+                            {t.kanbanCreatedByLabel || 'Создал:'} <strong className="text-slate-800 font-bold">{deal.createdBy || (t.kanbanNotSpecified || 'Не указан')}</strong>
                           </span>
                         </div>
 
                         {/* Amount & Requisites */}
                         <div className="space-y-1.5 pt-2 border-t border-slate-100">
                           <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                            <span>Сумма:</span>
+                            <span>{t.kanbanAmountLabel || 'Сумма:'}</span>
                             <span className="font-black text-black">
                               {(deal.totalAmount || (deal.pricePerSlot * deal.slotsCount)).toLocaleString()} UZS
                             </span>
@@ -824,14 +1074,14 @@ export default function KanbanView({
 
                           {/* Requisites Status */}
                           <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-slate-500 font-semibold">Реквизиты:</span>
+                            <span className="text-slate-500 font-semibold">{t.kanbanRequisitesLabel || 'Реквизиты:'}</span>
                             {hasRequisites ? (
                               <span className="flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Заполнены
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {t.kanbanRequisitesFilled || 'Заполнены'}
                               </span>
                             ) : (
                               <span className="flex items-center gap-1 text-amber-700 font-medium bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                                <Clock className="w-3 h-3 text-amber-600" /> Ожидаются
+                                <Clock className="w-3 h-3 text-amber-600" /> {t.kanbanRequisitesPending || 'Ожидаются'}
                               </span>
                             )}
                           </div>
@@ -850,10 +1100,25 @@ export default function KanbanView({
                           >
                             {columns.map(c => (
                               <option key={c.id} value={c.id}>
-                                {c.title}
+                                {getLocalizedColumnTitle(c, lang)} {c.id === 'backlog' ? `📁 (${t.kanbanBacklogBadge || 'Отказы'})` : c.hidden ? `(${t.kanbanHiddenBadge || 'скрытая'})` : ''}
                               </option>
                             ))}
                           </select>
+
+                          {/* Action Button for 'ready_for_payment' Stage: Создать отчёт */}
+                          {(column.id === 'ready_for_payment' || deal.kanbanStage === 'ready_for_payment') && onNavigateToReports && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToReports(deal);
+                              }}
+                              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                            >
+                              <FilePlus className="w-3.5 h-3.5" />
+                              <span>{t.createReport || 'Создать отчет'}</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"
@@ -866,12 +1131,12 @@ export default function KanbanView({
                             {copiedId === deal.id ? (
                               <>
                                 <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                <span>Скопировано!</span>
+                                <span>{t.kanbanCopiedSuccess || 'Скопировано!'}</span>
                               </>
                             ) : (
                               <>
                                 <Copy className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Ссылка на реквизиты</span>
+                                <span>{t.kanbanRequisitesLinkBtn || 'Ссылка на реквизиты'}</span>
                               </>
                             )}
                           </button>
@@ -883,8 +1148,9 @@ export default function KanbanView({
               </div>
             </div>
           );
-        }))}
-      </div>
+        })
+      )}
+  </div>
 
       {/* Column Management Modal */}
       {isColumnModalOpen && (
@@ -892,49 +1158,192 @@ export default function KanbanView({
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-6 border border-neutral-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
-                <Settings2 className="w-5 h-5" /> Настройка столбцов Канбана
+                <Settings2 className="w-5 h-5" /> {t.kanbanColumnsSettingsTitle || 'Настройка столбцов Канбана'}
               </h3>
               <button onClick={() => setIsColumnModalOpen(false)} className="text-slate-400 hover:text-black font-bold">✕</button>
             </div>
 
-            {/* Existing columns list */}
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {columns.map((col, idx) => (
-                <div key={col.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-800">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center text-[10px]">
-                      {idx + 1}
-                    </span>
-                    <span>{col.title}</span>
+            {/* Dedicated Backlog Toggle Card */}
+            {(() => {
+              const backlogCol = columns.find(c => c.id === 'backlog');
+              if (!backlogCol) return null;
+              const backlogDeals = columnDataMap.get('backlog') || [];
+              const isVisible = !backlogCol.hidden;
+              return (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      isVisible ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
+                    }`}>
+                      {isVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-xs text-slate-900">{t.kanbanBacklogCardTitle || 'Колонка Backlog'}</span>
+                        <span className="px-2 py-0.5 text-[10px] bg-slate-200 text-slate-700 rounded-full font-black shrink-0">
+                          {backlogDeals.length}
+                        </span>
+                      </div>
+                      {((isVisible ? t.kanbanBacklogVisibleDesc : t.kanbanBacklogHiddenDesc) || '').trim() && (
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          {isVisible ? t.kanbanBacklogVisibleDesc : t.kanbanBacklogHiddenDesc}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => { setEditingColumnId(col.id); setColumnTitleInput(col.title); }}
-                      className="p-1 text-slate-400 hover:text-black"
-                      title="Переименовать"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-
-                    {columns.length > 1 && (
-                      <button
-                        onClick={() => handleDeleteColumn(col.id)}
-                        className="p-1 text-slate-400 hover:text-rose-600"
-                        title="Удалить"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleColumnVisibility('backlog')}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                      isVisible
+                        ? 'bg-white text-rose-600 border-rose-200 hover:bg-rose-50 shadow-2xs'
+                        : 'bg-black text-white border-black hover:bg-neutral-800 shadow-xs'
+                    }`}
+                  >
+                    {isVisible ? (
+                      <>
+                        <EyeOff className="w-3.5 h-3.5" />
+                        <span>{t.kanbanHideFromBoard || 'Скрыть с доски'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{t.kanbanShowOnBoard || 'Показать на доске'}</span>
+                      </>
                     )}
-                  </div>
+                  </button>
                 </div>
-              ))}
+              );
+            })()}
+
+
+            {/* Existing columns list with reordering */}
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {(() => {
+                const nonBacklogCols = columns.filter(col => col.id !== 'backlog');
+                return nonBacklogCols.map((col, idx) => {
+                  const isSystem = SYSTEM_STAGE_IDS.includes(col.id);
+                  const isDraggingThis = draggedSettingsColId === col.id;
+                  return (
+                    <div 
+                      key={col.id}
+                      draggable={true}
+                      onDragStart={(e) => handleSettingsDragStart(e, col.id)}
+                      onDragOver={handleSettingsDragOver}
+                      onDrop={(e) => handleSettingsDrop(e, col.id)}
+                      onDragEnd={() => setDraggedSettingsColId(null)}
+                      className={`flex items-center justify-between p-2.5 sm:p-3 bg-slate-50 rounded-xl border transition-all ${
+                        isDraggingThis 
+                          ? 'opacity-40 border-dashed border-indigo-500 bg-indigo-50/20' 
+                          : 'border-slate-200 hover:border-slate-300 hover:bg-white shadow-2xs'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate min-w-0 flex-1">
+                        {/* Reorder controls (Grip + Up/Down arrows) */}
+                        <div className="flex items-center gap-1 shrink-0 text-slate-400 mr-1 select-none">
+                          <GripVertical className="w-3.5 h-3.5 cursor-grab active:cursor-grabbing hover:text-black" />
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => handleMoveColumn(col.id, 'up')}
+                              className={`p-0.5 rounded hover:bg-slate-200 transition ${
+                                idx === 0 ? 'opacity-20 cursor-not-allowed' : 'cursor-pointer hover:text-black'
+                              }`}
+                              title="Переместить левее (выше)"
+                            >
+                              <ChevronUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === nonBacklogCols.length - 1}
+                              onClick={() => handleMoveColumn(col.id, 'down')}
+                              className={`p-0.5 rounded hover:bg-slate-200 transition ${
+                                idx === nonBacklogCols.length - 1 ? 'opacity-20 cursor-not-allowed' : 'cursor-pointer hover:text-black'
+                              }`}
+                              title="Переместить правее (ниже)"
+                            >
+                              <ChevronDown className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <span className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                          {idx + 1}
+                        </span>
+                        <span className="truncate text-xs font-bold text-slate-800">{col.title}</span>
+                        {col.id === 'ready_for_payment' && (
+                          <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded font-bold shrink-0">
+                            Кнопка отчёта
+                          </span>
+                        )}
+                        {col.id === 'paid_in_progress' && (
+                          <span className="text-[9px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold shrink-0">
+                            Оплата
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleColumnVisibility(col.id)}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                            !col.hidden
+                              ? 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                              : 'bg-slate-200/80 text-slate-500 border-slate-300 hover:bg-slate-300'
+                          }`}
+                          title={col.hidden ? (t.kanbanShowOnBoard || 'Показать на доске') : (t.kanbanHideFromBoard || 'Скрыть с доски')}
+                        >
+                          {!col.hidden ? (
+                            <>
+                              <Eye className="w-3 h-3 text-emerald-600" />
+                              <span>{t.kanbanOnBoardBadge || 'На доске'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <EyeOff className="w-3 h-3 text-slate-400" />
+                              <span>{t.kanbanHiddenBadge || 'Скрыт'}</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => { setEditingColumnId(col.id); setColumnTitleInput(col.title); }}
+                          className="p-1 text-slate-400 hover:text-black transition cursor-pointer"
+                          title={t.editTooltip || 'Переименовать'}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+
+                        {isSystem ? (
+                          <span
+                            className="p-1 text-slate-300 cursor-not-allowed flex items-center"
+                            title="Системный этап (удаление недоступно, можно только переименовать или скрыть)"
+                          >
+                            <Lock className="w-3.5 h-3.5 text-slate-400" />
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleDeleteColumn(col.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                            title={t.deleteTooltip || 'Удалить'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
 
             {/* Add / Edit Form */}
             <form onSubmit={handleAddOrEditColumn} className="space-y-3 pt-2 border-t border-slate-100">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                {editingColumnId ? 'Переименовать столбец' : 'Добавить новый столбец'}
+                {editingColumnId ? (t.kanbanRenameColumnHeader || 'Переименовать столбец') : (t.kanbanAddNewColumnHeader || 'Добавить новый столбец')}
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -942,14 +1351,14 @@ export default function KanbanView({
                   required
                   value={columnTitleInput}
                   onChange={(e) => setColumnTitleInput(e.target.value)}
-                  placeholder="Название столбца (напр., Проверка Оферты)"
+                  placeholder={t.kanbanColumnNamePlaceholder || 'Название столбца (напр., Проверка Оферты)'}
                   className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-black"
                 />
                 <button
                   type="submit"
                   className="px-4 py-2.5 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs shrink-0"
                 >
-                  {editingColumnId ? 'Сохранить' : 'Добавить'}
+                  {editingColumnId ? (t.kanbanSaveDealBtn || 'Сохранить') : (t.kanbanAddBtn || 'Добавить')}
                 </button>
               </div>
             </form>
@@ -959,7 +1368,7 @@ export default function KanbanView({
                 onClick={() => setIsColumnModalOpen(false)}
                 className="px-5 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xs rounded-xl"
               >
-                Готово
+                {t.kanbanDoneBtn || 'Готово'}
               </button>
             </div>
           </div>
@@ -980,14 +1389,14 @@ export default function KanbanView({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-xl text-slate-900 tracking-tight">
-                      {isCreateMode ? 'Добавить блогера в Канбан' : selectedDeal?.bloggerName}
+                      {isCreateMode ? (t.kanbanModalCreateTitle || 'Добавить блогера в Канбан') : selectedDeal?.bloggerName}
                     </h3>
                     <span className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase tracking-wider shrink-0 ${getPlatformBadgeClasses(editPlatform)}`}>
                       {editPlatform}
                     </span>
                   </div>
                   <p className="text-xs font-medium text-slate-500 mt-0.5">
-                    {isCreateMode ? 'Заполните параметры и создайте новую сделку' : 'Информация и редактирование сделки'}
+                    {isCreateMode ? (t.kanbanModalCreateSub || 'Заполните параметры и создайте новую сделку') : (t.kanbanModalEditSub || 'Информация и редактирование сделки')}
                   </p>
                 </div>
               </div>
@@ -1004,6 +1413,21 @@ export default function KanbanView({
             {/* Quick Action Buttons (Edit mode only) */}
             {!isCreateMode && selectedDeal && (
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {(selectedDeal.kanbanStage === 'ready_for_payment' || editKanbanStage === 'ready_for_payment') && onNavigateToReports && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const dealToReport = { ...selectedDeal, kanbanStage: editKanbanStage };
+                      handleCloseDealModal();
+                      onNavigateToReports(dealToReport);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-neutral-800 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
+                  >
+                    <FilePlus className="w-3.5 h-3.5" />
+                    <span>{t.createReport || 'Создать отчет'}</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => handleCopyRequisitesLink(selectedDeal)}
@@ -1012,12 +1436,12 @@ export default function KanbanView({
                   {copiedId === selectedDeal.id ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Скопировано!</span>
+                      <span>{t.kanbanCopiedSuccess || 'Скопировано!'}</span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Ссылка на реквизиты</span>
+                      <span>{t.kanbanRequisitesLinkBtn || 'Ссылка на реквизиты'}</span>
                     </>
                   )}
                 </button>
@@ -1036,12 +1460,12 @@ export default function KanbanView({
                     {copiedCabinet ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Скопировано!</span>
+                        <span>{t.kanbanCopiedSuccess || 'Скопировано!'}</span>
                       </>
                     ) : (
                       <>
                         <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Кабинет блогера</span>
+                        <span>{t.kanbanBloggerCabinetBtn || 'Кабинет блогера'}</span>
                       </>
                     )}
                   </button>
@@ -1055,7 +1479,7 @@ export default function KanbanView({
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl border border-slate-200 transition"
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Открыть канал</span>
+                    <span>{t.kanbanOpenChannelBtn || 'Открыть канал'}</span>
                   </a>
                 )}
 
@@ -1065,10 +1489,10 @@ export default function KanbanView({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-xl border border-sky-200 transition shadow-2xs"
-                    title="Открыть диалог в Telegram"
+                    title={t.kanbanTgChatTooltip || 'Открыть диалог в Telegram'}
                   >
                     <Send className="w-3.5 h-3.5 text-sky-600" />
-                    <span>Чат: {formatTelegramHandle(editTelegramUsername)}</span>
+                    <span>{lang === 'uz' ? 'Chat' : lang === 'en' ? 'Chat' : 'Чат'}: {formatTelegramHandle(editTelegramUsername)}</span>
                     <ExternalLink className="w-3 h-3 text-sky-500" />
                   </a>
                 )}
@@ -1082,11 +1506,11 @@ export default function KanbanView({
                 <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs text-slate-600">
                   <div className="flex items-center gap-2">
                     <User className="w-4 h-4 text-slate-500 shrink-0" />
-                    <span>Создатель карточки: <strong className="text-slate-900 font-bold">{selectedDeal.createdBy || 'Не указан'}</strong></span>
+                    <span>{t.kanbanCreatedByLabel || 'Создатель карточки:'} <strong className="text-slate-900 font-bold">{selectedDeal.createdBy || (t.kanbanNotSpecified || 'Не указан')}</strong></span>
                   </div>
                   {selectedDeal.startDate && (
                     <span className="text-slate-400 text-[11px]">
-                      Дата старта: {selectedDeal.startDate}
+                      {t.kanbanStartDateLabel || 'Дата старта:'} {selectedDeal.startDate}
                     </span>
                   )}
                 </div>
@@ -1096,21 +1520,21 @@ export default function KanbanView({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Имя / Канал блогера *
+                    {t.kanbanBloggerNameLabel || 'Имя / Канал блогера *'}
                   </label>
                   <input
                     type="text"
                     required
                     value={editBloggerName}
                     onChange={(e) => setEditBloggerName(e.target.value)}
-                    placeholder="например, @tech_blogger_uz"
+                    placeholder={t.kanbanBloggerNamePlaceholder || 'например, @tech_blogger_uz'}
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
                   />
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Ссылка на страницу / канал
+                    {t.kanbanBloggerLinkLabel || 'Ссылка на страницу / канал'}
                   </label>
                   <input
                     type="text"
@@ -1124,7 +1548,7 @@ export default function KanbanView({
                 <div className="sm:col-span-2">
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                      Личный Telegram блогера (для связи)
+                      {t.kanbanBloggerTgLabel || 'Личный Telegram блогера (для связи)'}
                     </label>
                     {editTelegramUsername && (
                       <a
@@ -1132,10 +1556,10 @@ export default function KanbanView({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 hover:text-sky-800 hover:underline transition"
-                        title="Нажмите, чтобы открыть чат с блогером в Telegram"
+                        title={t.kanbanTgChatTooltip || 'Нажмите, чтобы открыть чат с блогером в Telegram'}
                       >
                         <Send className="w-3 h-3" />
-                        <span>Открыть чат {formatTelegramHandle(editTelegramUsername)}</span>
+                        <span>{lang === 'uz' ? 'Chatni ochish' : lang === 'en' ? 'Open chat' : 'Открыть чат'} {formatTelegramHandle(editTelegramUsername)}</span>
                         <ExternalLink className="w-2.5 h-2.5 opacity-70" />
                       </a>
                     )}
@@ -1145,7 +1569,7 @@ export default function KanbanView({
                       type="text"
                       value={editTelegramUsername}
                       onChange={(e) => setEditTelegramUsername(e.target.value)}
-                      placeholder="например, @username, username или https://t.me/username"
+                      placeholder={t.kanbanBloggerTgPlaceholder || 'например, @username, username или https://t.me/username'}
                       className="w-full pl-9 pr-24 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
                     />
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
@@ -1157,21 +1581,21 @@ export default function KanbanView({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] font-black inline-flex items-center gap-1 shadow-xs transition cursor-pointer"
-                        title="Открыть чат в Telegram"
+                        title={t.kanbanTgChatTooltip || 'Открыть чат в Telegram'}
                       >
-                        <span>Чат</span>
+                        <span>{lang === 'uz' ? 'Chat' : lang === 'en' ? 'Chat' : 'Чат'}</span>
                         <ExternalLink className="w-2.5 h-2.5" />
                       </a>
                     )}
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    Поддерживает любой формат (@юзернейм, ссылку t.me или ник без @) — клик сразу перенаправит в личный чат в Telegram
+                    {t.kanbanBloggerTgHint || 'Поддерживает любой формат (@юзернейм, ссылку t.me или ник без @) — клик сразу перенаправит в личный чат в Telegram'}
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Платформа
+                    {t.kanbanPlatformLabel || 'Платформа'}
                   </label>
                   <select
                     value={editPlatform}
@@ -1187,7 +1611,7 @@ export default function KanbanView({
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Проект *
+                    {t.kanbanProjectLabel || 'Проект *'}
                   </label>
                   <select
                     value={editProjectId}
@@ -1202,7 +1626,7 @@ export default function KanbanView({
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Колонка / Этап Канбана
+                    {t.kanbanStageLabel || 'Колонка / Этап Канбана'}
                   </label>
                   <select
                     value={editKanbanStage}
@@ -1210,23 +1634,25 @@ export default function KanbanView({
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition cursor-pointer"
                   >
                     {columns.map((c) => (
-                      <option key={c.id} value={c.id}>{c.title}</option>
+                      <option key={c.id} value={c.id}>
+                        {getLocalizedColumnTitle(c, lang)} {c.id === 'backlog' ? `📁 (${t.kanbanBacklogBadge || 'Отказы'})` : c.hidden ? `(${t.kanbanHiddenBadge || 'скрытая'})` : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Статус сделки
+                    {t.kanbanDealStatusLabel || 'Статус сделки'}
                   </label>
                   <select
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value as any)}
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition cursor-pointer"
                   >
-                    <option value="active">Активна</option>
-                    <option value="completed">Завершена</option>
-                    <option value="paused">На паузе</option>
+                    <option value="active">{t.kanbanStatusActive || 'Активна'}</option>
+                    <option value="completed">{t.kanbanStatusCompleted || 'Завершена'}</option>
+                    <option value="paused">{t.kanbanStatusPaused || 'На паузе'}</option>
                   </select>
                 </div>
               </div>
@@ -1235,10 +1661,10 @@ export default function KanbanView({
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-                    Финансы и слоты
+                    {t.kanbanFinancialsTitle || 'Финансы и слоты'}
                   </h4>
                   <div className="text-xs font-bold text-slate-500">
-                    Итого к оплате:{' '}
+                    {t.kanbanTotalPayable || 'Итого к оплате:'}{' '}
                     <span className="font-black text-slate-900">
                       {(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)).toLocaleString()} UZS
                     </span>
@@ -1248,7 +1674,7 @@ export default function KanbanView({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                      Количество слотов
+                      {t.kanbanSlotsCountLabel || 'Количество слотов'}
                     </label>
                     <input
                       type="number"
@@ -1262,7 +1688,7 @@ export default function KanbanView({
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                      Цена за слот (UZS)
+                      {t.kanbanPricePerSlotLabel || 'Цена за слот (UZS)'}
                     </label>
                     <input
                       type="number"
@@ -1276,7 +1702,7 @@ export default function KanbanView({
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                      Оплаченная сумма (UZS)
+                      {t.kanbanPaidAmountLabel || 'Оплаченная сумма (UZS)'}
                     </label>
                     <input
                       type="number"
@@ -1292,7 +1718,7 @@ export default function KanbanView({
               {/* Referral Link */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Реферальная ссылка
+                  {t.kanbanReferralLinkLabel || 'Реферальная ссылка'}
                 </label>
                 <input
                   type="text"
@@ -1309,12 +1735,12 @@ export default function KanbanView({
                   <div className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-slate-700" />
                     <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-                      Комментарии и заметки ({editCommentsList.length})
+                      {t.kanbanCommentsTitle || 'Комментарии и заметки'} ({editCommentsList.length})
                     </h4>
                   </div>
                   {currentUserEmail && (
                     <span className="text-[11px] font-medium text-slate-500 truncate">
-                      Автор: <span className="font-bold text-slate-800">{currentUserEmail}</span>
+                      {lang === 'uz' ? 'Muallif:' : lang === 'en' ? 'Author:' : 'Автор:'} <span className="font-bold text-slate-800">{currentUserEmail}</span>
                     </span>
                   )}
                 </div>
@@ -1335,7 +1761,7 @@ export default function KanbanView({
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-medium text-slate-400 shrink-0">
-                              {new Date(item.createdAt).toLocaleString('ru-RU', {
+                              {new Date(item.createdAt).toLocaleString(lang === 'uz' ? 'uz-UZ' : lang === 'en' ? 'en-US' : 'ru-RU', {
                                 day: '2-digit',
                                 month: '2-digit',
                                 hour: '2-digit',
@@ -1346,7 +1772,7 @@ export default function KanbanView({
                               type="button"
                               onClick={() => handleDeleteComment(item.id)}
                               className="text-slate-300 hover:text-rose-600 transition p-0.5 cursor-pointer"
-                              title="Удалить комментарий"
+                              title={lang === 'uz' ? "Izohni o'chirish" : lang === 'en' ? 'Delete comment' : 'Удалить комментарий'}
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -1360,7 +1786,7 @@ export default function KanbanView({
                   </div>
                 ) : (
                   <p className="text-xs text-slate-400 italic bg-white p-3 rounded-xl border border-slate-200">
-                    Комментариев пока нет. Напишите комментарий ниже.
+                    {t.kanbanNoComments || 'Комментариев пока нет. Напишите комментарий ниже.'}
                   </p>
                 )}
 
@@ -1371,7 +1797,7 @@ export default function KanbanView({
                       rows={2}
                       value={newCommentInput}
                       onChange={(e) => setNewCommentInput(e.target.value)}
-                      placeholder={`Написать комментарий... (${currentUserEmail || 'Пользователь'})`}
+                      placeholder={`${t.kanbanCommentPlaceholder || 'Написать комментарий...'} (${currentUserEmail || (lang === 'uz' ? 'Foydalanuvchi' : lang === 'en' ? 'User' : 'Пользователь')})`}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-black transition resize-none"
                     />
                   </div>
@@ -1382,9 +1808,60 @@ export default function KanbanView({
                     className="px-4 py-2.5 bg-black hover:bg-neutral-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition shrink-0 cursor-pointer mb-0.5"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Отправить</span>
+                    <span>{t.kanbanSendBtn || 'Отправить'}</span>
                   </button>
                 </div>
+              </div>
+
+              {/* Audience & Subscribers Section */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-slate-800" />
+                    {t.kanbanAudienceTitle || 'Аудитория блогера (Подписчики)'}
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      {t.kanbanSubscribersCountLabel || 'Количество подписчиков'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={t.kanbanSubscribersPlaceholder || 'Например: 125000'}
+                      value={editSubscribersCount}
+                      onChange={(e) => setEditSubscribersCount(e.target.value === '' ? '' : parseInt(e.target.value, 10) || 0)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black"
+                    />
+                  </div>
+
+                  <div className="flex flex-col justify-end">
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      {editSubscribersCount && Number(editSubscribersCount) > 0 && Number(editPricePerSlot || 0) > 0 ? (
+                        <span>
+                          {t.kanbanApproxCostPer1k || 'Ориентировочно:'} <strong className="text-slate-900 font-bold">~{Math.round((Number(editPricePerSlot) / Number(editSubscribersCount)) * 1000).toLocaleString()} UZS</strong> {t.kanbanPer1kReach || 'за 1K охвата'}
+                        </span>
+                      ) : (
+                        t.kanbanEnterSubscribersHint || 'Укажите подписчиков для расчета ориентировочной стоимости за 1,000 охвата'
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* If existing deal, show the interactive flip card directly inside modal */}
+                {!isCreateMode && selectedDeal && (
+                  <div className="mt-2">
+                    <BloggerAudienceCard
+                      integration={selectedDeal}
+                      lang={lang}
+                      onRefreshSubscribers={onRefreshSubscribers}
+                      onAddManualSnapshot={onAddManualSnapshot}
+                      isCollapsible={false}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Requisites Information Section (Edit mode only) */}
@@ -1394,26 +1871,26 @@ export default function KanbanView({
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-slate-600" />
                       <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-                        Реквизиты блогера
+                        {t.kanbanRequisitesSectionTitle || 'Реквизиты блогера'}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       {selectedDeal.requisites?.taxStatus === 'card_transfer' ? (
                         <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                          💳 На карту
+                          {t.kanbanCardTaxStatus || '💳 На карту'}
                         </span>
                       ) : selectedDeal.requisites?.taxStatus === 'contract' ? (
                         <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-                          📄 Договор
+                          {t.kanbanContractTaxStatus || '📄 Договор'}
                         </span>
                       ) : null}
                       {selectedDeal.requisites ? (
                         <span className="flex items-center gap-1 text-[11px] text-emerald-700 font-bold bg-emerald-100/80 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Заполнены
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {t.kanbanRequisitesFilled || 'Заполнены'}
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 text-[11px] text-amber-700 font-medium bg-amber-100/80 px-2 py-0.5 rounded-full">
-                          <Clock className="w-3 h-3 text-amber-600" /> Ожидаются
+                          <Clock className="w-3 h-3 text-amber-600" /> {t.kanbanRequisitesPending || 'Ожидаются'}
                         </span>
                       )}
                     </div>
@@ -1422,19 +1899,19 @@ export default function KanbanView({
                   {selectedDeal.requisites ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-semibold block">ФИО:</span>
+                        <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanFullNameLabel || 'ФИО:'}</span>
                         <span className="font-bold text-slate-900">{selectedDeal.requisites.fullName || '—'}</span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-semibold block">Номер карты / IBAN:</span>
+                        <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanCardIbanLabel || 'Номер карты / IBAN:'}</span>
                         <span className="font-mono font-bold text-slate-900">{selectedDeal.requisites.cardNumberOrIban || '—'}</span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-semibold block">ПИНФЛ / ИНН:</span>
+                        <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanPinflTinLabel || 'ПИНФЛ / ИНН:'}</span>
                         <span className="font-mono font-bold text-slate-900">{selectedDeal.requisites.pinflOrTin || '—'}</span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-semibold block">Банк / Телефон:</span>
+                        <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanBankPhoneLabel || 'Банк / Телефон:'}</span>
                         <span className="font-semibold text-slate-900">
                           {selectedDeal.requisites.bankName || selectedDeal.requisites.phone || '—'}
                         </span>
@@ -1444,29 +1921,29 @@ export default function KanbanView({
                       {(selectedDeal.requisites.passportFrontScan || selectedDeal.requisites.passportBackScan) && (
                         <div className="sm:col-span-2 bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
                           <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider flex items-center gap-1">
-                            <FileCheck className="w-3 h-3 text-emerald-600" /> Копии паспорта / ID-карты (2 стороны):
+                            <FileCheck className="w-3 h-3 text-emerald-600" /> {t.kanbanPassportCopiesLabel || 'Копии паспорта / ID-карты (2 стороны):'}
                           </span>
                           <div className="grid grid-cols-2 gap-2 pt-0.5">
                             {selectedDeal.requisites.passportFrontScan && (
                               <div 
-                                onClick={() => setActivePassportScanZoom({ src: selectedDeal.requisites!.passportFrontScan!, title: 'Лицевая сторона паспорта' })}
+                                onClick={() => setActivePassportScanZoom({ src: selectedDeal.requisites!.passportFrontScan!, title: t.kanbanPassportFront || 'Лицевая сторона' })}
                                 className="group relative rounded-lg border border-slate-200 overflow-hidden cursor-pointer bg-slate-50 hover:border-black transition"
                               >
                                 <img src={selectedDeal.requisites.passportFrontScan} alt="Лицевая сторона" className="w-full h-20 object-cover group-hover:scale-105 transition duration-150" />
                                 <div className="p-1 text-center bg-white/95 text-[10px] font-bold text-slate-700 border-t border-slate-100 flex items-center justify-between px-2">
-                                  <span>Лицевая сторона</span>
+                                  <span>{t.kanbanPassportFront || 'Лицевая сторона'}</span>
                                   <ZoomIn className="w-3 h-3 text-slate-400" />
                                 </div>
                               </div>
                             )}
                             {selectedDeal.requisites.passportBackScan && (
                               <div 
-                                onClick={() => setActivePassportScanZoom({ src: selectedDeal.requisites!.passportBackScan!, title: 'Обратная сторона паспорта' })}
+                                onClick={() => setActivePassportScanZoom({ src: selectedDeal.requisites!.passportBackScan!, title: t.kanbanPassportBack || 'Обратная сторона' })}
                                 className="group relative rounded-lg border border-slate-200 overflow-hidden cursor-pointer bg-slate-50 hover:border-black transition"
                               >
                                 <img src={selectedDeal.requisites.passportBackScan} alt="Обратная сторона" className="w-full h-20 object-cover group-hover:scale-105 transition duration-150" />
                                 <div className="p-1 text-center bg-white/95 text-[10px] font-bold text-slate-700 border-t border-slate-100 flex items-center justify-between px-2">
-                                  <span>Обратная сторона</span>
+                                  <span>{t.kanbanPassportBack || 'Обратная сторона'}</span>
                                   <ZoomIn className="w-3 h-3 text-slate-400" />
                                 </div>
                               </div>
@@ -1477,7 +1954,7 @@ export default function KanbanView({
                     </div>
                   ) : (
                     <p className="text-xs text-slate-500 pt-1">
-                      Блогер еще не заполнил реквизиты. Вы можете скопировать и отправить ему ссылку на форму реквизитов.
+                      {t.kanbanNoRequisitesFilledYet || 'Блогер еще не заполнил реквизиты. Вы можете скопировать и отправить ему ссылку на форму реквизитов.'}
                     </p>
                   )}
                 </div>
@@ -1491,7 +1968,7 @@ export default function KanbanView({
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm('Вы уверены, что хотите удалить эту сделку?')) {
+                      if (window.confirm(t.kanbanDeleteDealConfirm || 'Вы уверены, что хотите удалить эту сделку?')) {
                         onDeleteIntegration(selectedDeal.id);
                         handleCloseDealModal();
                       }
@@ -1499,7 +1976,7 @@ export default function KanbanView({
                     className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
-                    <span>Удалить</span>
+                    <span>{t.deleteTooltip || 'Удалить'}</span>
                   </button>
                 )}
               </div>
@@ -1510,7 +1987,7 @@ export default function KanbanView({
                   onClick={handleCloseDealModal}
                   className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
                 >
-                  Отмена
+                  {t.kanbanCancelBtn || 'Отмена'}
                 </button>
                 <button
                   type="submit"
@@ -1521,14 +1998,14 @@ export default function KanbanView({
                   {saveSuccess ? (
                     <>
                       <Check className="w-4 h-4 text-emerald-400" />
-                      <span>{isCreateMode ? 'Создано!' : 'Сохранено!'}</span>
+                      <span>{isCreateMode ? (t.kanbanCreatedBtn || 'Создано!') : (t.kanbanSavedBtn || 'Сохранено!')}</span>
                     </>
                   ) : isSavingEdit ? (
-                    <span>{isCreateMode ? 'Создание...' : 'Сохранение...'}</span>
+                    <span>{isCreateMode ? (t.kanbanCreatingBtn || 'Создание...') : (t.kanbanSavingBtn || 'Сохранение...')}</span>
                   ) : (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>{isCreateMode ? 'Создать сделку' : 'Сохранить изменения'}</span>
+                      <span>{isCreateMode ? (t.kanbanCreateDealBtn || 'Создать сделку') : (t.kanbanSaveDealBtn || 'Сохранить изменения')}</span>
                     </>
                   )}
                 </button>
@@ -1562,6 +2039,35 @@ export default function KanbanView({
               className="max-h-[80vh] w-auto max-w-full rounded-2xl border border-white/20 shadow-2xl object-contain bg-slate-900"
             />
           </div>
+        </div>
+      )}
+      {/* Backlog Move Notification Toast */}
+      {backlogNotification && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-neutral-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-neutral-700 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="w-8 h-8 rounded-xl bg-neutral-800 flex items-center justify-center text-white shrink-0">
+            <EyeOff className="w-4 h-4" />
+          </div>
+          <div className="text-xs">
+            <p className="font-bold">{t.kanbanToastBacklogTitle || 'Карточка перенесена в Backlog'}</p>
+            <p className="text-neutral-400 text-[11px]">«{backlogNotification.bloggerName}» {t.kanbanToastBacklogSaved || 'сохранена в скрытом архиве'}</p>
+          </div>
+          {isBacklogHidden && (
+            <button
+              onClick={() => {
+                handleToggleColumnVisibility('backlog');
+                setBacklogNotification(null);
+              }}
+              className="ml-2 px-2.5 py-1 bg-white text-black font-bold text-[11px] rounded-lg hover:bg-neutral-200 transition cursor-pointer"
+            >
+              {t.kanbanToastShowBacklog || 'Показать Backlog'}
+            </button>
+          )}
+          <button
+            onClick={() => setBacklogNotification(null)}
+            className="p-1 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

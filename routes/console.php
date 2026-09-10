@@ -201,5 +201,84 @@ Artisan::command('integrations:recalculate-dates', function () {
     $this->info("Recalculation complete. Updated {$count} integration(s).");
 })->purpose('Recalculate and sync integration start and end dates based on all associated reports and bulk purchases');
 
+Artisan::command('bloggers:sync-subscribers {--dry-run : Only preview updates without saving}', function () {
+    $dryRun = $this->option('dry-run');
+    $apiService = app(\App\Services\InstagramApiService::class);
+
+    $integrations = \App\Models\Integration::whereNotNull('blogger_name')->get();
+    $uniqueBloggers = [];
+
+    foreach ($integrations as $item) {
+        $clean = strtolower(trim(ltrim($item->blogger_name, '@#')));
+        if ($clean && !isset($uniqueBloggers[$clean])) {
+            $uniqueBloggers[$clean] = $item;
+        }
+    }
+
+    $this->info("Found " . count($uniqueBloggers) . " unique blogger(s) to sync.");
+
+    $synced = 0;
+    $today = now()->format('Y-m-d');
+
+    foreach ($uniqueBloggers as $cleanName => $sample) {
+        $platform = $sample->platform ?? 'Instagram';
+        if (strtolower($platform) === 'telegram') {
+            $target = $sample->telegram_username ?: $sample->blogger_page_link ?: $sample->blogger_name;
+        } else {
+            $target = $sample->blogger_page_link ?: $sample->blogger_name ?: $sample->telegram_username;
+        }
+
+        $result = $apiService->fetchSubscriberCount($platform, $target ?? '', $sample->subscribers_count);
+
+        if (!$result['success']) {
+            $this->warn("Skipped @{$cleanName} ({$platform}): " . ($result['error'] ?? 'API error'));
+            continue;
+        }
+
+        $count = (int) $result['count'];
+        $this->info("✓ @{$cleanName} ({$platform}): {$count} subscribers (source: {$result['source']})");
+
+        if (!$dryRun) {
+            $deals = $integrations->filter(fn($i) => strtolower(trim(ltrim($i->blogger_name, '@#'))) === $cleanName);
+            foreach ($deals as $deal) {
+                $history = $deal->subscribers_history ?? [];
+                if (empty($history)) {
+                    $history = \App\Services\InstagramApiService::generateInitialHistory($count, $result['source']);
+                } else {
+                    $found = false;
+                    foreach ($history as &$entry) {
+                        if (isset($entry['date']) && $entry['date'] === $today) {
+                            $entry['count'] = $count;
+                            $entry['source'] = $result['source'];
+                            $found = true;
+                            break;
+                        }
+                    }
+                    unset($entry);
+                    if (!$found) {
+                        $history[] = [
+                            'date' => $today,
+                            'count' => $count,
+                            'source' => $result['source']
+                        ];
+                    }
+                }
+                usort($history, fn($a, $b) => strcmp($a['date'] ?? '', $b['date'] ?? ''));
+
+                $deal->update([
+                    'subscribers_count' => $count,
+                    'subscribers_updated_at' => now(),
+                    'subscribers_history' => $history,
+                ]);
+            }
+        }
+        $synced++;
+    }
+
+    $this->info("Finished syncing subscribers for {$synced} blogger(s)." . ($dryRun ? ' (DRY RUN)' : ''));
+})->purpose('Sync blogger follower counts from Instagram/Telegram API twice monthly')
+  ->twiceMonthly(1, 15, '03:00');
+
+
 
 

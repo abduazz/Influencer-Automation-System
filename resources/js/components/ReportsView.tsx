@@ -75,6 +75,16 @@ interface ReportsViewProps {
     projectId?: string;
     bloggerName?: string;
     paymentType?: 'prepaid' | 'full' | 'other' | 'remaining';
+    platform?: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
+    pricePerSlot?: number | '';
+    slotsCount?: number;
+    paidSlotsCount?: number;
+    bloggerPageLink?: string;
+    destination?: string;
+    totalAmount?: number | '';
+    paidAmount?: number | '';
+    comments?: string;
+    integrationId?: string;
   } | null;
   onClearInitialState?: () => void;
 }
@@ -168,18 +178,7 @@ export default function ReportsView({
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Telegram');
 
-  useEffect(() => {
-    if (initialState) {
-      if (initialState.paymentType) setPaymentType(initialState.paymentType);
-      if (initialState.projectId) setProjectId(initialState.projectId);
-      if (initialState.bloggerName) setChannelBlogger(initialState.bloggerName);
-      
-      if (onClearInitialState) {
-        onClearInitialState();
-      }
-    }
-  }, [initialState]);
-
+  const [currentIntegrationId, setCurrentIntegrationId] = useState<string | null>(null);
   const [slotsCount, setSlotsCount] = useState<number>(5);
   const [paidSlotsCount, setPaidSlotsCount] = useState<number>(3);
   const [pricePerSlot, setPricePerSlot] = useState<number | ''>(0);
@@ -188,6 +187,38 @@ export default function ReportsView({
   const [totalAmount, setTotalAmount] = useState<number | ''>(0);
   const [paidAmount, setPaidAmount] = useState<number | ''>(0);
   const [slotsConfig, setSlotsConfig] = useState<SlotConfig[]>([]);
+
+  useEffect(() => {
+    if (initialState) {
+      if (initialState.paymentType) setPaymentType(initialState.paymentType);
+      if (initialState.projectId) setProjectId(initialState.projectId);
+      if (initialState.bloggerName) setChannelBlogger(initialState.bloggerName);
+      if (initialState.platform) setPlatform(initialState.platform);
+      if (initialState.bloggerPageLink) setBloggerPageLink(initialState.bloggerPageLink);
+      if (initialState.destination) setDestination(initialState.destination);
+      if (initialState.comments) setComments(initialState.comments);
+      if (initialState.slotsCount !== undefined) setSlotsCount(initialState.slotsCount);
+      if (initialState.paidSlotsCount !== undefined) setPaidSlotsCount(initialState.paidSlotsCount);
+      if (initialState.pricePerSlot !== undefined) setPricePerSlot(initialState.pricePerSlot);
+      if (initialState.totalAmount !== undefined) {
+        setTotalAmount(initialState.totalAmount);
+      } else if (initialState.slotsCount !== undefined && initialState.pricePerSlot !== undefined) {
+        setTotalAmount(Number(initialState.slotsCount) * Number(initialState.pricePerSlot || 0));
+      }
+      if (initialState.paidAmount !== undefined) {
+        setPaidAmount(initialState.paidAmount);
+      } else if (initialState.paidSlotsCount !== undefined && initialState.pricePerSlot !== undefined) {
+        setPaidAmount(Number(initialState.paidSlotsCount) * Number(initialState.pricePerSlot || 0));
+      }
+      if (initialState.integrationId) {
+        setCurrentIntegrationId(initialState.integrationId);
+      }
+      
+      if (onClearInitialState) {
+        onClearInitialState();
+      }
+    }
+  }, [initialState]);
 
   const [isMultiProject, setIsMultiProject] = useState<boolean>(false);
   const [slotProjects, setSlotProjects] = useState<{ [slotIndex: number]: string }>({});
@@ -403,6 +434,7 @@ export default function ReportsView({
       paymentType,
       receipt,
       lang,
+      ...(currentIntegrationId ? { integrationId: currentIntegrationId } : {})
     };
 
     if (paymentType === 'other') {
@@ -471,6 +503,7 @@ export default function ReportsView({
       }, 10000);
 
       // Reset inputs but preserve some logical constants
+      setCurrentIntegrationId(null);
       setDestination('');
       setChannelBlogger('');
       setBloggerPageLink('');
@@ -580,6 +613,29 @@ export default function ReportsView({
                         {t.reportForm}
                       </span>
                     </div>
+
+                    {currentIntegrationId && (
+                      <div className="flex items-center justify-between p-2.5 bg-neutral-900 text-white rounded-xl text-[11px] mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                          <span>
+                            {lang === 'ru' 
+                              ? `Сделка блогера: ${channelBlogger || '—'} («Готов к оплате»). После создания отчёта статус сменится на «Оплачено / В работе».` 
+                              : lang === 'uz'
+                                ? `Bloger bitimi: ${channelBlogger || '—'} («To'lovga tayyor»). Hisobot yaratilgach «To'langan / Jarayonda» ga o'tadi.`
+                                : `Deal for ${channelBlogger || '—'} ("Ready for payment"). After creating report, stage will advance to "Paid / In Progress".`}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentIntegrationId(null)}
+                          className="text-neutral-400 hover:text-white font-bold ml-2 cursor-pointer"
+                          title="Отвязать от сделки"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
 
                     <form onSubmit={handleSubmit} className="space-y-3">
                       {/* Payment Type Selection */}

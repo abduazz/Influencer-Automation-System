@@ -48,6 +48,8 @@ import {
   fetchKanbanColumns,
   saveKanbanColumns,
   clearKanbanStageApi,
+  refreshIntegrationSubscribers,
+  addIntegrationSubscriberHistory,
 } from './services/api';
 
 import {
@@ -90,8 +92,45 @@ export default function App() {
     return null;
   });
 
-  // Navigation Tabs State
-  const [activeTab, setActiveTab] = useState<'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs' | 'requisites'>('projects');
+  // Navigation Tabs State & Types
+  type AppTab = 'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs' | 'requisites';
+
+  const ALL_VALID_TABS: AppTab[] = [
+    'projects', 
+    'kanban', 
+    'requisites_directory', 
+    'bloggers', 
+    'reports', 
+    'bulk_purchases', 
+    'reports_feed', 
+    'other_expenses', 
+    'blogger', 
+    'code', 
+    'access', 
+    'logs',
+    'requisites'
+  ];
+
+  const getInitialActiveTab = (): AppTab => {
+    if (typeof window === 'undefined') return 'projects';
+    const params = new URLSearchParams(window.location.search);
+    const hasCabinetParam = params.get('cabinet') === 'true' || window.location.pathname.startsWith('/c/');
+    if (hasCabinetParam) return 'blogger';
+    if (params.get('view') === 'requisites' || window.location.pathname.startsWith('/requisites')) {
+      return 'requisites';
+    }
+    const pageParam = params.get('page') as AppTab;
+    if (pageParam && ALL_VALID_TABS.includes(pageParam)) {
+      return pageParam;
+    }
+    const cachedTab = localStorage.getItem('tezi_active_tab') as AppTab;
+    if (cachedTab && ALL_VALID_TABS.includes(cachedTab)) {
+      return cachedTab;
+    }
+    return 'projects';
+  };
+
+  const [activeTab, setActiveTab] = useState<AppTab>(getInitialActiveTab);
   const [bloggerRequisitesList, setBloggerRequisitesList] = useState<BloggerRequisites[]>([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
@@ -99,6 +138,16 @@ export default function App() {
     projectId?: string;
     bloggerName?: string;
     paymentType?: 'prepaid' | 'full' | 'other' | 'remaining';
+    platform?: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
+    pricePerSlot?: number | '';
+    slotsCount?: number;
+    paidSlotsCount?: number;
+    bloggerPageLink?: string;
+    destination?: string;
+    totalAmount?: number | '';
+    paidAmount?: number | '';
+    comments?: string;
+    integrationId?: string;
   } | null>(null);
 
   // Check if current URL route is for external Blogger Requisites form
@@ -271,12 +320,55 @@ export default function App() {
     setIntegrations((prev) => prev.filter(i => i.id !== id));
   };
 
-  const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => {
+  const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'> & { integrationId?: string }) => {
+    // Optimistically update integration deal stage if it was in ready_for_payment
+    setIntegrations((prev) => prev.map((item) => {
+      const isTarget = (newRep.integrationId && String(item.id) === String(newRep.integrationId)) ||
+        (!newRep.integrationId && newRep.channelBlogger && item.bloggerName.toLowerCase().trim() === newRep.channelBlogger.toLowerCase().trim() && String(item.projectId) === String(newRep.projectId));
+
+      if (isTarget && item.kanbanStage === 'ready_for_payment') {
+        return { ...item, kanbanStage: 'paid_in_progress' };
+      }
+      return item;
+    }));
+
     const report = await createReport(newRep, currentUserEmail || undefined);
     setReports((prev) => [report, ...prev]);
     const ints = await fetchIntegrations();
     setIntegrations(ints);
     return report;
+  };
+
+  const handleNavigateFromKanbanToReports = (deal: Integration) => {
+    let requisitesNote = '';
+    if (deal.requisites) {
+      const r = deal.requisites;
+      const parts: string[] = [];
+      if (r.fullName) parts.push(r.fullName);
+      if (r.cardNumberOrIban) parts.push(r.cardNumberOrIban);
+      if (r.bankName) parts.push(r.bankName);
+      if (r.pinflOrTin) parts.push(`ПИНФЛ/ИНН: ${r.pinflOrTin}`);
+      if (parts.length > 0) {
+        requisitesNote = `Реквизиты: ${parts.join(', ')}`;
+      }
+    }
+
+    setReportsInitialState({
+      projectId: deal.projectId,
+      bloggerName: deal.bloggerName,
+      paymentType: 'prepaid',
+      platform: deal.platform,
+      pricePerSlot: deal.pricePerSlot,
+      slotsCount: deal.slotsCount || 5,
+      paidSlotsCount: deal.paidSlotsCount ?? Math.ceil((deal.slotsCount || 5) / 2),
+      bloggerPageLink: deal.bloggerPageLink,
+      destination: deal.referralLink || '',
+      comments: requisitesNote,
+      totalAmount: deal.totalAmount || (deal.pricePerSlot * (deal.slotsCount || 1)),
+      paidAmount: deal.paidAmount || (deal.pricePerSlot * (deal.paidSlotsCount ?? Math.ceil((deal.slotsCount || 5) / 2))),
+      integrationId: deal.id,
+    });
+    setActiveTab('reports');
   };
 
   const handleDeleteReport = async (id: string) => {
@@ -347,6 +439,52 @@ export default function App() {
     }
   };
 
+  const handleRefreshIntegrationSubscribers = async (integrationId: string) => {
+    try {
+      const res = await refreshIntegrationSubscribers(integrationId);
+      if (res.success && res.integration) {
+        const targetClean = (res.integration.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
+        setIntegrations((prev) => prev.map((item) => {
+          const itemClean = (item.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
+          if (item.id === integrationId || (targetClean && itemClean === targetClean)) {
+            return { 
+              ...item, 
+              subscribersCount: res.integration.subscribersCount,
+              subscribersUpdatedAt: res.integration.subscribersUpdatedAt,
+              subscribersHistory: res.integration.subscribersHistory
+            };
+          }
+          return item;
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to refresh subscribers:', err);
+    }
+  };
+
+  const handleAddIntegrationSubscriberHistory = async (integrationId: string, date: string, count: number, note?: string) => {
+    try {
+      const res = await addIntegrationSubscriberHistory(integrationId, { date, count, note });
+      if (res.success && res.integration) {
+        const targetClean = (res.integration.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
+        setIntegrations((prev) => prev.map((item) => {
+          const itemClean = (item.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
+          if (item.id === integrationId || (targetClean && itemClean === targetClean)) {
+            return { 
+              ...item, 
+              subscribersCount: res.integration.subscribersCount,
+              subscribersUpdatedAt: res.integration.subscribersUpdatedAt,
+              subscribersHistory: res.integration.subscribersHistory
+            };
+          }
+          return item;
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to add subscriber history:', err);
+    }
+  };
+
   const handleSubmitRequisites = (integrationId: string, requisitesData: any) => {
     const newReqRecord: BloggerRequisites = {
       id: `req-${Date.now()}`,
@@ -411,10 +549,15 @@ export default function App() {
           integrationId: integrationId
         });
         setActiveTab('blogger');
-      } else if (page && ['projects', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'blogger', 'code', 'access', 'logs'].includes(page)) {
+      } else if (page && ALL_VALID_TABS.includes(page as any)) {
         setActiveTab(page as any);
-      } else if (!isTg) {
-        setActiveTab('projects');
+      } else {
+        const cached = localStorage.getItem('tezi_active_tab') as AppTab;
+        if (cached && ALL_VALID_TABS.includes(cached)) {
+          setActiveTab(cached);
+        } else if (!isTg) {
+          setActiveTab('projects');
+        }
       }
     };
 
@@ -428,7 +571,10 @@ export default function App() {
 
   // Update browser URL query string whenever activeTab changes
   useEffect(() => {
-    if (isBloggerCabinetRoute) return;
+    if (isBloggerCabinetRoute || isRequisitesRoute) return;
+
+    // Persist active tab to localStorage for instant restoration on tab refresh
+    localStorage.setItem('tezi_active_tab', activeTab);
 
     const params = new URLSearchParams(window.location.search);
     
@@ -436,7 +582,7 @@ export default function App() {
       if (params.get('cabinet') !== 'true') {
         params.set('cabinet', 'true');
         params.delete('page');
-        window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
       }
     } else {
       if (params.get('page') !== activeTab) {
@@ -445,10 +591,10 @@ export default function App() {
         params.delete('platform');
         params.delete('slots_count');
         params.set('page', activeTab);
-        window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
       }
     }
-  }, [activeTab, isBloggerCabinetRoute]);
+  }, [activeTab, isBloggerCabinetRoute, isRequisitesRoute]);
 
   // Resolve allowed pages and projects for the active user
   const activeUser = (allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase());
@@ -471,7 +617,8 @@ export default function App() {
 
   // Enforce page-level access control: redirect user to their first allowed page if active tab is forbidden
   useEffect(() => {
-    if (isBloggerCabinetRoute) return;
+    if (isBloggerCabinetRoute || isRequisitesRoute) return;
+    if (allowedUsersLoading) return; // Do not redirect while user permissions are still loading
     if (!currentUserRole || currentUserRole === 'super_admin') return;
 
     const isAllowedTab = (activeTab === 'bulk_purchases' || activeTab === 'bloggers' || activeTab === 'kanban' || activeTab === 'requisites_directory') ? true : allowedPages.includes(activeTab);
@@ -482,7 +629,7 @@ export default function App() {
         setActiveTab(allowedPages[0] as any);
       }
     }
-  }, [activeTab, allowedPages, currentUserRole, isBloggerCabinetRoute]);
+  }, [activeTab, allowedPages, currentUserRole, isBloggerCabinetRoute, isRequisitesRoute, allowedUsersLoading]);
 
   // White-list Gate (bypass if it's the guest blogger cabinet or requisites form page)
   if (!isBloggerCabinetRoute && !isRequisitesRoute && (!currentUserEmail || !currentUserRole)) {
@@ -615,6 +762,9 @@ export default function App() {
                 currentUserEmail={currentUserEmail}
                 onOpenRequisitesDirectory={() => setActiveTab('requisites_directory')}
                 onClearStage={handleClearKanbanStage}
+                onRefreshSubscribers={handleRefreshIntegrationSubscribers}
+                onAddManualSnapshot={handleAddIntegrationSubscriberHistory}
+                onNavigateToReports={handleNavigateFromKanbanToReports}
               />
             )}
             {activeTab === 'requisites_directory' && (
@@ -664,6 +814,8 @@ export default function App() {
                 integrations={integrations}
                 lang={lang}
                 userRole={currentUserRole}
+                onRefreshSubscribers={handleRefreshIntegrationSubscribers}
+                onAddManualSnapshot={handleAddIntegrationSubscriberHistory}
               />
             )}
 

@@ -41,7 +41,7 @@ export interface BloggerRequisites {
   id: string;
   integrationId: string;
   bloggerName: string;
-  taxStatus: 'card_transfer' | 'contract' | 'individual' | 'self_employed' | 'individual_entrepreneur' | 'llc';
+  taxStatus: 'card_transfer' | 'contract' | string;
   fullName: string;
   passportSeriesNumber?: string;
   pinflOrTin?: string;

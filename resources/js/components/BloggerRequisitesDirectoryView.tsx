@@ -147,18 +147,11 @@ export default function BloggerRequisitesDirectoryView({
 
   const getTaxBadge = (status: BloggerRequisites['taxStatus']) => {
     switch (status) {
-      case 'card_transfer':
-        return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">{t.taxStatusCardTransfer || '💳 Перевод на карту'}</span>;
       case 'contract':
         return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">{t.taxStatusContract || '📄 Официальный договор'}</span>;
-      case 'self_employed':
-        return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">{t.taxStatusSelfEmployed || 'Самозанятый'}</span>;
-      case 'individual_entrepreneur':
-        return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">{t.taxStatusIE || 'ИП'}</span>;
-      case 'llc':
-        return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">{t.taxStatusLLC || 'ООО / Юр. лицо'}</span>;
+      case 'card_transfer':
       default:
-        return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">{t.taxStatusIndividual || 'Физ. лицо'}</span>;
+        return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">{t.taxStatusCardTransfer || '💳 Перевод на карту'}</span>;
     }
   };
 
@@ -303,10 +296,6 @@ export default function BloggerRequisitesDirectoryView({
               <option value="all">{t.allFormats || 'Все форматы'}</option>
               <option value="card_transfer">{t.taxStatusCardTransfer || '💳 Перевод на карту'}</option>
               <option value="contract">{t.taxStatusContract || '📄 Официальный договор'}</option>
-              <option value="individual">{t.taxStatusIndividual || 'Физ. лицо'}</option>
-              <option value="self_employed">{t.taxStatusSelfEmployed || 'Самозанятый'}</option>
-              <option value="individual_entrepreneur">{t.taxStatusIE || 'ИП'}</option>
-              <option value="llc">{t.taxStatusLLC || 'ООО / Юр. лицо'}</option>
             </select>
           </div>
         )}

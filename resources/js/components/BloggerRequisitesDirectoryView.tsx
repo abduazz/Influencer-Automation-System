@@ -72,19 +72,24 @@ export default function BloggerRequisitesDirectoryView({
   const allRequisites = useMemo(() => {
     const map = new Map<string, BloggerRequisites>();
 
-    // From array fetched from API / backend
-    requisitesList.forEach((item) => {
-      if (item && item.id) {
-        map.set(item.id, item);
+    // From integrations first (keyed by integration id)
+    integrations.forEach((item) => {
+      if (item.requisites) {
+        const key = String(item.id);
+        map.set(key, { ...item.requisites, integrationId: String(item.id), bloggerName: item.bloggerName });
       }
     });
 
-    // From integrations
-    integrations.forEach((item) => {
-      if (item.requisites) {
-        const key = item.requisites.id || `req-${item.id}`;
-        if (!map.has(key)) {
-          map.set(key, { ...item.requisites, integrationId: item.requisites.integrationId || item.id });
+    // From array fetched from API / backend
+    requisitesList.forEach((item) => {
+      if (item) {
+        const key = item.integrationId ? String(item.integrationId) : (item.id ? String(item.id) : '');
+        if (key) {
+          if (!map.has(key)) {
+            map.set(key, item);
+          } else {
+            map.set(key, { ...map.get(key)!, ...item });
+          }
         }
       }
     });
@@ -92,13 +97,24 @@ export default function BloggerRequisitesDirectoryView({
     return Array.from(map.values());
   }, [requisitesList, integrations]);
 
-  // Integrations waiting for requisites
+  // Integrations waiting for requisites: ONLY active deals on 'requisites_pending' stage in Kanban
   const pendingIntegrations = useMemo(() => {
     return integrations.filter((item) => {
+      // Exclude historical deals created before Kanban/requisites portal (they have no kanbanStage)
+      if (!item.kanbanStage || item.kanbanStage !== 'requisites_pending') {
+        return false;
+      }
+      if (item.status === 'completed') {
+        return false;
+      }
       const hasRequisites = !!item.requisites || allRequisites.some(r => String(r.integrationId) === String(item.id));
       return !hasRequisites;
     });
   }, [integrations, allRequisites]);
+
+  const availableIntegrationsForLink = useMemo(() => {
+    return integrations.filter(i => !!i.kanbanStage && i.status !== 'completed' && i.kanbanStage !== 'completed');
+  }, [integrations]);
 
   // Filtered filled requisites
   const filteredRequisites = useMemo(() => {
@@ -133,6 +149,12 @@ export default function BloggerRequisitesDirectoryView({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleCopyValue = (text: string, identifier: string) => {
+    navigator.clipboard.writeText(text.trim());
+    setCopiedId(identifier);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   const handleCopyLink = (integrationId?: string, identifier = 'general') => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tezi.uz';
     const path = typeof window !== 'undefined' ? window.location.pathname : '/';
@@ -145,14 +167,32 @@ export default function BloggerRequisitesDirectoryView({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const getTaxBadge = (status: BloggerRequisites['taxStatus']) => {
-    switch (status) {
-      case 'contract':
-        return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">{t.taxStatusContract || '📄 Официальный договор'}</span>;
-      case 'card_transfer':
-      default:
-        return <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">{t.taxStatusCardTransfer || '💳 Перевод на карту'}</span>;
+  const formatCardDisplay = (val?: string) => {
+    if (!val) return '';
+    const clean = val.replace(/\s+/g, '');
+    if (/^\d{16}$/.test(clean)) {
+      return clean.replace(/(\d{4})(?=\d)/g, '$1 ');
     }
+    return val;
+  };
+
+  const getTaxBadge = (status: BloggerRequisites['taxStatus']) => {
+    const isContract = status === 'contract';
+    const rawLabel = isContract
+      ? (t.taxStatusContract || 'Официальный договор')
+      : (t.taxStatusCardTransfer || 'Перевод на карту');
+    const label = rawLabel.replace(/^[^\w\sа-яА-ЯёЁo'ʻ’‘]+/iu, '').trim();
+
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${
+        isContract
+          ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+          : 'bg-blue-50 text-blue-700 border-blue-200'
+      }`}>
+        {isContract ? <FileText className="w-3 h-3 text-indigo-600" /> : <CreditCard className="w-3 h-3 text-blue-600" />}
+        <span>{label}</span>
+      </span>
+    );
   };
 
   // Helper for generating share text
@@ -174,33 +214,49 @@ export default function BloggerRequisitesDirectoryView({
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 p-4 md:p-8 space-y-6 font-sans">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-black rounded-xl text-white shadow-xs">
-            <FileText className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              {t.bloggerRequisitesTitle || 'Реквизиты и Договоры Блогеров'}
-            </h1>
-            <p className="text-xs font-medium text-slate-500 mt-0.5">
-              {t.bloggerRequisitesSub || 'База данных заполненных анкет, паспортных данных и карт для выплат'}
-            </p>
-          </div>
+      {/* Top Bar: Tabs & Action Buttons */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-2">
+        {/* Tabs: Filled vs Pending */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('filled')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeTab === 'filled'
+                ? 'bg-black text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <CheckCircle2 className={`w-3.5 h-3.5 ${activeTab === 'filled' ? 'text-emerald-400' : 'text-slate-400'}`} />
+            <span>{t.tabFilledRequisites || 'Заполненные анкеты'}</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+              activeTab === 'filled' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {allRequisites.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('pending')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeTab === 'pending'
+                ? 'bg-black text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Clock className={`w-3.5 h-3.5 ${activeTab === 'pending' ? 'text-amber-400' : 'text-slate-400'}`} />
+            <span>{t.tabPendingRequisites || 'Ожидают реквизитов'}</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+              activeTab === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+            }`}>
+              {pendingIntegrations.length}
+            </span>
+          </button>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1.5 bg-slate-100 rounded-xl border border-slate-200 text-xs font-bold text-slate-700">
-              {t.totalRequisites || 'Заполнено'}: <span className="text-black font-extrabold">{allRequisites.length}</span>
-            </span>
-            <span className="px-3 py-1.5 bg-amber-50 rounded-xl border border-amber-200 text-xs font-bold text-amber-800">
-              {t.tabPendingRequisites || 'Ожидают'}: <span className="text-amber-900 font-extrabold">{pendingIntegrations.length}</span>
-            </span>
-          </div>
-
-          {/* Action: Send Requisites Link */}
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => {
@@ -211,62 +267,22 @@ export default function BloggerRequisitesDirectoryView({
               }
               setIsSendModalOpen(true);
             }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
           >
-            <Send className="w-4 h-4 text-emerald-400" />
+            <Send className="w-3.5 h-3.5 text-emerald-400" />
             <span>{t.sendRequisitesLinkBtn || 'Отправить ссылку на реквизиты'}</span>
           </button>
 
-          {/* Action: Fill Manually */}
           <button
             type="button"
             onClick={() => onOpenRequisitesPage?.()}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 transition cursor-pointer"
             title="Заполнить реквизиты вручную"
           >
-            <Plus className="w-4 h-4 text-slate-500" />
+            <Plus className="w-3.5 h-3.5 text-slate-500" />
             <span>{t.fillManuallyBtn || 'Заполнить вручную'}</span>
           </button>
         </div>
-      </div>
-
-      {/* Tabs: Filled vs Pending */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab('filled')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-            activeTab === 'filled'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <CheckCircle2 className={`w-3.5 h-3.5 ${activeTab === 'filled' ? 'text-emerald-400' : 'text-slate-400'}`} />
-          <span>{t.tabFilledRequisites || 'Заполненные анкеты'}</span>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-            activeTab === 'filled' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-          }`}>
-            {allRequisites.length}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('pending')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-            activeTab === 'pending'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <Clock className={`w-3.5 h-3.5 ${activeTab === 'pending' ? 'text-amber-400' : 'text-slate-400'}`} />
-          <span>{t.tabPendingRequisites || 'Ожидают реквизитов'}</span>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-            activeTab === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
-          }`}>
-            {pendingIntegrations.length}
-          </span>
-        </button>
       </div>
 
       {/* Search & Filter Bar */}
@@ -330,144 +346,249 @@ export default function BloggerRequisitesDirectoryView({
               return (
                 <div
                   key={req.id}
-                  className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-xs hover:shadow-md transition-all space-y-4 flex flex-col justify-between"
+                  className="bg-white rounded-2xl border border-slate-200 hover:border-slate-300 p-5 shadow-xs hover:shadow-md transition-all space-y-4 flex flex-col justify-between"
                 >
-                  {/* Header info */}
-                  <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-extrabold text-slate-900 text-base">
-                          {req.bloggerName}
-                        </h3>
+                  <div className="space-y-4">
+                    {/* Header: Blogger Identity & Badges */}
+                    <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-black text-slate-900 text-base tracking-tight">
+                            {req.bloggerName}
+                          </h3>
+                          {int?.platform && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200/60">
+                              {int.platform}
+                            </span>
+                          )}
+                          {proj && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-neutral-100 text-neutral-600 border border-neutral-200/60">
+                              {proj.name}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs font-bold text-slate-800">
+                          {req.fullName}
+                        </div>
+
+                        {(req.phone || req.telegramHandle) && (
+                          <div className="flex items-center gap-3 pt-0.5 text-[11px] text-slate-500 flex-wrap">
+                            {req.phone && (
+                              <a
+                                href={`tel:${req.phone}`}
+                                className="inline-flex items-center gap-1 hover:text-black transition"
+                              >
+                                <Phone className="w-3 h-3 text-slate-400" />
+                                <span>{req.phone}</span>
+                              </a>
+                            )}
+                            {req.telegramHandle && (
+                              <a
+                                href={`https://t.me/${req.telegramHandle.replace(/^@/, '')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-700 font-medium transition"
+                              >
+                                <Send className="w-3 h-3 text-sky-500" />
+                                <span>{req.telegramHandle.startsWith('@') ? req.telegramHandle : `@${req.telegramHandle}`}</span>
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
                         {getTaxBadge(req.taxStatus)}
-                        {int?.platform && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                            {int.platform}
-                          </span>
-                        )}
-                        {proj && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-neutral-100 text-neutral-600">
-                            {proj.name}
-                          </span>
-                        )}
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          <span>{t.verifiedBadge || 'Проверено'}</span>
+                        </span>
                       </div>
-                      <p className="text-xs font-semibold text-slate-700 mt-1">
-                        {req.fullName}
-                      </p>
-                      {(req.phone || req.telegramHandle) && (
-                        <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                          {req.phone && <span>📞 {req.phone}</span>}
-                          {req.telegramHandle && <span>✈️ {req.telegramHandle}</span>}
-                        </p>
-                      )}
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {/* Passport & Identity Section */}
+                    <div className="bg-slate-50/80 rounded-xl p-3.5 border border-slate-200/70 space-y-2.5 text-xs">
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* PINFL */}
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                            {t.pinflOrTin || 'ПИНФЛ / ИНН'}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-slate-800 text-xs">
+                              {req.pinflOrTin || <span className="text-slate-400 font-sans font-normal">{t.notSpecified || 'Не указан'}</span>}
+                            </span>
+                            {req.pinflOrTin && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyValue(req.pinflOrTin!, `pinfl-${req.id}`)}
+                                className="p-0.5 rounded text-slate-400 hover:text-black transition cursor-pointer"
+                                title="Скопировать ПИНФЛ"
+                              >
+                                {copiedId === `pinfl-${req.id}` ? (
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Passport series & number */}
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                            {t.passportSeriesNumber || 'Серия и Номер'}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-slate-800 text-xs">
+                              {req.passportSeriesNumber || <span className="text-slate-400 font-sans font-normal">{t.notSpecified || 'Не указано'}</span>}
+                            </span>
+                            {req.passportSeriesNumber && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyValue(req.passportSeriesNumber!, `pass-${req.id}`)}
+                                className="p-0.5 rounded text-slate-400 hover:text-black transition cursor-pointer"
+                                title="Скопировать серию и номер паспорта"
+                              >
+                                {copiedId === `pass-${req.id}` ? (
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Registration Address */}
+                      {req.registrationAddress && (
+                        <div className="pt-2 border-t border-slate-200/60">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                            Адрес прописки
+                          </span>
+                          <p className="text-[11px] text-slate-700 leading-snug">
+                            {req.registrationAddress}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Attached Passport Scans */}
                       {(req.passportFrontScan || req.passportBackScan) && (
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                          <FileCheck className="w-3 h-3 text-emerald-600" />
-                          {req.passportFrontScan && req.passportBackScan ? (t.passportBothSides || 'Паспорт (2 стороны)') : (t.passportOneSide || 'Паспорт (1 сторона)')}
-                        </span>
+                        <div className="pt-2 border-t border-slate-200/60 flex items-center gap-2 flex-wrap">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+                            Скан-копии:
+                          </span>
+                          {req.passportFrontScan && (
+                            <button
+                              type="button"
+                              onClick={() => setActiveScanZoom({ src: req.passportFrontScan!, title: 'Лицевая сторона паспорта' })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-100 rounded-md border border-slate-200 text-[10px] font-bold text-slate-700 shadow-2xs transition cursor-pointer"
+                            >
+                              <ZoomIn className="w-3 h-3 text-slate-400" />
+                              <span>{t.frontSide || 'Лицевая сторона'}</span>
+                            </button>
+                          )}
+                          {req.passportBackScan && (
+                            <button
+                              type="button"
+                              onClick={() => setActiveScanZoom({ src: req.passportBackScan!, title: 'Обратная сторона паспорта' })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-100 rounded-md border border-slate-200 text-[10px] font-bold text-slate-700 shadow-2xs transition cursor-pointer"
+                            >
+                              <ZoomIn className="w-3 h-3 text-slate-400" />
+                              <span>{t.backSide || 'Обратная сторона'}</span>
+                            </button>
+                          )}
+                        </div>
                       )}
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3 text-emerald-600" /> {t.verifiedBadge || 'Проверено'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Passport & Bank details */}
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        {t.pinflOrTin || 'ПИНФЛ / ИНН'}
-                      </span>
-                      <span className="font-mono font-bold text-slate-800">
-                        {req.pinflOrTin || t.notSpecified || 'Не указан'}
-                      </span>
                     </div>
 
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        {t.passportSeriesNumber || 'Серия и Номер'}
-                      </span>
-                      <span className="font-mono font-bold text-slate-800">
-                        {req.passportSeriesNumber || t.notSpecified || 'Не указано'}
-                      </span>
-                    </div>
-
-                    {req.registrationAddress && (
-                      <div className="col-span-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-[11px] text-slate-600">
-                        <span className="font-bold text-slate-400 uppercase text-[9px] block mb-0.5">Адрес прописки:</span>
-                        {req.registrationAddress}
-                      </div>
-                    )}
-
-                    <div className="col-span-2 bg-slate-900 text-white p-3.5 rounded-xl space-y-1 flex items-center justify-between shadow-inner">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                          {t.payoutCardIban || 'Карта / Счет для выплаты'}
-                        </span>
-                        <span className="font-mono font-extrabold text-sm text-indigo-300 tracking-wide">
-                          {req.cardNumberOrIban}
-                        </span>
+                    {/* Payment Requisites / Bank Card */}
+                    <div className="bg-slate-900 text-white rounded-xl p-3.5 border border-slate-800 shadow-xs space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{t.payoutCardIban || 'Карта / Счет для выплаты'}</span>
+                        </div>
                         {req.bankName && (
-                          <span className="text-[10px] text-slate-300 block mt-0.5">
-                            {req.bankName} {req.mfo ? `• ${t.mfoLabel || 'МФО'}: ${req.mfo}` : ''} {req.bankInn ? `• ${t.innLabel || 'ИНН'}: ${req.bankInn}` : ''}
-                          </span>
-                        )}
-                        {req.transitAccount && (
-                          <span className="text-[10px] text-indigo-300 block mt-0.5 font-mono">
-                            {t.transitAccountLabel || 'Транзитный счёт:'} {req.transitAccount}
+                          <span className="text-[10px] font-bold bg-white/10 text-slate-200 px-2.5 py-0.5 rounded-md border border-white/10">
+                            {req.bankName}
                           </span>
                         )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleCopyCard(req)}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        {copiedId === `card-${req.id}` ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span className="text-emerald-400">{t.copiedBtn || 'Скопировано'}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{t.copyBtn || 'Копировать'}</span>
-                          </>
-                        )}
-                      </button>
+                      {/* Card Number & Copy */}
+                      <div className="flex items-center justify-between gap-3 bg-white/5 p-2.5 rounded-lg border border-white/10">
+                        <span className="font-mono text-base font-extrabold tracking-wider text-white select-all">
+                          {formatCardDisplay(req.cardNumberOrIban)}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleCopyCard(req)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-100 active:bg-slate-200 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 shadow-xs"
+                        >
+                          {copiedId === `card-${req.id}` ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-emerald-700">{t.copiedBtn || 'Скопировано'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-600" />
+                              <span>{t.copyBtn || 'Копировать'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Bank metadata: Transit account, MFO, INN */}
+                      {(req.transitAccount || req.mfo || req.bankInn) && (
+                        <div className="pt-2 border-t border-white/10 space-y-1.5 text-[11px]">
+                          {req.transitAccount && (
+                            <div className="flex items-center justify-between gap-2 font-mono">
+                              <span className="text-[10px] text-slate-400 font-sans">Транзитный счёт:</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-emerald-400 font-bold tracking-wide">{req.transitAccount}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyValue(req.transitAccount!, `transit-${req.id}`)}
+                                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                                  title="Скопировать транзитный счёт"
+                                >
+                                  {copiedId === `transit-${req.id}` ? (
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3 h-3" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {(req.mfo || req.bankInn) && (
+                            <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono">
+                              {req.mfo && (
+                                <span>
+                                  МФО: <strong className="text-slate-200">{req.mfo}</strong>
+                                </span>
+                              )}
+                              {req.bankInn && (
+                                <span>
+                                  ИНН банка: <strong className="text-slate-200">{req.bankInn}</strong>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* Passport Scans Thumbnails (if uploaded) */}
-                  {(req.passportFrontScan || req.passportBackScan) && (
-                    <div className="flex items-center gap-3 pt-1">
-                      {req.passportFrontScan && (
-                        <div 
-                          onClick={() => setActiveScanZoom({ src: req.passportFrontScan!, title: 'Лицевая сторона' })}
-                          className="flex items-center gap-1.5 p-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer text-[10px] font-bold text-slate-700"
-                        >
-                          <ZoomIn className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{t.frontSide || 'Лицевая сторона'}</span>
-                        </div>
-                      )}
-                      {req.passportBackScan && (
-                        <div 
-                          onClick={() => setActiveScanZoom({ src: req.passportBackScan!, title: 'Обратная сторона' })}
-                          className="flex items-center gap-1.5 p-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer text-[10px] font-bold text-slate-700"
-                        >
-                          <ZoomIn className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{t.backSide || 'Обратная сторона'}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                   {/* Footer actions */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                     <span className="text-[10px] font-medium text-slate-400">
                       {t.submittedDate || 'Заполнено:'} {req.submittedAt ? new Date(req.submittedAt).toLocaleDateString() : (t.today || 'Сегодня')}
                     </span>
@@ -476,28 +597,22 @@ export default function BloggerRequisitesDirectoryView({
                       <button
                         type="button"
                         onClick={() => handleCopyLink(req.integrationId, `link-${req.id}`)}
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition cursor-pointer"
-                        title="Скопировать ссылку на анкету"
+                        className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 rounded-lg transition cursor-pointer"
+                        title="Скопировать ссылку на форму анкеты"
                       >
                         {copiedId === `link-${req.id}` ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            <span className="text-emerald-700">Скопировано</span>
-                          </>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
                         ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5 text-slate-400" />
-                            <span>Ссылка</span>
-                          </>
+                          <Share2 className="w-3.5 h-3.5" />
                         )}
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setSelectedRequisitesForDoc(req)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-black hover:text-white text-slate-800 font-bold text-xs rounded-lg transition cursor-pointer"
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
                       >
-                        <Eye className="w-3.5 h-3.5" />
+                        <FileText className="w-3.5 h-3.5 text-indigo-400" />
                         <span>{t.viewContractBtn || 'Посмотреть договор'}</span>
                       </button>
                     </div>
@@ -664,7 +779,7 @@ export default function BloggerRequisitesDirectoryView({
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white"
                 >
                   <option value="">{t.selectBloggerPlaceholder || '-- Выберите блогера --'}</option>
-                  {integrations.map((i) => {
+                  {(availableIntegrationsForLink.length > 0 ? availableIntegrationsForLink : integrations.slice(0, 10)).map((i) => {
                     const p = projects.find(pr => String(pr.id) === String(i.projectId));
                     const isFilled = allRequisites.some(r => String(r.integrationId) === String(i.id));
                     return (

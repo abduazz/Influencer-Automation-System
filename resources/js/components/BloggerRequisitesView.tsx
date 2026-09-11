@@ -151,9 +151,9 @@ const requisitesTranslations = {
     cardLabel: 'Номер карты (UzCard / HUMO) *',
     bankLabel: 'Наименование банка',
     bankPlaceholder: 'Kapitalbank / Anorbank / Ipak Yuli',
-    bankBranchLabel: 'Банк / ЦБУ / Филиал *',
+    bankBranchLabel: 'Банк / ЦБУ *',
     bankBranchPlaceholder: 'ЦБУ “Янгиабад” / ATIB Ipoteka-bank',
-    bankInnLabel: 'ИНН банка / ЦБУ (9 цифр) *',
+    bankInnLabel: 'ИНН банка (9 цифр) *',
     bankInnPlaceholder: '207112055',
     mfoLabel: 'МФО банка (5 цифр) *',
     mfoPlaceholder: '00450',
@@ -266,11 +266,11 @@ const requisitesTranslations = {
     cardLabel: 'Karta raqami (UzCard / HUMO) *',
     bankLabel: 'Bank nomi',
     bankPlaceholder: 'Kapitalbank / Anorbank / Ipak Yo\'li',
-    bankBranchLabel: 'Bank / BXM (Xizmat ko\'rsatish markazi) / Filial *',
+    bankBranchLabel: 'Bank / BXM filiali *',
     bankBranchPlaceholder: '“Yangiabod” BXM / ATIB Ipoteka-bank',
-    bankInnLabel: 'Bank / BXM STIR (9 ta raqam) *',
+    bankInnLabel: 'Bank STIR (9 ta raqam) *',
     bankInnPlaceholder: '207112055',
-    mfoLabel: 'Bank MFO kodi (5 ta raqam) *',
+    mfoLabel: 'Bank MFO (5 ta raqam) *',
     mfoPlaceholder: '00450',
     transitAccountLabel: 'Tranzit hisob raqami (20 ta raqam) *',
     transitAccountPlaceholder: '23120000600011764372',
@@ -381,11 +381,11 @@ const requisitesTranslations = {
     cardLabel: 'Card Number (UzCard / HUMO) *',
     bankLabel: 'Bank Name',
     bankPlaceholder: 'Kapitalbank / Anorbank / Ipak Yuli',
-    bankBranchLabel: 'Bank / CBU / Branch *',
+    bankBranchLabel: 'Bank / Branch (CBU) *',
     bankBranchPlaceholder: 'CBU “Yangiabad” / ATIB Ipoteka-bank',
     bankInnLabel: 'Bank TIN (9 digits) *',
     bankInnPlaceholder: '207112055',
-    mfoLabel: 'Bank MFO Code (5 digits) *',
+    mfoLabel: 'Bank MFO (5 digits) *',
     mfoPlaceholder: '00450',
     transitAccountLabel: 'Transit Account (20 digits) *',
     transitAccountPlaceholder: '23120000600011764372',
@@ -1207,9 +1207,9 @@ export default function BloggerRequisitesView({
                     </div>
 
                     {/* Bank/Branch/CBU, INN, MFO */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="sm:col-span-1">
-                        <label className="block text-xs font-semibold text-neutral-600 mb-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                      <div className="flex flex-col justify-end">
+                        <label className="block text-xs font-semibold text-neutral-600 mb-1.5 sm:min-h-[1.75rem] flex items-end">
                           {rt.bankBranchLabel}
                         </label>
                         <input
@@ -1222,8 +1222,8 @@ export default function BloggerRequisitesView({
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold text-neutral-600 mb-1">
+                      <div className="flex flex-col justify-end">
+                        <label className="block text-xs font-semibold text-neutral-600 mb-1.5 sm:min-h-[1.75rem] flex items-end">
                           {rt.bankInnLabel}
                         </label>
                         <input
@@ -1236,8 +1236,8 @@ export default function BloggerRequisitesView({
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold text-neutral-600 mb-1">
+                      <div className="flex flex-col justify-end">
+                        <label className="block text-xs font-semibold text-neutral-600 mb-1.5 sm:min-h-[1.75rem] flex items-end">
                           {rt.mfoLabel}
                         </label>
                         <input

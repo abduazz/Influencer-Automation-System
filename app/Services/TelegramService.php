@@ -464,4 +464,39 @@ class TelegramService
 
         return true;
     }
+
+    public static function sendRequisitesNotification($integration, $requisites, $lang = 'uz')
+    {
+        $chatId = config('services.telegram.submissions_chat_id') ?: config('services.telegram.chat_id');
+        if (!$chatId) return false;
+
+        $projectName = $integration->project?->name ?? '—';
+        $threadId = $integration->project?->telegram_thread_id ?? null;
+
+        $bloggerName = self::escape($integration->blogger_name ?? '—');
+        $fullName = self::escape($requisites['fullName'] ?? '—');
+        $card = self::escape($requisites['cardNumberOrIban'] ?? '—');
+        $pinfl = self::escape($requisites['pinflOrTin'] ?? '—');
+        $taxStatus = ($requisites['taxStatus'] ?? '') === 'contract' ? 'Договор (самозанятый/ИП)' : 'Прямой перевод на карту';
+        $phone = self::escape($requisites['phone'] ?? '—');
+
+        $text = "💳 <b>Получены реквизиты блогера!</b>\n\n";
+        $text .= "📁 <b>Проект:</b> " . self::escape($projectName) . "\n";
+        $text .= "👤 <b>Блогер:</b> {$bloggerName}\n";
+        $text .= "📝 <b>Формат:</b> {$taxStatus}\n";
+        $text .= "📋 <b>ФИО:</b> {$fullName}\n";
+        $text .= "💳 <b>Карта:</b> <code>{$card}</code>\n";
+        if (!empty($requisites['pinflOrTin'])) {
+            $text .= "🆔 <b>ПИНФЛ / ИНН:</b> <code>{$pinfl}</code>\n";
+        }
+        if (!empty($requisites['phone'])) {
+            $text .= "📞 <b>Телефон:</b> {$phone}\n";
+        }
+        if (!empty($requisites['bankName'])) {
+            $text .= "🏦 <b>Банк:</b> " . self::escape($requisites['bankName']) . "\n";
+        }
+
+        return self::sendMessage($chatId, $text, $threadId);
+    }
 }
+

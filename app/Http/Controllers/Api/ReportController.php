@@ -199,7 +199,7 @@ class ReportController extends Controller
                         }
                     }
 
-                    if ($existingIntegration->kanban_stage === 'ready_for_payment') {
+                    if (empty($existingIntegration->kanban_stage) || in_array($existingIntegration->kanban_stage, ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'], true)) {
                         $existingIntegrationUpdate['kanban_stage'] = 'paid_in_progress';
                     }
 
@@ -235,6 +235,7 @@ class ReportController extends Controller
                         'paid_slots_count' => $groupPaidSlotsCount,
                         'end_date' => $endDate,
                         'status' => 'active',
+                        'kanban_stage' => 'paid_in_progress',
                         'blogger_cabinet_token' => $token,
                         'slots_config' => $groupSlotsConfig,
                     ]);

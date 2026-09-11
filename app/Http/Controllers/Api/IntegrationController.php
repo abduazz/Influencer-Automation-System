@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Integration;
 use App\Services\InstagramApiService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class IntegrationController extends Controller
 {
@@ -35,6 +36,7 @@ class IntegrationController extends Controller
             'subscribersCount' => $integration->subscribers_count ? (int) $integration->subscribers_count : null,
             'subscribersUpdatedAt' => $integration->subscribers_updated_at ? $integration->subscribers_updated_at->toISOString() : null,
             'subscribersHistory' => $integration->subscribers_history ?? [],
+            'requisites' => $integration->requisites,
         ];
     }
 
@@ -69,6 +71,7 @@ class IntegrationController extends Controller
             'comments' => 'nullable',
             'subscribersCount' => 'nullable|integer|min:0',
             'subscribersHistory' => 'nullable|array',
+            'requisites' => 'nullable',
         ]);
 
         $email = $request->header('X-User-Email') ?: $request->input('createdBy');
@@ -108,6 +111,7 @@ class IntegrationController extends Controller
             'subscribers_count' => $subscribersCount,
             'subscribers_updated_at' => $subscribersCount ? now() : null,
             'subscribers_history' => $subscribersHistory,
+            'requisites' => $request->requisites,
         ]);
 
         $integration->refresh();
@@ -137,6 +141,7 @@ class IntegrationController extends Controller
             'comments' => 'nullable',
             'subscribersCount' => 'nullable|integer|min:0',
             'subscribersHistory' => 'nullable|array',
+            'requisites' => 'nullable',
         ]);
 
         $updateData = [];
@@ -157,6 +162,7 @@ class IntegrationController extends Controller
         if ($request->has('createdBy')) $updateData['created_by'] = $request->createdBy;
         if ($request->has('slotsConfig')) $updateData['slots_config'] = $request->slotsConfig;
         if ($request->has('comments')) $updateData['comments'] = $request->comments;
+        if ($request->has('requisites')) $updateData['requisites'] = $request->requisites;
 
         if ($request->has('subscribersCount')) {
             $updateData['subscribers_count'] = $request->subscribersCount;
@@ -338,5 +344,123 @@ class IntegrationController extends Controller
             'success' => true,
             'integration' => $this->formatIntegration($integration->fresh()),
         ]);
+    }
+
+    public function saveRequisites(Request $request)
+    {
+        $rawId = $request->input('integrationId') ?? $request->input('id');
+
+        Log::info('BloggerRequisites save called', [
+            'raw_id' => $rawId,
+            'full_name' => $request->input('fullName'),
+        ]);
+
+        $request->validate([
+            'integrationId' => 'required',
+            'fullName' => 'required|string|max:255',
+            'cardNumberOrIban' => 'required|string|max:255',
+            'taxStatus' => 'nullable|string',
+            'passportSeriesNumber' => 'nullable|string',
+            'pinflOrTin' => 'nullable|string',
+            'passportIssueDate' => 'nullable|string',
+            'passportIssuedBy' => 'nullable|string',
+            'registrationAddress' => 'nullable|string',
+            'passportFrontScan' => 'nullable|string',
+            'passportBackScan' => 'nullable|string',
+            'bankName' => 'nullable|string',
+            'bankInn' => 'nullable|string',
+            'mfo' => 'nullable|string',
+            'transitAccount' => 'nullable|string',
+            'recipientName' => 'nullable|string',
+            'phone' => 'nullable|string',
+            'telegramHandle' => 'nullable|string',
+        ]);
+
+        $integration = Integration::find($rawId)
+            ?? Integration::where('blogger_cabinet_token', $rawId)->first();
+
+        if (!$integration) {
+            return response()->json([
+                'message' => 'Интеграция не найдена по указанному токену или ID.',
+            ], 404);
+        }
+
+        $now = now();
+        $requisitesRecord = [
+            'id' => 'req-' . $integration->id . '-' . time(),
+            'integrationId' => (string) $integration->id,
+            'bloggerName' => $integration->blogger_name,
+            'taxStatus' => $request->input('taxStatus', 'card_transfer'),
+            'fullName' => $request->input('fullName'),
+            'passportSeriesNumber' => $request->input('passportSeriesNumber'),
+            'pinflOrTin' => $request->input('pinflOrTin'),
+            'passportIssueDate' => $request->input('passportIssueDate'),
+            'passportIssuedBy' => $request->input('passportIssuedBy'),
+            'registrationAddress' => $request->input('registrationAddress'),
+            'passportFrontScan' => $request->input('passportFrontScan'),
+            'passportBackScan' => $request->input('passportBackScan'),
+            'cardNumberOrIban' => $request->input('cardNumberOrIban'),
+            'bankName' => $request->input('bankName'),
+            'bankInn' => $request->input('bankInn'),
+            'mfo' => $request->input('mfo'),
+            'transitAccount' => $request->input('transitAccount'),
+            'recipientName' => $request->input('recipientName') ?: $request->input('fullName'),
+            'phone' => $request->input('phone'),
+            'telegramHandle' => $request->input('telegramHandle'),
+            'submittedAt' => $now->toISOString(),
+            'status' => 'submitted',
+        ];
+
+        try {
+            \App\Models\BloggerRequisite::updateOrCreate(
+                ['integration_id' => $integration->id],
+                [
+                    'blogger_name' => $integration->blogger_name,
+                    'tax_status' => $request->input('taxStatus', 'card_transfer'),
+                    'full_name' => $request->input('fullName'),
+                    'passport_series_number' => $request->input('passportSeriesNumber'),
+                    'pinfl_or_tin' => $request->input('pinflOrTin'),
+                    'passport_issue_date' => $request->input('passportIssueDate'),
+                    'passport_issued_by' => $request->input('passportIssuedBy'),
+                    'registration_address' => $request->input('registrationAddress'),
+                    'passport_front_scan' => $request->input('passportFrontScan'),
+                    'passport_back_scan' => $request->input('passportBackScan'),
+                    'card_number_or_iban' => $request->input('cardNumberOrIban'),
+                    'bank_name' => $request->input('bankName'),
+                    'bank_inn' => $request->input('bankInn'),
+                    'mfo' => $request->input('mfo'),
+                    'transit_account' => $request->input('transitAccount'),
+                    'recipient_name' => $request->input('recipientName') ?: $request->input('fullName'),
+                    'phone' => $request->input('phone'),
+                    'telegram_handle' => $request->input('telegramHandle'),
+                    'status' => 'submitted',
+                    'submitted_at' => $now,
+                ]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Could not save to blogger_requisites table: ' . $e->getMessage());
+        }
+
+        $updateData = ['requisites' => $requisitesRecord];
+        if (in_array($integration->kanban_stage, ['negotiations', 'contract', 'requisites_pending', null])) {
+            $updateData['kanban_stage'] = 'ready_for_payment';
+        }
+
+        $integration->update($updateData);
+
+        dispatch(function () use ($integration, $requisitesRecord) {
+            try {
+                \App\Services\TelegramService::sendRequisitesNotification($integration, $requisitesRecord);
+            } catch (\Throwable $e) {
+                Log::error('Failed to send Telegram requisites notification: ' . $e->getMessage());
+            }
+        })->afterResponse();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Requisites saved successfully',
+            'integration' => $this->formatIntegration($integration->fresh()),
+            'requisites' => $requisitesRecord,
+        ], 200);
     }
 }

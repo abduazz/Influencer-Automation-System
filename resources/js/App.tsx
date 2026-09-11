@@ -50,6 +50,7 @@ import {
   clearKanbanStageApi,
   refreshIntegrationSubscribers,
   addIntegrationSubscriberHistory,
+  submitBloggerRequisites,
 } from './services/api';
 
 import {
@@ -326,7 +327,7 @@ export default function App() {
       const isTarget = (newRep.integrationId && String(item.id) === String(newRep.integrationId)) ||
         (!newRep.integrationId && newRep.channelBlogger && item.bloggerName.toLowerCase().trim() === newRep.channelBlogger.toLowerCase().trim() && String(item.projectId) === String(newRep.projectId));
 
-      if (isTarget && item.kanbanStage === 'ready_for_payment') {
+      if (isTarget && item.kanbanStage !== 'completed') {
         return { ...item, kanbanStage: 'paid_in_progress' };
       }
       return item;
@@ -485,28 +486,37 @@ export default function App() {
     }
   };
 
-  const handleSubmitRequisites = (integrationId: string, requisitesData: any) => {
-    const newReqRecord: BloggerRequisites = {
-      id: `req-${Date.now()}`,
-      submittedAt: new Date().toISOString(),
-      status: 'submitted',
-      ...requisitesData
-    };
+  const handleSubmitRequisites = async (integrationId: string, requisitesData: any) => {
+    try {
+      const res = await submitBloggerRequisites({
+        integrationId,
+        ...requisitesData
+      });
 
-    // 1. Save into standalone requisites list
-    setBloggerRequisitesList((prev) => [newReqRecord, ...prev]);
+      if (res.success && res.integration) {
+        setIntegrations((prev) => prev.map((item) => {
+          if (String(item.id) === String(res.integration.id)) {
+            return res.integration;
+          }
+          return item;
+        }));
 
-    // 2. Automatically advance the integration deal's kanbanStage to 'ready_for_payment'
-    setIntegrations((prev) => prev.map((item) => {
-      if (item.id === integrationId || (!integrationId && item)) {
-        return {
-          ...item,
-          kanbanStage: 'ready_for_payment',
-          requisites: newReqRecord
-        };
+        if (res.requisites) {
+          setBloggerRequisitesList((prev) => [res.requisites, ...prev.filter(r => r.integrationId !== String(res.integration.id))]);
+        }
       }
-      return item;
-    }));
+    } catch (err) {
+      console.error('Failed to submit requisites:', err);
+      // Fallback local update if offline/error
+      const fallbackRecord: BloggerRequisites = {
+        id: `req-${Date.now()}`,
+        submittedAt: new Date().toISOString(),
+        status: 'submitted',
+        ...requisitesData
+      };
+      setBloggerRequisitesList((prev) => [fallbackRecord, ...prev]);
+      throw err;
+    }
   };
 
   // URL Simulator router check

@@ -30,7 +30,7 @@ import idCardSampleFront from '../../images/id_card_sample_front.png';
 import idCardSampleBack from '../../images/id_card_sample_back.png';
 import idCardSampleFull from '../../images/id_card_sample_full.png';
 
-const compressImage = (file: File, maxWidth = 1400, maxHeight = 1400, quality = 0.8): Promise<string> => {
+const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.7): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
       const reader = new FileReader();
@@ -86,7 +86,7 @@ const compressImage = (file: File, maxWidth = 1400, maxHeight = 1400, quality = 
 interface BloggerRequisitesViewProps {
   integrationToken?: string;
   integrations?: Integration[];
-  onSubmitRequisites?: (integrationId: string, requisites: Omit<BloggerRequisites, 'id' | 'submittedAt' | 'status'>) => void;
+  onSubmitRequisites?: (integrationId: string, requisites: Omit<BloggerRequisites, 'id' | 'submittedAt' | 'status'>) => Promise<void> | void;
   lang?: Language;
   setLang?: (lang: Language) => void;
 }
@@ -502,6 +502,8 @@ export default function BloggerRequisitesView({
   const [isSampleModalOpen, setIsSampleModalOpen] = useState(false);
   const [activeLightboxImg, setActiveLightboxImg] = useState<{ src: string; title: string } | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
@@ -545,36 +547,47 @@ export default function BloggerRequisitesView({
     setCardNumberOrIban(formatted);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!fullName.trim() || !cardNumberOrIban.trim()) return;
     if (taxStatus === 'contract' && (!pinflOrTin.trim() || !passportSeriesNumber.trim())) return;
 
-    if (onSubmitRequisites) {
-      onSubmitRequisites(activeIntegration.id, {
-        integrationId: activeIntegration.id,
-        bloggerName: activeIntegration.bloggerName,
-        taxStatus,
-        fullName,
-        passportSeriesNumber,
-        pinflOrTin,
-        passportIssueDate,
-        passportIssuedBy,
-        registrationAddress,
-        passportFrontScan: passportFrontScan || undefined,
-        passportBackScan: passportBackScan || undefined,
-        cardNumberOrIban,
-        bankName,
-        bankInn,
-        mfo,
-        transitAccount,
-        recipientName: recipientName || fullName,
-        phone,
-        telegramHandle
-      });
-    }
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
 
-    setIsSubmitted(true);
+      if (onSubmitRequisites) {
+        await onSubmitRequisites(activeIntegration.id, {
+          integrationId: activeIntegration.id,
+          bloggerName: activeIntegration.bloggerName,
+          taxStatus,
+          fullName,
+          passportSeriesNumber,
+          pinflOrTin,
+          passportIssueDate,
+          passportIssuedBy,
+          registrationAddress,
+          passportFrontScan: passportFrontScan || undefined,
+          passportBackScan: passportBackScan || undefined,
+          cardNumberOrIban,
+          bankName,
+          bankInn,
+          mfo,
+          transitAccount,
+          recipientName: recipientName || fullName,
+          phone,
+          telegramHandle
+        });
+      }
+
+      setIsSubmitted(true);
+    } catch (err: any) {
+      console.error('Failed to submit requisites:', err);
+      setSubmitError(err?.message || (currentLang === 'uz' ? 'Xatolik yuz berdi. Iltimos, qaytadan urinib ko‘ring.' : 'Произошла ошибка при отправке. Пожалуйста, попробуйте еще раз.'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -1291,14 +1304,30 @@ export default function BloggerRequisitesView({
               </label>
             </div>
 
+            {submitError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-xs font-semibold flex items-center gap-2">
+                <span>⚠️</span>
+                <span>{submitError}</span>
+              </div>
+            )}
+
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={!agreementChecked}
+              disabled={!agreementChecked || isSubmitting}
               className="w-full py-4 bg-black hover:bg-neutral-800 active:bg-neutral-900 disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-xs transition duration-150 flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider"
             >
-              <CheckCircle className="w-4 h-4" />
-              <span>{rt.submitBtn}</span>
+              {isSubmitting ? (
+                <>
+                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                  <span>{currentLang === 'uz' ? 'Yuborilmoqda...' : 'Отправка...'}</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{rt.submitBtn}</span>
+                </>
+              )}
             </button>
           </form>
         )}

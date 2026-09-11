@@ -35,6 +35,7 @@ class Integration extends Model
         'subscribers_count',
         'subscribers_updated_at',
         'subscribers_history',
+        'requisites',
     ];
 
     protected $casts = [
@@ -50,6 +51,7 @@ class Integration extends Model
         'subscribers_count' => 'integer',
         'subscribers_updated_at' => 'datetime',
         'subscribers_history' => 'array',
+        'requisites' => 'array',
     ];
 
     public static function generateCabinetToken(string $bloggerName): string
@@ -80,5 +82,10 @@ class Integration extends Model
     public function submissions(): HasMany
     {
         return $this->hasMany(BloggerSubmission::class);
+    }
+
+    public function bloggerRequisite(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(BloggerRequisite::class);
     }
 }

@@ -1,4 +1,4 @@
-import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase, KanbanColumn } from '../data/mockData';
+import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase, KanbanColumn, BloggerRequisites } from '../data/mockData';
 
 // Fetch helper that handles errors
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -236,5 +236,16 @@ export function allocateBulkPurchaseSlots(bulkPurchaseId: string, projectId: str
 }
 export function deleteBulkPurchase(id: string): Promise<void> {
   return request<void>(`/api/bulk-purchases/${id}`, { method: 'DELETE' });
+}
+
+// Blogger Requisites API
+export function submitBloggerRequisites(data: {
+  integrationId: string;
+  [key: string]: any;
+}): Promise<{ success: boolean; message: string; integration: Integration; requisites: BloggerRequisites }> {
+  return request<{ success: boolean; message: string; integration: Integration; requisites: BloggerRequisites }>('/api/blogger-requisites', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 

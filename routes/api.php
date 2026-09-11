@@ -40,6 +40,7 @@ Route::get('/blogger-submissions', [BloggerSubmissionController::class, 'index']
 Route::post('/blogger-submissions', [BloggerSubmissionController::class, 'store']);
 Route::delete('/blogger-submissions/{id}', [BloggerSubmissionController::class, 'destroy']);
 
+Route::get('/blogger-requisites', [IntegrationController::class, 'getRequisites']);
 Route::post('/blogger-requisites', [IntegrationController::class, 'saveRequisites']);
 
 Route::get('/bulk-purchases', [\App\Http\Controllers\Api\BulkPurchaseController::class, 'index']);

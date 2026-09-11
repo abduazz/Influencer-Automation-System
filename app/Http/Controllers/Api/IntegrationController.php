@@ -463,4 +463,75 @@ class IntegrationController extends Controller
             'requisites' => $requisitesRecord,
         ], 200);
     }
+
+    public function getRequisites()
+    {
+        $existingReqs = \App\Models\BloggerRequisite::orderBy('submitted_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        $seenIntegrationIds = $existingReqs->pluck('integration_id')->filter()->map(fn($id) => (string) $id)->all();
+
+        $records = $existingReqs->map(function ($req) {
+            return [
+                'id' => (string) $req->id,
+                'integrationId' => (string) ($req->integration_id ?? ''),
+                'bloggerName' => $req->blogger_name ?? '',
+                'taxStatus' => $req->tax_status ?? 'card_transfer',
+                'fullName' => $req->full_name ?? '',
+                'passportSeriesNumber' => $req->passport_series_number ?? '',
+                'pinflOrTin' => $req->pinfl_or_tin ?? '',
+                'passportIssueDate' => $req->passport_issue_date ?? '',
+                'passportIssuedBy' => $req->passport_issued_by ?? '',
+                'registrationAddress' => $req->registration_address ?? '',
+                'passportFrontScan' => $req->passport_front_scan,
+                'passportBackScan' => $req->passport_back_scan,
+                'cardNumberOrIban' => $req->card_number_or_iban ?? '',
+                'bankName' => $req->bank_name ?? '',
+                'bankInn' => $req->bank_inn ?? '',
+                'mfo' => $req->mfo ?? '',
+                'transitAccount' => $req->transit_account ?? '',
+                'recipientName' => $req->recipient_name ?? $req->full_name ?? '',
+                'phone' => $req->phone ?? '',
+                'telegramHandle' => $req->telegram_handle ?? '',
+                'submittedAt' => $req->submitted_at ? $req->submitted_at->toISOString() : now()->toISOString(),
+                'status' => $req->status ?? 'submitted',
+            ];
+        })->values()->all();
+
+        // Also include any integration requisites not yet in blogger_requisites table
+        $integrationsWithReq = Integration::whereNotNull('requisites')->get();
+        foreach ($integrationsWithReq as $int) {
+            $intIdStr = (string) $int->id;
+            if (!in_array($intIdStr, $seenIntegrationIds, true) && is_array($int->requisites)) {
+                $r = $int->requisites;
+                $records[] = [
+                    'id' => $r['id'] ?? ('req-' . $int->id),
+                    'integrationId' => $intIdStr,
+                    'bloggerName' => $r['bloggerName'] ?? $int->blogger_name,
+                    'taxStatus' => $r['taxStatus'] ?? 'card_transfer',
+                    'fullName' => $r['fullName'] ?? '',
+                    'passportSeriesNumber' => $r['passportSeriesNumber'] ?? '',
+                    'pinflOrTin' => $r['pinflOrTin'] ?? '',
+                    'passportIssueDate' => $r['passportIssueDate'] ?? '',
+                    'passportIssuedBy' => $r['passportIssuedBy'] ?? '',
+                    'registrationAddress' => $r['registrationAddress'] ?? '',
+                    'passportFrontScan' => $r['passportFrontScan'] ?? null,
+                    'passportBackScan' => $r['passportBackScan'] ?? null,
+                    'cardNumberOrIban' => $r['cardNumberOrIban'] ?? '',
+                    'bankName' => $r['bankName'] ?? '',
+                    'bankInn' => $r['bankInn'] ?? '',
+                    'mfo' => $r['mfo'] ?? '',
+                    'transitAccount' => $r['transitAccount'] ?? '',
+                    'recipientName' => $r['recipientName'] ?? $r['fullName'] ?? '',
+                    'phone' => $r['phone'] ?? '',
+                    'telegramHandle' => $r['telegramHandle'] ?? '',
+                    'submittedAt' => $r['submittedAt'] ?? now()->toISOString(),
+                    'status' => $r['status'] ?? 'submitted',
+                ];
+            }
+        }
+
+        return response()->json($records);
+    }
 }

@@ -23,7 +23,8 @@ import {
   Trash2,
   X,
   ZoomIn,
-  FileCheck
+  FileCheck,
+  ArrowLeft
 } from 'lucide-react';
 
 import idCardSampleFront from '../../images/id_card_sample_front.png';
@@ -87,6 +88,7 @@ interface BloggerRequisitesViewProps {
   integrationToken?: string;
   integrations?: Integration[];
   onSubmitRequisites?: (integrationId: string, requisites: Omit<BloggerRequisites, 'id' | 'submittedAt' | 'status'>) => Promise<void> | void;
+  onBack?: () => void;
   lang?: Language;
   setLang?: (lang: Language) => void;
 }
@@ -443,6 +445,7 @@ export default function BloggerRequisitesView({
   integrationToken,
   integrations = [],
   onSubmitRequisites,
+  onBack,
   lang = 'ru',
   setLang
 }: BloggerRequisitesViewProps) {
@@ -594,11 +597,23 @@ export default function BloggerRequisitesView({
     <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col justify-between py-10 px-4 sm:px-6 lg:px-8 font-sans antialiased">
       {/* Top Bar with Language Switcher */}
       <div className="max-w-2xl mx-auto w-full flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-black flex items-center justify-center font-bold text-white shrink-0">
-            <Radio className="w-4 h-4 text-white" />
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-neutral-100 text-neutral-800 font-bold text-xs rounded-xl border border-neutral-200 transition cursor-pointer shadow-2xs"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>{currentLang === 'uz' ? 'Orqaga' : 'Назад в реестр'}</span>
+            </button>
+          )}
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-black flex items-center justify-center font-bold text-white shrink-0">
+              <Radio className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-black text-xl text-black tracking-tight">Tezi.uz</span>
           </div>
-          <span className="font-black text-xl text-black tracking-tight">Tezi.uz</span>
         </div>
 
         <div className="flex items-center gap-1.5 bg-white border border-neutral-200 p-1 rounded-xl shadow-2xs">

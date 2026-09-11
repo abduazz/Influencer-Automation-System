@@ -73,4 +73,35 @@ class BloggerRequisitesTest extends TestCase
             'card_number_or_iban' => '8600 1234 5678 9012',
         ]);
     }
+
+    public function test_can_fetch_all_blogger_requisites(): void
+    {
+        $project = Project::create([
+            'name' => 'Test Project',
+            'description' => 'Test Description',
+        ]);
+
+        $integration = Integration::create([
+            'project_id' => $project->id,
+            'blogger_name' => 'blogger_fetch_test',
+            'start_date' => now()->format('Y-m-d'),
+            'end_date' => now()->addDays(30)->format('Y-m-d'),
+            'platform' => 'Instagram',
+            'price_per_slot' => 1000000,
+            'slots_count' => 1,
+            'requisites' => [
+                'id' => 'req-test-1',
+                'fullName' => 'Sardor Test',
+                'cardNumberOrIban' => '9860 0000 1111 2222',
+            ],
+        ]);
+
+        $response = $this->getJson('/api/blogger-requisites');
+
+        $response->assertStatus(200);
+        $this->assertTrue(count($response->json()) >= 1);
+        $this->assertTrue(collect($response->json())->contains(function ($item) {
+            return ($item['fullName'] ?? '') === 'Sardor Test' || ($item['cardNumberOrIban'] ?? '') === '9860 0000 1111 2222';
+        }));
+    }
 }

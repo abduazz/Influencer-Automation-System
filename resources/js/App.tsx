@@ -51,6 +51,7 @@ import {
   refreshIntegrationSubscribers,
   addIntegrationSubscriberHistory,
   submitBloggerRequisites,
+  fetchBloggerRequisites,
 } from './services/api';
 
 import {
@@ -133,6 +134,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<AppTab>(getInitialActiveTab);
   const [bloggerRequisitesList, setBloggerRequisitesList] = useState<BloggerRequisites[]>([]);
+  const [activeRequisitesToken, setActiveRequisitesToken] = useState<string | undefined>(undefined);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isTelegramWebApp, setIsTelegramWebApp] = useState<boolean>(false);
   const [reportsInitialState, setReportsInitialState] = useState<{
@@ -209,18 +211,20 @@ export default function App() {
 
   const handleRefreshAllData = async () => {
     try {
-      const [projs, ints, reps, bulks, cols] = await Promise.all([
+      const [projs, ints, reps, bulks, cols, reqs] = await Promise.all([
         fetchProjects(),
         fetchIntegrations(),
         fetchReports(),
         fetchBulkPurchases(),
         fetchKanbanColumns(),
+        fetchBloggerRequisites(),
       ]);
       setProjects(projs);
       setIntegrations(ints);
       setReports(reps);
       setBulkPurchases(bulks);
       if (cols && cols.length > 0) setKanbanColumns(cols);
+      if (reqs) setBloggerRequisitesList(reqs);
     } catch (err) {
       console.error("Failed to refresh data", err);
     }
@@ -232,7 +236,7 @@ export default function App() {
 
     async function loadData() {
       try {
-        const [users, projs, ints, reps, subs, bulks, cols] = await Promise.all([
+        const [users, projs, ints, reps, subs, bulks, cols, reqs] = await Promise.all([
           fetchAllowedUsers(),
           fetchProjects(),
           fetchIntegrations(),
@@ -240,6 +244,7 @@ export default function App() {
           fetchSubmissions(),
           fetchBulkPurchases(),
           fetchKanbanColumns(),
+          fetchBloggerRequisites(),
         ]);
 
         if (!cancelled) {
@@ -250,6 +255,7 @@ export default function App() {
           setSubmissions(subs);
           setBulkPurchases(bulks);
           if (cols && cols.length > 0) setKanbanColumns(cols);
+          if (reqs) setBloggerRequisitesList(reqs);
         }
       } catch (err) {
         console.error("Failed to load backend data", err);
@@ -738,9 +744,16 @@ export default function App() {
         {/* Active Tab Router / Guest Blogger Route Gate */}
         {isRequisitesRoute || activeTab === 'requisites' ? (
           <BloggerRequisitesView
-            integrationToken={requisitesToken}
+            integrationToken={requisitesToken || activeRequisitesToken}
             integrations={integrations}
-            onSubmitRequisites={handleSubmitRequisites}
+            onSubmitRequisites={async (id, data) => {
+              await handleSubmitRequisites(id, data);
+              handleRefreshAllData();
+            }}
+            onBack={activeTab === 'requisites' ? () => {
+              setActiveTab('requisites_directory');
+              setActiveRequisitesToken(undefined);
+            } : undefined}
             lang={lang}
             setLang={handleSetLang}
           />
@@ -783,6 +796,11 @@ export default function App() {
                 integrations={integrations}
                 projects={projects}
                 lang={lang}
+                onOpenRequisitesPage={(integrationId) => {
+                  setActiveRequisitesToken(integrationId);
+                  setActiveTab('requisites');
+                }}
+                onRefresh={handleRefreshAllData}
               />
             )}
             {activeTab === 'projects' && (

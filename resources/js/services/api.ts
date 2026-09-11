@@ -239,6 +239,10 @@ export function deleteBulkPurchase(id: string): Promise<void> {
 }
 
 // Blogger Requisites API
+export function fetchBloggerRequisites(): Promise<BloggerRequisites[]> {
+  return request<BloggerRequisites[]>('/api/blogger-requisites');
+}
+
 export function submitBloggerRequisites(data: {
   integrationId: string;
   [key: string]: any;
@@ -248,4 +252,5 @@ export function submitBloggerRequisites(data: {
     body: JSON.stringify(data),
   });
 }
+
 

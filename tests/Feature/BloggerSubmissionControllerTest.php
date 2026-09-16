@@ -173,5 +173,52 @@ class BloggerSubmissionControllerTest extends TestCase
         $response = $this->postJson('/api/blogger-submissions', $payload);
         $response->assertStatus(201);
     }
+
+    public function test_integration_auto_moves_to_completed_when_all_slots_are_submitted(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $this->integration->update([
+            'kanban_stage' => 'paid_in_progress',
+            'status' => 'active',
+        ]);
+
+        // 1. Submit only slot 1 and slot 2 (2 of 3)
+        $payloadPartial = [
+            'integrationId' => 'test-cabinet-token',
+            'lang' => 'ru',
+            'data' => [
+                'slot_1' => 'https://www.instagram.com/reel/111/',
+                'slot_2' => 'https://www.instagram.com/reel/222/',
+                'slot_3' => '',
+            ],
+        ];
+
+        $res1 = $this->postJson('/api/blogger-submissions', $payloadPartial);
+        $res1->assertStatus(201);
+
+        $this->integration->refresh();
+        $this->assertEquals('paid_in_progress', $this->integration->kanban_stage);
+        $this->assertEquals('active', $this->integration->status);
+
+        // 2. Submit the remaining slot 3 (now 3 of 3)
+        $payloadComplete = [
+            'integrationId' => 'test-cabinet-token',
+            'lang' => 'ru',
+            'data' => [
+                'slot_3' => 'https://www.instagram.com/reel/333/',
+            ],
+        ];
+
+        $res2 = $this->postJson('/api/blogger-submissions', $payloadComplete);
+        $res2->assertStatus(201);
+
+        $this->integration->refresh();
+        $this->assertEquals('completed', $this->integration->kanban_stage);
+        $this->assertEquals('completed', $this->integration->status);
+    }
 }
+
 

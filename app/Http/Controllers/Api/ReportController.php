@@ -31,6 +31,7 @@ class ReportController extends Controller
                 'slotsConfig' => $report->slots_config ?? [],
                 'paymentType' => $report->payment_type,
                 'receipt' => $report->receipt,
+                'receipts' => $report->receipts,
                 'createdBy' => $report->created_by,
             ];
         }));
@@ -58,8 +59,11 @@ class ReportController extends Controller
             'slotsConfig' => 'nullable|array',
             'amount' => 'required_if:paymentType,other|nullable|numeric|gt:0',
             'receipt' => 'nullable|string',
+            'receipts' => 'nullable|array',
+            'receipts.*' => 'nullable|string',
             'lang' => 'nullable|string|in:ru,en,uz',
             'integrationId' => 'nullable|string',
+            'createdBy' => 'nullable|string',
         ], [
             'pricePerSlot.gt' => 'Сумма не должна быть равна нулю.',
             'amount.gt' => 'Сумма не должна быть равна нулю.',
@@ -67,11 +71,39 @@ class ReportController extends Controller
 
         $paymentType = $request->input('paymentType', 'prepaid');
 
-        $email = $request->header('X-User-Email');
-        $createdByName = null;
-        if ($email) {
-            $user = \App\Models\User::where('email', strtolower(trim($email)))->first();
-            $createdByName = $user ? $user->name : $email;
+        $createdByName = $request->input('createdBy');
+        if (empty($createdByName)) {
+            $email = $request->header('X-User-Email');
+            if ($email) {
+                $user = \App\Models\User::where('email', strtolower(trim($email)))->first();
+                $createdByName = $user ? $user->name : $email;
+            }
+        }
+
+        $receipts = [];
+        if ($request->has('receipts') && is_array($request->input('receipts'))) {
+            $receipts = array_values(array_filter($request->input('receipts'), fn($r) => !empty($r) && is_string($r)));
+        }
+        if (empty($receipts) && $request->filled('receipt')) {
+            $rawReceipt = $request->input('receipt');
+            $trimmed = trim($rawReceipt);
+            if (str_starts_with($trimmed, '[') && str_ends_with($trimmed, ']')) {
+                $decoded = json_decode($trimmed, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $receipts = array_values(array_filter($decoded, fn($r) => !empty($r) && is_string($r)));
+                } else {
+                    $receipts = [$rawReceipt];
+                }
+            } else {
+                $receipts = [$rawReceipt];
+            }
+        }
+
+        $receiptToStore = null;
+        if (count($receipts) === 1) {
+            $receiptToStore = $receipts[0];
+        } elseif (count($receipts) > 1) {
+            $receiptToStore = json_encode($receipts);
         }
 
         $reportData = [
@@ -80,7 +112,7 @@ class ReportController extends Controller
             'project_id' => $request->projectId ?: null,
             'destination' => $request->destination ?: null,
             'comments' => $request->comments,
-            'receipt' => $request->receipt ?: null,
+            'receipt' => $receiptToStore,
             'created_by' => $createdByName,
         ];
 
@@ -216,6 +248,10 @@ class ReportController extends Controller
                         $existingIntegrationUpdate['end_date'] = $targetEndDate;
                     }
 
+                    if (empty($existingIntegration->created_by) && !empty($createdByName)) {
+                        $existingIntegrationUpdate['created_by'] = $createdByName;
+                    }
+
                     $existingIntegration->update($existingIntegrationUpdate);
                 } else {
                     $token = Integration::generateCabinetToken($cleanBloggerName);
@@ -238,6 +274,7 @@ class ReportController extends Controller
                         'kanban_stage' => 'paid_in_progress',
                         'blogger_cabinet_token' => $token,
                         'slots_config' => $groupSlotsConfig,
+                        'created_by' => $createdByName,
                     ]);
                 }
             }
@@ -273,13 +310,13 @@ class ReportController extends Controller
 
         // Trigger Telegram & Google Sheets notifications independently after response to speed up submission
         $lang = $request->input('lang', 'uz');
-        $receipt = $request->receipt;
+        $receiptsForTg = $receipts;
         
         $createdByName = $report->created_by;
  
-        dispatch(function () use ($report, $receipt, $lang, $createdByName) {
+        dispatch(function () use ($report, $receiptsForTg, $lang, $createdByName) {
             try {
-                $tgSuccess = \App\Services\TelegramService::sendReportNotification($report, $receipt, $lang, $createdByName);
+                $tgSuccess = \App\Services\TelegramService::sendReportNotification($report, $receiptsForTg, $lang, $createdByName);
                 if ($tgSuccess) {
                     $report->update(['telegram_sent' => true]);
                 }
@@ -314,6 +351,7 @@ class ReportController extends Controller
             'slotsConfig' => $report->slots_config ?? [],
             'paymentType' => $report->payment_type,
             'receipt' => $report->receipt,
+            'receipts' => $report->receipts,
             'bloggerCabinetToken' => $cabinetToken,
             'createdBy' => $report->created_by,
         ], 201);

@@ -10,20 +10,20 @@ class GoogleSheetsService
 {
     private static function getAccessToken()
     {
-        $jsonKey = env('GOOGLE_SERVICE_ACCOUNT_JSON');
+        $jsonKey = config('services.google.service_account_json') ?: env('GOOGLE_SERVICE_ACCOUNT_JSON');
         if (!$jsonKey) {
             $filePath = storage_path('app/google-service-account.json');
             if (file_exists($filePath)) {
                 $jsonKey = file_get_contents($filePath);
             } else {
-                throw new \Exception("Google service account credentials not found in env(GOOGLE_SERVICE_ACCOUNT_JSON) or at $filePath");
+                throw new \Exception("Google service account credentials not found in config/env or at $filePath");
             }
         }
         
         $jsonKeyCleaned = trim($jsonKey, "'\"");
         $config = json_decode($jsonKeyCleaned, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception("GOOGLE_SERVICE_ACCOUNT_JSON is not a valid JSON string: " . json_last_error_msg());
+            throw new \Exception("Google Service Account JSON is not a valid JSON string: " . json_last_error_msg());
         }
         
         $credentials = new ServiceAccountCredentials(
@@ -41,9 +41,9 @@ class GoogleSheetsService
 
     public static function appendReport($report)
     {
-        $spreadsheetId = env('GOOGLE_SPREADSHEET_ID', '1_TBYmmaWZPIG5_Kz2Sr706w6Km_VS-l7Q2UtKADrrus');
+        $spreadsheetId = config('services.google.spreadsheet_id') ?: env('GOOGLE_SPREADSHEET_ID', '1_TBYmmaWZPIG5_Kz2Sr706w6Km_VS-l7Q2UtKADrrus');
         if (!$spreadsheetId) {
-            Log::warning("GOOGLE_SPREADSHEET_ID not set in environment.");
+            Log::warning("GOOGLE_SPREADSHEET_ID not set in environment or services config.");
             return false;
         }
 

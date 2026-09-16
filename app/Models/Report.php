@@ -56,6 +56,27 @@ class Report extends Model
         });
     }
 
+    protected $appends = [
+        'receipts',
+    ];
+
+    public function getReceiptsAttribute(): array
+    {
+        if (empty($this->receipt)) {
+            return [];
+        }
+
+        $trimmed = trim($this->receipt);
+        if (str_starts_with($trimmed, '[') && str_ends_with($trimmed, ']')) {
+            $decoded = json_decode($trimmed, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return array_values(array_filter($decoded, fn($item) => !empty($item) && is_string($item)));
+            }
+        }
+
+        return [$this->receipt];
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);

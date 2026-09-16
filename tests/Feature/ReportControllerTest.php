@@ -59,6 +59,11 @@ class ReportControllerTest extends TestCase
 
         $response->assertStatus(201);
 
+        $this->assertDatabaseHas('integrations', [
+            'blogger_name' => 'some_influencer',
+            'created_by' => 'John Doe',
+        ]);
+
         $recorded = Http::recorded(function ($request) {
             return str_contains($request->url(), 'api.telegram.org');
         });
@@ -418,6 +423,64 @@ class ReportControllerTest extends TestCase
         $report = \App\Models\Report::where('channel_blogger', 'blogger_without_destination')->first();
         $this->assertNotNull($report);
         $this->assertEquals($fakeBase64, $report->receipt);
+    }
+
+    public function test_creating_report_with_multiple_receipts(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $project = Project::create([
+            'name' => 'Multi Receipt Project',
+            'description' => 'Multi Receipt Testing',
+        ]);
+
+        $fakeReceipt1 = 'data:image/jpeg;base64,' . base64_encode('fake receipt 1');
+        $fakeReceipt2 = 'data:image/jpeg;base64,' . base64_encode('fake receipt 2');
+
+        $payload = [
+            'paymentType' => 'full',
+            'date' => '2026-09-15',
+            'projectId' => $project->id,
+            'destination' => 'https://example.com',
+            'channelBlogger' => 'blogger_multi_receipt',
+            'bloggerPageLink' => 'https://instagram.com/blogger_multi_receipt',
+            'platform' => 'Instagram',
+            'slotsCount' => 2,
+            'paidSlotsCount' => 2,
+            'pricePerSlot' => 300000,
+            'receipts' => [$fakeReceipt1, $fakeReceipt2],
+            'lang' => 'ru',
+        ];
+
+        $response = $this->postJson('/api/reports', $payload);
+        $response->assertStatus(201);
+        $response->assertJson([
+            'channelBlogger' => 'blogger_multi_receipt',
+            'receipts' => [$fakeReceipt1, $fakeReceipt2],
+        ]);
+
+        $report = \App\Models\Report::where('channel_blogger', 'blogger_multi_receipt')->first();
+        $this->assertNotNull($report);
+        $this->assertCount(2, $report->receipts);
+        $this->assertEquals($fakeReceipt1, $report->receipts[0]);
+        $this->assertEquals($fakeReceipt2, $report->receipts[1]);
+
+        $recorded = Http::recorded(function ($request) {
+            return str_contains($request->url(), 'api.telegram.org');
+        });
+        $this->assertNotEmpty($recorded);
+
+        $req = is_array($recorded[0]) ? ($recorded[0]['request'] ?? $recorded[0][0]) : $recorded[0];
+        $this->assertTrue(str_contains($req->url(), 'sendMediaGroup'));
+
+        // Verify index also returns receipts array
+        $indexRes = $this->getJson('/api/reports');
+        $indexRes->assertStatus(200);
+        $matching = collect($indexRes->json())->firstWhere('channelBlogger', 'blogger_multi_receipt');
+        $this->assertNotNull($matching);
+        $this->assertCount(2, $matching['receipts']);
     }
 }
 

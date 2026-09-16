@@ -42,4 +42,17 @@ return [
         'chat_id' => env('TELEGRAM_CHAT_ID'),
     ],
 
+    'google' => [
+        'service_account_json' => env('GOOGLE_SERVICE_ACCOUNT_JSON'),
+        'spreadsheet_id' => env('GOOGLE_SPREADSHEET_ID', '1_TBYmmaWZPIG5_Kz2Sr706w6Km_VS-l7Q2UtKADrrus'),
+    ],
+
+    'instagram' => [
+        'driver' => env('INSTAGRAM_API_DRIVER', 'mock'),
+        'meta_user_id' => env('INSTAGRAM_META_USER_ID'),
+        'meta_access_token' => env('INSTAGRAM_META_ACCESS_TOKEN'),
+        'rapidapi_key' => env('INSTAGRAM_RAPIDAPI_KEY'),
+        'rapidapi_host' => env('INSTAGRAM_RAPIDAPI_HOST', 'instagram-scraper-api2.p.rapidapi.com'),
+    ],
+
 ];

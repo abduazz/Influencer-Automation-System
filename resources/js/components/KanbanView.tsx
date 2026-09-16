@@ -50,6 +50,7 @@ interface KanbanViewProps {
   lang: Language;
   userRole?: string | null;
   currentUserEmail?: string | null;
+  currentUserName?: string | null;
   onOpenRequisitesDirectory?: () => void;
   onClearStage?: (stageId: string) => void | Promise<void>;
   onRefreshSubscribers?: (integrationId: string) => Promise<void>;
@@ -74,6 +75,7 @@ export default function KanbanView({
   lang = 'ru',
   userRole,
   currentUserEmail,
+  currentUserName,
   onOpenRequisitesDirectory,
   onClearStage,
   onRefreshSubscribers,
@@ -463,7 +465,7 @@ export default function KanbanView({
           comments: finalComments,
           status: editStatus,
           kanbanStage: editKanbanStage,
-          createdBy: currentUserEmail || undefined,
+          createdBy: currentUserName || currentUserEmail || undefined,
           subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
         });
       } else if (selectedDeal) {
@@ -1395,9 +1397,17 @@ export default function KanbanView({
                       {editPlatform}
                     </span>
                   </div>
-                  <p className="text-xs font-medium text-slate-500 mt-0.5">
-                    {isCreateMode ? (t.kanbanModalCreateSub || 'Заполните параметры и создайте новую сделку') : (t.kanbanModalEditSub || 'Информация и редактирование сделки')}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                    <p className="text-xs font-medium text-slate-500">
+                      {isCreateMode ? (t.kanbanModalCreateSub || 'Заполните параметры и создайте новую сделку') : (t.kanbanModalEditSub || 'Информация и редактирование сделки')}
+                    </p>
+                    {isCreateMode && (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 border border-slate-200/80 rounded-lg text-[10px] text-slate-700 font-medium">
+                        <User className="w-3 h-3 text-slate-500 shrink-0" />
+                        <span>{t.creatingAsUser || 'Создает:'} <strong className="text-slate-900 font-bold">{currentUserName || currentUserEmail || 'Super Admin'}</strong></span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

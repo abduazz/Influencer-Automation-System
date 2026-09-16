@@ -74,13 +74,16 @@ class IntegrationController extends Controller
             'requisites' => 'nullable',
         ]);
 
-        $email = $request->header('X-User-Email') ?: $request->input('createdBy');
-        $createdByName = null;
+        $createdByName = $request->input('createdBy');
+        $email = $request->header('X-User-Email');
         if ($email) {
             $user = \App\Models\User::where('email', strtolower(trim($email)))->first();
-            $createdByName = $user ? $user->name : $email;
-        } elseif ($request->filled('createdBy')) {
-            $createdByName = $request->input('createdBy');
+            if ($user && empty($createdByName)) {
+                $createdByName = $user->name;
+            }
+        }
+        if (empty($createdByName) && $email) {
+            $createdByName = $email;
         }
 
         $subscribersCount = $request->input('subscribersCount');

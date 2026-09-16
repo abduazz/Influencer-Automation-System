@@ -15,7 +15,8 @@ import {
   MessageSquare,
   ChevronDown,
   Search,
-  X
+  X,
+  User
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
@@ -87,6 +88,8 @@ interface ReportsViewProps {
     integrationId?: string;
   } | null;
   onClearInitialState?: () => void;
+  currentUserName?: string;
+  currentUserEmail?: string;
 }
 
 const formatPrice = (val: number | ''): string => {
@@ -163,7 +166,9 @@ export default function ReportsView({
   userRole,
   isWebApp,
   initialState,
-  onClearInitialState
+  onClearInitialState,
+  currentUserName,
+  currentUserEmail
 }: ReportsViewProps) {
   const t = translations[lang];
 
@@ -225,8 +230,9 @@ export default function ReportsView({
 
   const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
   const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'; format: string }[]>([]);
-  const [receipt, setReceipt] = useState<string | null>(null);
+  const [receipts, setReceipts] = useState<string[]>([]);
   const [fileInputKey, setFileInputKey] = useState<number>(0);
+  const [isCompressingReceipts, setIsCompressingReceipts] = useState<boolean>(false);
   const [isBloggerModalOpen, setIsBloggerModalOpen] = useState(false);
   const [bloggerSearch, setBloggerSearch] = useState('');
   const [amountError, setAmountError] = useState<string | null>(null);
@@ -432,8 +438,10 @@ export default function ReportsView({
       destination: destination.trim(),
       comments,
       paymentType,
-      receipt,
+      receipt: receipts.length > 0 ? (receipts.length === 1 ? receipts[0] : JSON.stringify(receipts)) : null,
+      receipts,
       lang,
+      createdBy: currentUserName || currentUserEmail || undefined,
       ...(currentIntegrationId ? { integrationId: currentIntegrationId } : {})
     };
 
@@ -512,7 +520,7 @@ export default function ReportsView({
       setPricePerSlot(0);
       setOtherAmount(0);
       setComments('');
-      setReceipt(null);
+      setReceipts([]);
       setFileInputKey(prev => prev + 1);
       setPaymentType('prepaid');
     } catch (err: any) {
@@ -608,10 +616,14 @@ export default function ReportsView({
                   </div>
                 ) : (
                   <div className="w-full bg-white border border-neutral-200 rounded-xl p-3.5 shadow-2xs">
-                    <div className="flex items-center gap-2 mb-2.5 border-b border-neutral-100 pb-2">
+                    <div className="flex items-center justify-between gap-2 mb-2.5 border-b border-neutral-100 pb-2">
                       <span className="text-[9px] uppercase font-bold text-black tracking-wider">
                         {t.reportForm}
                       </span>
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 border border-neutral-200/80 rounded-lg text-[10px] text-neutral-600 font-medium">
+                        <User className="w-3 h-3 text-neutral-500 shrink-0" />
+                        <span>{t.creatingAsUser || 'Создает:'} <strong className="text-black font-bold">{currentUserName || currentUserEmail || 'Super Admin'}</strong></span>
+                      </div>
                     </div>
 
                     {currentIntegrationId && (
@@ -1303,61 +1315,175 @@ export default function ReportsView({
 
                       {/* Attachment: Screenshot/Receipt */}
                       <div>
-                        <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
-                          {lang === 'ru' ? 'Прикрепить чек / скриншот' : lang === 'uz' ? 'Chek / skrinshot biriktirish' : 'Attach receipt / screenshot'}
-                        </label>
-                        <input
-                          type="file"
-                          key={fileInputKey}
-                          accept="image/*,application/pdf"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              if (file.size > 8 * 1024 * 1024) {
-                                alert(lang === 'ru' ? 'Размер файла не должен превышать 8 МБ' : lang === 'uz' ? 'Fayl hajmi 8 MB dan oshmasligi kerak' : 'File size must not exceed 8 MB');
-                                e.target.value = '';
-                                setReceipt(null);
-                                return;
-                              }
-                              try {
-                                const compressed = await compressImage(file, 1000, 1000, 0.65);
-                                setReceipt(compressed);
-                              } catch (err) {
-                                console.error('Image compression failed:', err);
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setReceipt(reader.result as string);
-                                };
-                                reader.readAsDataURL(file);
-                              }
-                            } else {
-                              setReceipt(null);
-                            }
-                          }}
-                          className="w-full text-sm text-neutral-500 file:mr-4 file:py-3.5 file:px-8 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-neutral-100 file:text-neutral-700 hover:file:bg-neutral-250 cursor-pointer"
-                        />
-                        {receipt && (
-                          <div className="mt-2 flex items-center justify-between p-2 bg-neutral-50 rounded-lg border border-neutral-200">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                              {receipt.startsWith('data:image/') ? (
-                                <img src={receipt} alt="Receipt Preview" className="w-8 h-8 object-cover rounded border border-neutral-300" />
-                              ) : (
-                                <div className="w-8 h-8 bg-neutral-200 rounded flex items-center justify-center text-[10px] font-bold text-neutral-600">PDF</div>
-                              )}
-                              <span className="text-[10px] text-neutral-600 font-medium truncate">
-                                {lang === 'ru' ? 'Файл прикреплен' : lang === 'uz' ? 'Fayl biriktirildi' : 'File attached'}
-                              </span>
-                            </div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                            {lang === 'ru' 
+                              ? (receipts.length > 0 ? `Прикреплено чеков: ${receipts.length}` : 'Прикрепить чеки / скриншоты') 
+                              : lang === 'uz' 
+                                ? (receipts.length > 0 ? `Biriktirilgan cheklar: ${receipts.length}` : 'Cheklar / skrinshotlar biriktirish') 
+                                : (receipts.length > 0 ? `Attached receipts: ${receipts.length}` : 'Attach receipts / screenshots')}
+                          </label>
+                          {receipts.length > 0 && (
                             <button
                               type="button"
                               onClick={() => {
-                                setReceipt(null);
+                                setReceipts([]);
                                 setFileInputKey(prev => prev + 1);
                               }}
-                              className="text-[10px] text-red-600 hover:text-red-700 font-bold px-2 py-1 hover:bg-red-50 rounded transition"
+                              className="text-[9px] text-red-500 hover:text-red-700 font-bold hover:underline transition"
                             >
-                              ✕ {lang === 'ru' ? 'Удалить' : lang === 'uz' ? 'O‘chirish' : 'Remove'}
+                              {lang === 'ru' ? 'Очистить все' : lang === 'uz' ? 'Barchasini tozalash' : 'Clear all'}
                             </button>
+                          )}
+                        </div>
+
+                        {/* File input (shown prominently if no receipts attached yet) */}
+                        {receipts.length === 0 && (
+                          <input
+                            type="file"
+                            multiple
+                            key={fileInputKey}
+                            accept="image/*,application/pdf"
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || []);
+                              if (files.length === 0) return;
+
+                              setIsCompressingReceipts(true);
+                              const newReceipts: string[] = [];
+
+                              for (const file of files) {
+                                if (file.size > 10 * 1024 * 1024) {
+                                  alert(
+                                    lang === 'ru'
+                                      ? `Файл ${file.name} превышает 10 МБ`
+                                      : lang === 'uz'
+                                        ? `${file.name} fayl hajmi 10 MB dan oshmasligi kerak`
+                                        : `File ${file.name} exceeds 10 MB`
+                                  );
+                                  continue;
+                                }
+                                try {
+                                  const compressed = await compressImage(file, 1200, 1200, 0.7);
+                                  newReceipts.push(compressed);
+                                } catch (err) {
+                                  console.error('Image compression failed:', err);
+                                  const reader = new FileReader();
+                                  const base64 = await new Promise<string>((resolve) => {
+                                    reader.onloadend = () => resolve(reader.result as string);
+                                    reader.onerror = () => resolve('');
+                                    reader.readAsDataURL(file);
+                                  });
+                                  if (base64) newReceipts.push(base64);
+                                }
+                              }
+
+                              setReceipts(prev => [...prev, ...newReceipts]);
+                              setIsCompressingReceipts(false);
+                              setFileInputKey(prev => prev + 1);
+                            }}
+                            className="w-full text-sm text-neutral-500 file:mr-4 file:py-3.5 file:px-8 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-neutral-100 file:text-neutral-700 hover:file:bg-neutral-200 cursor-pointer"
+                          />
+                        )}
+
+                        {/* Loading / Compressing indicator */}
+                        {isCompressingReceipts && (
+                          <div className="mt-2 flex items-center gap-2 p-2 bg-neutral-100 rounded-lg text-xs font-bold text-neutral-600 animate-pulse">
+                            <span>⏳</span>
+                            <span>
+                              {lang === 'ru' ? 'Обработка фото чеков...' : lang === 'uz' ? 'Chek rasmlari qayta ishlanmoqda...' : 'Processing receipt photos...'}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Thumbnails grid when receipts are attached */}
+                        {receipts.length > 0 && (
+                          <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                              {receipts.map((r, idx) => (
+                                <div key={idx} className="relative group aspect-square rounded-lg border border-neutral-200 overflow-hidden bg-white shadow-2xs">
+                                  {r.startsWith('data:image/') ? (
+                                    <img 
+                                      src={r} 
+                                      alt={`Receipt ${idx + 1}`} 
+                                      className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition"
+                                      onClick={() => {
+                                        const w = window.open();
+                                        if (w) w.document.write(`<img src="${r}" style="max-width:100%; height:auto;" />`);
+                                      }}
+                                      title={lang === 'ru' ? 'Нажмите для увеличения' : lang === 'uz' ? 'Kattalashtirish uchun bosing' : 'Click to enlarge'}
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center p-1 text-center bg-neutral-100">
+                                      <span className="text-[10px] font-black text-red-600">PDF</span>
+                                      <span className="text-[8px] text-neutral-400 truncate max-w-full">#{idx + 1}</span>
+                                    </div>
+                                  )}
+                                  <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[8px] font-black px-1.5 py-0.5 rounded backdrop-blur-xs pointer-events-none">
+                                    {idx + 1}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setReceipts(prev => prev.filter((_, i) => i !== idx))}
+                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center text-[10px] font-black shadow-md transition"
+                                    title={lang === 'ru' ? 'Удалить этот чек' : lang === 'uz' ? 'Ushbu chekni o‘chirish' : 'Remove this receipt'}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+
+                              {/* Add more button */}
+                              <label className="aspect-square rounded-lg border-2 border-dashed border-neutral-300 hover:border-black bg-white hover:bg-neutral-100 flex flex-col items-center justify-center cursor-pointer transition p-1 text-center group">
+                                <span className="text-base font-bold text-neutral-400 group-hover:text-black leading-none mb-0.5">+</span>
+                                <span className="text-[8px] font-bold text-neutral-500 group-hover:text-black leading-tight">
+                                  {lang === 'ru' ? 'Еще фото' : lang === 'uz' ? 'Yana rasm' : 'Add more'}
+                                </span>
+                                <input
+                                  type="file"
+                                  multiple
+                                  key={`add-more-${fileInputKey}`}
+                                  accept="image/*,application/pdf"
+                                  onChange={async (e) => {
+                                    const files = Array.from(e.target.files || []);
+                                    if (files.length === 0) return;
+
+                                    setIsCompressingReceipts(true);
+                                    const newReceipts: string[] = [];
+
+                                    for (const file of files) {
+                                      if (file.size > 10 * 1024 * 1024) {
+                                        alert(
+                                          lang === 'ru'
+                                            ? `Файл ${file.name} превышает 10 МБ`
+                                            : lang === 'uz'
+                                              ? `${file.name} fayl hajmi 10 MB dan oshmasligi kerak`
+                                              : `File ${file.name} exceeds 10 MB`
+                                        );
+                                        continue;
+                                      }
+                                      try {
+                                        const compressed = await compressImage(file, 1200, 1200, 0.7);
+                                        newReceipts.push(compressed);
+                                      } catch (err) {
+                                        console.error('Image compression failed:', err);
+                                        const reader = new FileReader();
+                                        const base64 = await new Promise<string>((resolve) => {
+                                          reader.onloadend = () => resolve(reader.result as string);
+                                          reader.onerror = () => resolve('');
+                                          reader.readAsDataURL(file);
+                                        });
+                                        if (base64) newReceipts.push(base64);
+                                      }
+                                    }
+
+                                    setReceipts(prev => [...prev, ...newReceipts]);
+                                    setIsCompressingReceipts(false);
+                                    setFileInputKey(prev => prev + 1);
+                                  }}
+                                  className="hidden"
+                                />
+                              </label>
+                            </div>
                           </div>
                         )}
                       </div>

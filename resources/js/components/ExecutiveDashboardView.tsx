@@ -50,6 +50,17 @@ export default function ExecutiveDashboardView({
     const utilizationPct = limit > 0 ? Math.min(100, Math.round((totalSpent / limit) * 100)) : 0;
     const isOverLimit = limit > 0 && totalSpent > limit;
 
+    // Exclude preliminary zero-budget pipeline leads from active campaigns count
+    const activeCampaigns = projectIntegrations.filter((i) => {
+      const isPipelineLead = Boolean(
+        i.kanbanStage &&
+        ['wishlist', 'negotiation', 'requisites_pending'].includes(i.kanbanStage) &&
+        Number(i.totalAmount || 0) === 0 &&
+        Number(i.paidAmount || 0) === 0
+      );
+      return !isPipelineLead;
+    });
+
     return {
       id: project.id,
       name: project.name,
@@ -59,7 +70,7 @@ export default function ExecutiveDashboardView({
       remaining,
       utilizationPct,
       isOverLimit,
-      integrationsCount: projectIntegrations.length,
+      integrationsCount: activeCampaigns.length,
     };
   });
 

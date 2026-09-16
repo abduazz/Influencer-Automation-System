@@ -122,6 +122,7 @@ export interface Report {
   paymentType?: 'prepaid' | 'full' | 'other' | 'remaining';
   amount?: number;
   receipt?: string | null;
+  receipts?: string[] | null;
   lang?: string;
   bloggerCabinetToken?: string | null;
   createdBy?: string | null;

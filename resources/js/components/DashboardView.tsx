@@ -29,7 +29,8 @@ import {
   Sparkles,
   X,
   Link,
-  Send
+  Send,
+  User
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
@@ -46,6 +47,8 @@ interface DashboardViewProps {
   lang: Language;
   allowedMetrics?: string[];
   userRole?: string | null;
+  currentUserName?: string | null;
+  currentUserEmail?: string | null;
   onNavigateToReports?: (projectId: string, bloggerName: string, paymentType: 'remaining') => void;
 }
 
@@ -62,6 +65,8 @@ export default function DashboardView({
   lang,
   allowedMetrics = ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
   userRole,
+  currentUserName,
+  currentUserEmail,
   onNavigateToReports
 }: DashboardViewProps) {
   // Current active project selection
@@ -292,7 +297,8 @@ export default function DashboardView({
         pricePerSlot,
         slotsCount,
         status: 'active',
-        slotsConfig: finalSlotsConfig
+        slotsConfig: finalSlotsConfig,
+        createdBy: currentUserName || currentUserEmail || undefined
       });
       setEditingIntegration(null);
       setTelegramUsername('');
@@ -306,8 +312,32 @@ export default function DashboardView({
     ? integrations.filter(i => i.projectId === selectedProject.id)
     : [];
 
+  const [integrationFilter, setIntegrationFilter] = useState<'active' | 'all'>(() => {
+    return (localStorage.getItem('tezi_dashboard_integration_filter') as 'active' | 'all') || 'active';
+  });
+
+  const handleFilterChange = (filter: 'active' | 'all') => {
+    setIntegrationFilter(filter);
+    localStorage.setItem('tezi_dashboard_integration_filter', filter);
+  };
+
+  // Helper to identify pure preliminary pipeline leads (wishlist/negotiation/requisites_pending without agreed budget)
+  const isPreliminaryLead = (item: Integration) => {
+    const isPipelineStage = Boolean(item.kanbanStage && ['wishlist', 'negotiation', 'requisites_pending'].includes(item.kanbanStage));
+    const hasNoFinancials = Number(item.totalAmount || 0) === 0 && Number(item.paidAmount || 0) === 0;
+    return isPipelineStage && hasNoFinancials;
+  };
+
+  // Filtered by stage/active status first
+  const displayProjectIntegrations = activeProjectIntegrations.filter((item) => {
+    if (integrationFilter === 'active') {
+      return !isPreliminaryLead(item);
+    }
+    return true;
+  });
+
   // Filter integrations by Date range (interval overlap) & sort by date descending (newest first)
-  const filteredIntegrations = activeProjectIntegrations
+  const filteredIntegrations = displayProjectIntegrations
     .filter((item) => {
       const itemEnd = item.endDate || item.startDate;
       if (filterStartDate && itemEnd < filterStartDate) return false;
@@ -325,7 +355,7 @@ export default function DashboardView({
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
 
   // Selected Project total spend and current month spend
-  const selectedProjectTotalSpend = activeProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  const selectedProjectTotalSpend = displayProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
 
   const now = new Date();
   const currentYearStr = String(now.getFullYear());
@@ -627,10 +657,41 @@ export default function DashboardView({
               <div className="bg-white border border-neutral-200 rounded-xl shadow-xs overflow-hidden">
                 {/* RelationManager Title & Header */}
                 <div className="border-b border-neutral-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-neutral-50/50">
-                  <div>
+                  <div className="flex flex-wrap items-center gap-3">
                     <h3 className="text-sm font-black text-black">
                       {selectedProject.name} <span className="text-neutral-400 font-normal">→ {t.integrationsTitle}</span>
                     </h3>
+
+                    {/* Active Campaigns vs All Filter Toggle */}
+                    <div className="inline-flex items-center gap-1 bg-neutral-100 p-1 rounded-xl border border-neutral-200/80 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => handleFilterChange('active')}
+                        className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer text-xs ${
+                          integrationFilter === 'active'
+                            ? 'bg-white text-black shadow-xs'
+                            : 'text-neutral-500 hover:text-black'
+                        }`}
+                      >
+                        {t.campaignsFilterActive || 'Активные кампании'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFilterChange('all')}
+                        className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer text-xs flex items-center gap-1.5 ${
+                          integrationFilter === 'all'
+                            ? 'bg-white text-black shadow-xs'
+                            : 'text-neutral-500 hover:text-black'
+                        }`}
+                      >
+                        <span>{t.campaignsFilterAll || 'Все (включая лиды)'}</span>
+                        {activeProjectIntegrations.some(isPreliminaryLead) && (
+                          <span className="text-[10px] bg-neutral-200 text-neutral-700 px-1.5 py-0.2 rounded-full font-bold">
+                            {activeProjectIntegrations.length}
+                          </span>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                 <button
@@ -680,7 +741,22 @@ export default function DashboardView({
                         >
                           {/* Blogger Name */}
                           <td className="py-3.5 px-6 font-bold text-black whitespace-nowrap">
-                            {item.bloggerName}
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span>{item.bloggerName}</span>
+                                {isPreliminaryLead(item) && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+                                    {t.pipelineLeadBadge || 'Лид воронки'}
+                                  </span>
+                                )}
+                              </div>
+                              {item.createdBy && (
+                                <span className="text-[10px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
+                                  <User className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
+                                  <span>{item.createdBy}</span>
+                                </span>
+                              )}
+                            </div>
                           </td>
 
                           {/* Start Date */}
@@ -957,9 +1033,23 @@ export default function DashboardView({
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-2xl overflow-hidden animate-in fade-in duration-100">
             <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
-              <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-                {editingIntegration ? t.editIntegration : t.newIntegration}
-              </h3>
+              <div className="flex items-center gap-3">
+                <h3 className="font-bold text-sm uppercase tracking-wider">
+                  {editingIntegration ? t.editIntegration : t.newIntegration}
+                </h3>
+                {!editingIntegration && (
+                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 border border-neutral-200/80 rounded-lg text-[10px] text-neutral-600 font-medium">
+                    <User className="w-3 h-3 text-neutral-500 shrink-0" />
+                    <span>{t.creatingAsUser || 'Создает:'} <strong className="text-black font-bold">{currentUserName || currentUserEmail || 'Super Admin'}</strong></span>
+                  </div>
+                )}
+                {editingIntegration && (
+                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 border border-neutral-200/80 rounded-lg text-[10px] text-neutral-600 font-medium">
+                    <User className="w-3 h-3 text-neutral-500 shrink-0" />
+                    <span>{t.kanbanCreatedByLabel || 'Создал:'} <strong className="text-black font-bold">{editingIntegration.createdBy || (t.kanbanNotSpecified || 'Не указан')}</strong></span>
+                  </div>
+                )}
+              </div>
               <button 
                 onClick={() => {
                   setShowAddIntegrationModal(false);
@@ -1309,9 +1399,17 @@ export default function DashboardView({
             {/* Modal Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 bg-neutral-50/50">
               <div>
-                <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block">
-                  {t.integrationDetailsTitle || 'Integration Details'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block">
+                    {t.integrationDetailsTitle || 'Integration Details'}
+                  </span>
+                  {selectedIntegrationForDetails.createdBy && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-neutral-200/70 text-neutral-700 text-[10px] font-semibold">
+                      <User className="w-2.5 h-2.5 text-neutral-500" />
+                      <span>{selectedIntegrationForDetails.createdBy}</span>
+                    </span>
+                  )}
+                </div>
                 <span className="font-extrabold text-[13px] text-black uppercase tracking-tight">
                   {selectedIntegrationForDetails.bloggerName || ''}
                 </span>
@@ -1328,16 +1426,27 @@ export default function DashboardView({
             {/* Modal Content Scroll Area */}
             <div className="p-5 overflow-y-auto space-y-4 text-xs">
               {/* Main Fields Grid */}
-              <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200/50">
-                <div>
-                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.platformColumn || 'Platform'}</p>
-                  <div className="mt-1">
-                    <span className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase ${getPlatformBadgeClasses(selectedIntegrationForDetails.platform)}`}>
-                      {selectedIntegrationForDetails.platform || '—'}
-                    </span>
+              <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200/50 space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.platformColumn || 'Platform'}</p>
+                    <div className="mt-1">
+                      <span className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase ${getPlatformBadgeClasses(selectedIntegrationForDetails.platform)}`}>
+                        {selectedIntegrationForDetails.platform || '—'}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                      {t.createdByField || (lang === 'ru' ? 'Создан кем' : lang === 'uz' ? 'Kim tomonidan yaratildi' : 'Created By')}
+                    </p>
+                    <p className="font-bold text-neutral-800 mt-1 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                      <span className="truncate">{selectedIntegrationForDetails.createdBy || (t.kanbanNotSpecified || 'Не указан')}</span>
+                    </p>
                   </div>
                 </div>
-                <div>
+                <div className="border-t border-neutral-200/60 pt-2.5">
                   <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
                     {(t.startDateColumn || 'Start Date') + ' / ' + (t.endDateColumn || 'End Date')}
                   </p>

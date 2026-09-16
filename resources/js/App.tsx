@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import ExecutiveDashboardView from './components/ExecutiveDashboardView';
@@ -93,6 +93,14 @@ export default function App() {
 
     return null;
   });
+
+  const activeUser = useMemo(() => {
+    return (allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase());
+  }, [allowedUsers, currentUserEmail]);
+
+  const currentUserName = useMemo(() => {
+    return activeUser?.name || (currentUserEmail ? (currentUserEmail.includes('@') ? currentUserEmail.split('@')[0] : currentUserEmail) : 'Super Admin');
+  }, [activeUser, currentUserEmail]);
 
   // Navigation Tabs State & Types
   type AppTab = 'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs' | 'requisites';
@@ -313,7 +321,10 @@ export default function App() {
   };
 
   const handleAddIntegration = async (newInt: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'>) => {
-    const integration = await createIntegration(newInt, currentUserEmail || undefined);
+    const integration = await createIntegration({
+      ...newInt,
+      createdBy: newInt.createdBy || currentUserName || currentUserEmail || undefined,
+    }, currentUserEmail || undefined);
     setIntegrations((prev) => [...prev, integration]);
   };
 
@@ -327,19 +338,26 @@ export default function App() {
     setIntegrations((prev) => prev.filter(i => i.id !== id));
   };
 
-  const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'> & { integrationId?: string }) => {
+  const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'> & { integrationId?: string; createdBy?: string }) => {
     // Optimistically update integration deal stage if it was in ready_for_payment
     setIntegrations((prev) => prev.map((item) => {
       const isTarget = (newRep.integrationId && String(item.id) === String(newRep.integrationId)) ||
         (!newRep.integrationId && newRep.channelBlogger && item.bloggerName.toLowerCase().trim() === newRep.channelBlogger.toLowerCase().trim() && String(item.projectId) === String(newRep.projectId));
 
       if (isTarget && item.kanbanStage !== 'completed') {
-        return { ...item, kanbanStage: 'paid_in_progress' };
+        return { 
+          ...item, 
+          kanbanStage: 'paid_in_progress',
+          createdBy: item.createdBy || newRep.createdBy || currentUserName || currentUserEmail || undefined
+        };
       }
       return item;
     }));
 
-    const report = await createReport(newRep, currentUserEmail || undefined);
+    const report = await createReport({
+      ...newRep,
+      createdBy: newRep.createdBy || currentUserName || currentUserEmail || undefined,
+    }, currentUserEmail || undefined);
     setReports((prev) => [report, ...prev]);
     const ints = await fetchIntegrations();
     setIntegrations(ints);
@@ -393,6 +411,8 @@ export default function App() {
       }
       return [submission, ...prev];
     });
+    const ints = await fetchIntegrations();
+    setIntegrations(ints);
   };
 
   const handleUpdateKanbanColumns = async (newCols: KanbanColumn[]) => {
@@ -438,7 +458,7 @@ export default function App() {
     try {
       const created = await createIntegration({
         ...newInt,
-        createdBy: currentUserEmail || undefined,
+        createdBy: newInt.createdBy || currentUserName || currentUserEmail || undefined,
       }, currentUserEmail || undefined);
       setIntegrations((prev) => [created, ...prev]);
     } catch (err) {
@@ -613,7 +633,6 @@ export default function App() {
   }, [activeTab, isBloggerCabinetRoute, isRequisitesRoute]);
 
   // Resolve allowed pages and projects for the active user
-  const activeUser = (allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase());
   const allowedPages = activeUser?.allowedPages || ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
   const userAllowedProjects = activeUser?.allowedProjects;
 
@@ -783,6 +802,7 @@ export default function App() {
                 lang={lang}
                 userRole={currentUserRole}
                 currentUserEmail={currentUserEmail}
+                currentUserName={currentUserName}
                 onOpenRequisitesDirectory={() => setActiveTab('requisites_directory')}
                 onClearStage={handleClearKanbanStage}
                 onRefreshSubscribers={handleRefreshIntegrationSubscribers}
@@ -824,6 +844,8 @@ export default function App() {
                   lang={lang}
                   allowedMetrics={(allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
                   userRole={currentUserRole}
+                  currentUserName={currentUserName}
+                  currentUserEmail={currentUserEmail}
                   onNavigateToReports={(projectId, bloggerName, paymentType) => {
                     setReportsInitialState({
                       projectId,
@@ -855,6 +877,8 @@ export default function App() {
                 onAddReport={handleAddReport}
                 lang={lang}
                 userRole={currentUserRole}
+                currentUserName={currentUserName}
+                currentUserEmail={currentUserEmail}
                 isWebApp={isTelegramWebApp}
                 initialState={reportsInitialState}
                 onClearInitialState={() => setReportsInitialState(null)}

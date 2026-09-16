@@ -81,7 +81,14 @@ Route::get('/shorten-url', function (\Illuminate\Http\Request $request) {
     return response()->json(['short_url' => $url]);
 });
 
-Route::get('/clear-server-cache', function () {
+Route::get('/clear-server-cache', function (\Illuminate\Http\Request $request) {
+    if (app()->environment('production')) {
+        $secret = $request->header('X-Secret-Key') ?: $request->query('key');
+        if (empty($secret) || $secret !== config('app.key')) {
+            return response()->json(['error' => 'Unauthorized. Secret key required in production.'], 403);
+        }
+    }
+
     try {
         \Illuminate\Support\Facades\Artisan::call('optimize:clear');
         \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
@@ -109,13 +116,21 @@ Route::get('/debug-telegram', function () {
     ]);
 });
 
-Route::get('/reset-database-prod-secure', function () {
+Route::get('/reset-database-prod-secure', function (\Illuminate\Http\Request $request) {
+    // Strictly forbidden in production to prevent catastrophic data loss
+    if (app()->environment('production') || !app()->environment('local')) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Action disabled in non-local environment for safety.'
+        ], 403);
+    }
+
     try {
         // Drop all tables
         \Illuminate\Support\Facades\Artisan::call('db:wipe', ['--force' => true]);
         // Run all migrations fresh
         \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
-        // Seed default users (the two super admins)
+        // Seed default users
         \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
         
         return response()->json([

@@ -16,12 +16,33 @@ interface ReportsFeedViewProps {
   description?: string;
 }
 
+const getReportReceipts = (rep: Report | null | undefined): string[] => {
+  if (!rep) return [];
+  if (Array.isArray(rep.receipts) && rep.receipts.length > 0) {
+    return rep.receipts.filter(Boolean);
+  }
+  if (rep.receipt) {
+    const trimmed = rep.receipt.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(Boolean);
+        }
+      } catch {}
+    }
+    return [rep.receipt];
+  }
+  return [];
+};
+
 export default function ReportsFeedView({ projects, integrations, reports, lang, userRole, onDeleteReport, title, description }: ReportsFeedViewProps) {
   const t = translations[lang];
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [activeReceiptIndex, setActiveReceiptIndex] = useState<number>(0);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>(() => {
     const saved = localStorage.getItem('reports_feed_view_mode');
     return (saved === 'grid' || saved === 'table') ? saved : 'table';
@@ -495,17 +516,30 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
 
                       {/* Receipt */}
                       <td className="px-5 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
-                        {rep.receipt ? (
-                          <button
-                            onClick={() => setSelectedReport(rep)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-md transition cursor-pointer"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-neutral-500" />
-                            <span>{lang === 'ru' ? 'Чек' : lang === 'uz' ? 'Chek' : 'View'}</span>
-                          </button>
-                        ) : (
-                          <span className="text-neutral-300">—</span>
-                        )}
+                        {(() => {
+                          const repReceipts = getReportReceipts(rep);
+                          if (repReceipts.length === 0) {
+                            return <span className="text-neutral-300">—</span>;
+                          }
+                          return (
+                            <button
+                              onClick={() => {
+                                setSelectedReport(rep);
+                                setActiveReceiptIndex(0);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-md transition cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-neutral-500" />
+                              <span>
+                                {lang === 'ru' 
+                                  ? (repReceipts.length > 1 ? `Чеки (${repReceipts.length})` : 'Чек') 
+                                  : lang === 'uz' 
+                                    ? (repReceipts.length > 1 ? `Cheklar (${repReceipts.length})` : 'Chek') 
+                                    : (repReceipts.length > 1 ? `Receipts (${repReceipts.length})` : 'View')}
+                              </span>
+                            </button>
+                          );
+                        })()}
                       </td>
 
                       {/* Cabinet (Hidden for executive role) */}
@@ -636,11 +670,21 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                 </div>
 
                 {/* Compact screenshot indicator if present */}
-                {rep.receipt && (
-                  <div className="mt-2.5 text-[9px] text-neutral-400 font-bold flex items-center gap-1 uppercase">
-                    <span>🖼️ {lang === 'ru' ? 'Скриншот прикреплен' : lang === 'uz' ? 'Skrinshot biriktirilgan' : 'Screenshot Attached'}</span>
-                  </div>
-                )}
+                {(() => {
+                  const repReceipts = getReportReceipts(rep);
+                  if (repReceipts.length === 0) return null;
+                  return (
+                    <div className="mt-2.5 text-[9px] text-neutral-400 font-bold flex items-center gap-1 uppercase">
+                      <span>
+                        🖼️ {lang === 'ru' 
+                          ? (repReceipts.length > 1 ? `Скриншоты (${repReceipts.length})` : 'Скриншот прикреплен') 
+                          : lang === 'uz' 
+                            ? (repReceipts.length > 1 ? `Skrinshotlar (${repReceipts.length})` : 'Skrinshot biriktirilgan') 
+                            : (repReceipts.length > 1 ? `Screenshots (${repReceipts.length})` : 'Screenshot Attached')}
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* Blogger Cabinet Link Section (Hidden for executive role) */}
                 {userRole !== 'executive' && cabinetUrl && (
@@ -829,47 +873,135 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
               )}
 
               {/* Screenshot/Receipt */}
-              {selectedReport.receipt && (
-                <div className="space-y-1.5 text-left border-t border-neutral-100 pt-3">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                      {lang === 'ru' ? 'Чек / Скриншот' : lang === 'uz' ? 'Chek / Skrinshot' : 'Receipt / Screenshot'}
-                    </p>
-                    {selectedReport.receipt.startsWith('http') && (
-                      <a
-                        href={selectedReport.receipt}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] font-bold text-blue-600 hover:underline uppercase flex items-center gap-0.5"
-                      >
-                        {lang === 'ru' ? 'Открыть оригинал' : lang === 'uz' ? 'Originalini ochish' : 'Open Original'} ↗
-                      </a>
-                    )}
-                  </div>
+              {(() => {
+                const modalReceipts = getReportReceipts(selectedReport);
+                if (modalReceipts.length === 0) return null;
+                const activeIndex = Math.min(activeReceiptIndex, modalReceipts.length - 1);
+                const currentReceipt = modalReceipts[activeIndex];
+                const isImage = currentReceipt.startsWith('data:image/') || currentReceipt.startsWith('http');
 
-                  <div className="border border-neutral-200 rounded-xl overflow-hidden bg-neutral-50 flex items-center justify-center p-2 max-h-64">
-                    {selectedReport.receipt.startsWith('data:image/') ? (
-                      <img 
-                        src={selectedReport.receipt} 
-                        alt="Receipt proof" 
-                        className="max-w-full max-h-60 object-contain rounded cursor-pointer hover:opacity-95" 
+                return (
+                  <div className="space-y-2 text-left border-t border-neutral-100 pt-3">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                          {lang === 'ru' 
+                            ? (modalReceipts.length > 1 ? `Чеки / Скриншоты (${modalReceipts.length})` : 'Чек / Скриншот')
+                            : lang === 'uz' 
+                              ? (modalReceipts.length > 1 ? `Cheklar / Skrinshotlar (${modalReceipts.length})` : 'Chek / Skrinshot')
+                              : (modalReceipts.length > 1 ? `Receipts / Screenshots (${modalReceipts.length})` : 'Receipt / Screenshot')}
+                        </p>
+                        {modalReceipts.length > 1 && (
+                          <span className="text-[10px] font-extrabold text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                            {activeIndex + 1} / {modalReceipts.length}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
                         onClick={() => {
                           const w = window.open();
-                          if (w) w.document.write(`<img src="${selectedReport.receipt}" style="max-width:100%; height:auto;" />`);
+                          if (w) {
+                            if (currentReceipt.startsWith('data:image/')) {
+                              w.document.write(`<img src="${currentReceipt}" style="max-width:100%; height:auto;" />`);
+                            } else {
+                              w.location.href = currentReceipt;
+                            }
+                          }
                         }}
-                      />
-                    ) : (
-                      <div className="py-6 text-center text-neutral-500 font-medium">
-                        <FileText className="w-8 h-8 text-neutral-300 mx-auto mb-1.5" />
-                        <p>{lang === 'ru' ? 'Прикрепленный документ (PDF/Файл)' : lang === 'uz' ? 'Biriktirilgan hujjat (PDF/Fayl)' : 'Attached Document (PDF/File)'}</p>
-                        <a href={selectedReport.receipt} target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline mt-1 block">
-                          Download/View File
-                        </a>
+                        className="text-[10px] font-bold text-blue-600 hover:underline uppercase flex items-center gap-0.5 cursor-pointer"
+                      >
+                        {lang === 'ru' ? 'Открыть оригинал' : lang === 'uz' ? 'Originalini ochish' : 'Open Original'} ↗
+                      </button>
+                    </div>
+
+                    {/* Main Receipt Viewer with Navigation */}
+                    <div className="relative border border-neutral-200 rounded-xl overflow-hidden bg-neutral-900/5 flex items-center justify-center p-2 min-h-[160px] max-h-72">
+                      {isImage ? (
+                        <img 
+                          src={currentReceipt} 
+                          alt={`Receipt proof ${activeIndex + 1}`} 
+                          className="max-w-full max-h-68 object-contain rounded cursor-pointer hover:opacity-95 transition" 
+                          onClick={() => {
+                            const w = window.open();
+                            if (w) w.document.write(`<img src="${currentReceipt}" style="max-width:100%; height:auto;" />`);
+                          }}
+                          title={lang === 'ru' ? 'Нажмите для открытия в новом окне' : 'Click to open in new tab'}
+                        />
+                      ) : (
+                        <div className="py-6 text-center text-neutral-500 font-medium">
+                          <FileText className="w-8 h-8 text-neutral-400 mx-auto mb-1.5" />
+                          <p className="text-xs font-bold text-neutral-700">
+                            {lang === 'ru' ? 'Прикрепленный документ (PDF/Файл)' : lang === 'uz' ? 'Biriktirilgan hujjat (PDF/Fayl)' : 'Attached Document (PDF/File)'}
+                          </p>
+                          <a 
+                            href={currentReceipt} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="text-blue-600 font-bold hover:underline mt-1.5 text-xs inline-block"
+                          >
+                            Download / View File
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Navigation arrows if multiple receipts */}
+                      {modalReceipts.length > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={activeIndex === 0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveReceiptIndex(prev => Math.max(0, prev - 1));
+                            }}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center text-xs font-bold shadow-md disabled:opacity-20 disabled:cursor-not-allowed transition cursor-pointer"
+                          >
+                            ‹
+                          </button>
+                          <button
+                            type="button"
+                            disabled={activeIndex === modalReceipts.length - 1}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveReceiptIndex(prev => Math.min(modalReceipts.length - 1, prev + 1));
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center text-xs font-bold shadow-md disabled:opacity-20 disabled:cursor-not-allowed transition cursor-pointer"
+                          >
+                            ›
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Thumbnail strip if multiple receipts */}
+                    {modalReceipts.length > 1 && (
+                      <div className="flex gap-1.5 overflow-x-auto py-1">
+                        {modalReceipts.map((thumb, tIdx) => (
+                          <button
+                            key={tIdx}
+                            type="button"
+                            onClick={() => setActiveReceiptIndex(tIdx)}
+                            className={`relative flex-shrink-0 w-12 h-12 rounded-lg border-2 overflow-hidden transition cursor-pointer ${
+                              tIdx === activeIndex ? 'border-black ring-2 ring-black/20' : 'border-neutral-200 opacity-60 hover:opacity-100'
+                            }`}
+                          >
+                            {thumb.startsWith('data:image/') || thumb.startsWith('http') ? (
+                              <img src={thumb} alt={`Thumb ${tIdx + 1}`} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-neutral-100 text-[9px] font-black text-red-600">PDF</div>
+                            )}
+                            <div className="absolute bottom-0.5 right-0.5 bg-black/60 text-white text-[7px] font-bold px-1 rounded">
+                              {tIdx + 1}
+                            </div>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}

@@ -50,6 +50,9 @@ export const translations = {
     editTooltip: 'Edit',
     copyTooltip: 'Copy Link',
     copiedAlert: 'Copied link to clipboard!',
+    campaignsFilterActive: 'Active Campaigns',
+    campaignsFilterAll: 'All (incl. Leads)',
+    pipelineLeadBadge: 'Pipeline Lead',
 
     // Selected Project Details Bar
     selectedCampaignDetails: 'Selected Campaign Details',
@@ -331,6 +334,7 @@ export const translations = {
     kanbanChannelLink: 'Channel',
     kanbanTgChatTooltip: 'Open personal Telegram chat',
     kanbanCreatedByLabel: 'Created by:',
+    creatingAsUser: 'Created by:',
     kanbanNotSpecified: 'Not specified',
     kanbanAmountLabel: 'Amount:',
     kanbanRequisitesLabel: 'Requisites:',
@@ -495,6 +499,9 @@ export const translations = {
     editTooltip: 'Редактировать',
     copyTooltip: 'Копировать ссылку',
     copiedAlert: 'Ссылка скопирована в буфер обмена!',
+    campaignsFilterActive: 'Активные кампании',
+    campaignsFilterAll: 'Все (включая лиды)',
+    pipelineLeadBadge: 'Лид воронки',
 
     // Selected Project Details Bar
     selectedCampaignDetails: 'Детали выбранной кампании',
@@ -776,6 +783,7 @@ export const translations = {
     kanbanChannelLink: 'Канал',
     kanbanTgChatTooltip: 'Перейти в личный Telegram (открыть чат)',
     kanbanCreatedByLabel: 'Создал:',
+    creatingAsUser: 'Создает:',
     kanbanNotSpecified: 'Не указан',
     kanbanAmountLabel: 'Сумма:',
     kanbanRequisitesLabel: 'Реквизиты:',
@@ -940,6 +948,9 @@ export const translations = {
     editTooltip: 'Tahrirlash',
     copyTooltip: 'Havolani nusxalash',
     copiedAlert: 'Havola vaqtinchalik xotiraga nusxalandi!',
+    campaignsFilterActive: 'Faol kampaniyalar',
+    campaignsFilterAll: 'Barchasi (lidlar bilan)',
+    pipelineLeadBadge: 'Voronka lidi',
 
     // Selected Project Details Bar
     selectedCampaignDetails: 'Tanlangan kampaniya tafsilotlari',
@@ -1221,6 +1232,7 @@ export const translations = {
     kanbanChannelLink: 'Kanal',
     kanbanTgChatTooltip: 'Shaxsiy Telegram chatiga o‘tish',
     kanbanCreatedByLabel: 'Yaratdi:',
+    creatingAsUser: 'Yaratuvchi:',
     kanbanNotSpecified: 'Ko‘rsatilmagan',
     kanbanAmountLabel: 'Summa:',
     kanbanRequisitesLabel: 'Rekvizitlar:',

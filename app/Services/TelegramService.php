@@ -219,16 +219,46 @@ class TelegramService
         }
         $text .= "\n";
 
-        // If a Base64 receipt is provided, send it as photo or document directly
-        if ($receiptBase64 && preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $receiptBase64, $matches)) {
-            $mimeType = $matches[1];
-            $base64Data = $matches[2];
-            $binaryData = base64_decode($base64Data);
+        $receiptList = [];
+        if (is_array($receiptBase64)) {
+            $receiptList = array_values(array_filter($receiptBase64));
+        } elseif (is_string($receiptBase64) && !empty($receiptBase64)) {
+            $trimmed = trim($receiptBase64);
+            if (str_starts_with($trimmed, '[') && str_ends_with($trimmed, ']')) {
+                $decoded = json_decode($trimmed, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $receiptList = array_values(array_filter($decoded));
+                } else {
+                    $receiptList = [$receiptBase64];
+                }
+            } else {
+                $receiptList = [$receiptBase64];
+            }
+        } elseif (isset($report->receipts) && is_array($report->receipts)) {
+            $receiptList = $report->receipts;
+        }
+
+        $parsedReceipts = [];
+        foreach ($receiptList as $item) {
+            if (is_string($item) && preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $item, $matches)) {
+                $parsedReceipts[] = [
+                    'mimeType' => $matches[1],
+                    'binary' => base64_decode($matches[2]),
+                    'isPdf' => str_contains($matches[1], 'pdf'),
+                ];
+            }
+        }
+
+        // If a single Base64 receipt is provided, send it as photo or document directly
+        if (count($parsedReceipts) === 1) {
+            $receiptItem = $parsedReceipts[0];
+            $mimeType = $receiptItem['mimeType'];
+            $binaryData = $receiptItem['binary'];
+            $isPdf = $receiptItem['isPdf'];
 
             $token = config('services.telegram.bot_token');
             if ($token && $chatId) {
                 try {
-                    $isPdf = str_contains($mimeType, 'pdf');
                     $endpoint = $isPdf ? 'sendDocument' : 'sendPhoto';
                     $field = $isPdf ? 'document' : 'photo';
                     $filename = $isPdf ? 'receipt.pdf' : 'receipt.jpg';
@@ -294,6 +324,90 @@ class TelegramService
                     return true;
                 } catch (\Throwable $e) {
                     Log::error("Telegram sendPhoto/Document Exception: " . $e->getMessage());
+                }
+            }
+        }
+
+        // If multiple Base64 receipts are provided
+        if (count($parsedReceipts) > 1) {
+            $token = config('services.telegram.bot_token');
+            if ($token && $chatId) {
+                try {
+                    $hasPdf = false;
+                    foreach ($parsedReceipts as $item) {
+                        if ($item['isPdf']) {
+                            $hasPdf = true;
+                            break;
+                        }
+                    }
+
+                    $safeCaption = strlen($text) > 1024 ? substr(strip_tags($text), 0, 1021) . '...' : $text;
+
+                    // If all are photos and count <= 10, send as an album (sendMediaGroup)
+                    if (!$hasPdf && count($parsedReceipts) <= 10) {
+                        $media = [];
+                        $httpReq = Http::asMultipart();
+                        foreach ($parsedReceipts as $idx => $item) {
+                            $field = "photo_{$idx}";
+                            $mediaItem = [
+                                'type' => 'photo',
+                                'media' => "attach://{$field}",
+                            ];
+                            if ($idx === 0) {
+                                $mediaItem['caption'] = $safeCaption;
+                                $mediaItem['parse_mode'] = 'HTML';
+                            }
+                            $media[] = $mediaItem;
+                            $httpReq->attach($field, $item['binary'], "receipt_{$idx}.jpg");
+                        }
+
+                        $mediaParams = [
+                            'chat_id' => $chatId,
+                            'media' => json_encode($media),
+                        ];
+                        if ($threadId) {
+                            $mediaParams['message_thread_id'] = $threadId;
+                        }
+
+                        $response = $httpReq->post("https://api.telegram.org/bot{$token}/sendMediaGroup", $mediaParams);
+                        if ($response->successful()) {
+                            return true;
+                        }
+
+                        $body = $response->body();
+                        $resData = json_decode($body, true);
+                        if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                            $chatId = $resData['parameters']['migrate_to_chat_id'];
+                            $mediaParams['chat_id'] = $chatId;
+                            $retryRes = $httpReq->post("https://api.telegram.org/bot{$token}/sendMediaGroup", $mediaParams);
+                            if ($retryRes->successful()) {
+                                return true;
+                            }
+                        }
+                        Log::warning("Telegram sendMediaGroup failed: " . $body . ", falling back to individual messages");
+                    }
+
+                    // Fallback or mixed/PDF: Send text message first
+                    self::sendMessage($chatId, $text, $threadId);
+
+                    // Then send each receipt file individually
+                    foreach ($parsedReceipts as $idx => $item) {
+                        $field = $item['isPdf'] ? 'document' : 'photo';
+                        $endpoint = $item['isPdf'] ? 'sendDocument' : 'sendPhoto';
+                        $filename = $item['isPdf'] ? "receipt_" . ($idx + 1) . ".pdf" : "receipt_" . ($idx + 1) . ".jpg";
+                        $params = [
+                            'chat_id' => $chatId,
+                            'caption' => '📎 Чек ' . ($idx + 1) . ' из ' . count($parsedReceipts),
+                        ];
+                        if ($threadId) {
+                            $params['message_thread_id'] = $threadId;
+                        }
+                        Http::attach($field, $item['binary'], $filename)
+                            ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $params);
+                    }
+                    return true;
+                } catch (\Throwable $e) {
+                    Log::error("Telegram multi-receipt send Exception: " . $e->getMessage());
                 }
             }
         }

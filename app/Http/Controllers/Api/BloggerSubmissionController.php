@@ -119,12 +119,22 @@ class BloggerSubmissionController extends Controller
         $existingSub = BloggerSubmission::where('integration_id', $integration->id)->first();
         $oldData = $existingSub ? ($existingSub->data ?? []) : [];
 
+        $incomingData = $request->data ?? [];
+        $mergedData = $oldData;
+        foreach ($incomingData as $k => $v) {
+            if ($v !== null && $v !== '') {
+                $mergedData[$k] = $v;
+            } elseif (!isset($mergedData[$k])) {
+                $mergedData[$k] = $v;
+            }
+        }
+
         $sub = BloggerSubmission::updateOrCreate(
             ['integration_id' => $integration->id],
             [
                 'status' => 'approved',
                 'submitted_at' => now(),
-                'data' => $request->data,
+                'data' => $mergedData,
             ]
         );
 

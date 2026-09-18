@@ -32,6 +32,7 @@ class ReportController extends Controller
                 'paymentType' => $report->payment_type,
                 'receipt' => $report->receipt,
                 'receipts' => $report->receipts,
+                'telegramMessageUrl' => $report->telegram_message_url ?? null,
                 'createdBy' => $report->created_by,
             ];
         }));
@@ -253,13 +254,14 @@ class ReportController extends Controller
                     }
 
                     $existingIntegration->update($existingIntegrationUpdate);
+                    $existingIntegration->syncWithReports();
                 } else {
                     $token = Integration::generateCabinetToken($cleanBloggerName);
                     $referralLink = $report->destination;
                     $startDate = \Carbon\Carbon::parse($report->date);
                     $endDate = $startDate->copy()->addDays(14);
 
-                    Integration::create([
+                    $newIntegration = Integration::create([
                         'project_id' => $targetProjectId,
                         'blogger_name' => $cleanBloggerName,
                         'blogger_page_link' => $report->blogger_page_link,
@@ -276,6 +278,7 @@ class ReportController extends Controller
                         'slots_config' => $groupSlotsConfig,
                         'created_by' => $createdByName,
                     ]);
+                    $newIntegration->syncWithReports();
                 }
             }
         }
@@ -352,6 +355,7 @@ class ReportController extends Controller
             'paymentType' => $report->payment_type,
             'receipt' => $report->receipt,
             'receipts' => $report->receipts,
+            'telegramMessageUrl' => $report->telegram_message_url ?? null,
             'bloggerCabinetToken' => $cabinetToken,
             'createdBy' => $report->created_by,
         ], 201);
@@ -401,62 +405,7 @@ class ReportController extends Controller
                 if ($remainingReports->isEmpty()) {
                     $integration->delete();
                 } else {
-                    $first = true;
-                    $pricePerSlot = 0;
-                    $slotsCount = 0;
-                    $paidSlotsCount = 0;
-                    $slotsConfig = [];
-                    $referralLink = null;
-                    $startDate = null;
-
-                    $minDate = null;
-                    $maxDate = null;
-                    foreach ($remainingReports as $rep) {
-                        $repDate = \Carbon\Carbon::parse($rep->date);
-                        if ($minDate === null || $repDate->lt($minDate)) {
-                            $minDate = $repDate->copy();
-                        }
-                        if ($maxDate === null || $repDate->gt($maxDate)) {
-                            $maxDate = $repDate->copy();
-                        }
-
-                        if ($first) {
-                            $referralLink = $rep->destination;
-                            $pricePerSlot = $rep->price_per_slot;
-                            if ($rep->payment_type === 'remaining') {
-                                $slotsCount = $rep->paid_slots_count;
-                                $paidSlotsCount = $rep->paid_slots_count;
-                            } else {
-                                $slotsCount = $rep->slots_count;
-                                $paidSlotsCount = $rep->paid_slots_count;
-                            }
-                            $slotsConfig = $rep->slots_config ?? [];
-                            $first = false;
-                        } else {
-                            if ($rep->payment_type === 'remaining') {
-                                $paidSlotsCount += $rep->paid_slots_count;
-                            } else {
-                                $slotsCount += $rep->slots_count;
-                                $paidSlotsCount += $rep->paid_slots_count;
-                                $slotsConfig = array_merge($slotsConfig, $rep->slots_config ?? []);
-                                $pricePerSlot = $rep->price_per_slot;
-                            }
-                        }
-                    }
-
-                    if ($slotsCount > 0) {
-                        $paidSlotsCount = min($slotsCount, $paidSlotsCount);
-                    }
-
-                    $integration->update([
-                        'price_per_slot' => $pricePerSlot,
-                        'slots_count' => $slotsCount,
-                        'paid_slots_count' => $paidSlotsCount,
-                        'slots_config' => $slotsConfig,
-                        'referral_link' => $referralLink,
-                        'start_date' => $minDate,
-                        'end_date' => $maxDate ? $maxDate->copy()->addDays(14) : null,
-                    ]);
+                    $integration->syncWithReports();
                 }
             }
         }

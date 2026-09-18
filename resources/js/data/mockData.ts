@@ -125,6 +125,7 @@ export interface Report {
   receipts?: string[] | null;
   lang?: string;
   bloggerCabinetToken?: string | null;
+  telegramMessageUrl?: string | null;
   createdBy?: string | null;
 }
 

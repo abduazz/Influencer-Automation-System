@@ -189,6 +189,10 @@ export const translations = {
     integrationDetailsTitle: 'Integration Details',
     notPublishedLabel: 'Not published',
     publicationLinkLabel: 'Publication Link',
+    proofSubmittedDateLabel: 'Proof Date',
+    tableHeaderTelegram: 'Telegram',
+    openReportInTelegram: 'Open Report in Telegram',
+    telegramReportBtn: 'Telegram Report',
     metricSlotsRemaining: 'Slots Remaining',
     bloggerCabinetStatus: 'Blogger Cabinet Status',
     // Access Control Management
@@ -638,6 +642,10 @@ export const translations = {
     integrationDetailsTitle: 'Детали интеграции',
     notPublishedLabel: 'Не опубликовано',
     publicationLinkLabel: 'Ссылка на публикацию',
+    proofSubmittedDateLabel: 'Дата сдачи контента',
+    tableHeaderTelegram: 'Telegram',
+    openReportInTelegram: 'Открыть отчет в Telegram',
+    telegramReportBtn: 'Отчет в Telegram',
     metricSlotsRemaining: 'Осталось выставить',
     bloggerCabinetStatus: 'Статус Кабинета Блогера',
     // Access Control Management
@@ -1087,6 +1095,10 @@ export const translations = {
     integrationDetailsTitle: 'Integratsiya tafsilotlari',
     notPublishedLabel: 'Chop etilmagan',
     publicationLinkLabel: 'Nashr havolasi',
+    proofSubmittedDateLabel: 'Kontent topshirilgan sana',
+    tableHeaderTelegram: 'Telegram',
+    openReportInTelegram: 'Telegramdagi hisobotni ochish',
+    telegramReportBtn: 'Telegram hisoboti',
     metricSlotsRemaining: 'Joylashtirilishi qolgan slotlar',
     bloggerCabinetStatus: 'Blogger kabineti holati',
     // Access Control Management

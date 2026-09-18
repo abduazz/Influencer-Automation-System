@@ -607,77 +607,73 @@ export default function KanbanView({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 min-h-screen p-4 md:p-8 space-y-6 font-sans">
-      {/* Project Quick Filter Tabs */}
-      {projects && projects.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none flex-wrap">
-          <button
-            type="button"
-            onClick={() => handleSelectProject('all')}
-            className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs transition-all duration-150 cursor-pointer shrink-0 ${
-              selectedProjectId === 'all'
-                ? 'bg-black text-white font-bold shadow-xs'
-                : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-black font-semibold border border-neutral-200 shadow-2xs'
-            }`}
-          >
-            <Layers className={`w-3.5 h-3.5 ${selectedProjectId === 'all' ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
-            <span>{t.kanbanAllProjects || 'Все проекты'}</span>
-            <span
-              className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${
+    <div className="flex flex-col h-full overflow-hidden space-y-2 font-sans">
+      {/* Unified Compact Control Bar: Project Tabs, Search, Filters & Actions */}
+      <div className="bg-white p-2 sm:p-2.5 rounded-xl border border-neutral-200/90 shadow-2xs space-y-2 shrink-0">
+        {/* Project Quick Filter Tabs */}
+        {projects && projects.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+            <button
+              type="button"
+              onClick={() => handleSelectProject('all')}
+              className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all duration-150 cursor-pointer shrink-0 ${
                 selectedProjectId === 'all'
-                  ? 'bg-white/20 text-white'
-                  : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
+                  ? 'bg-black text-white font-bold shadow-2xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200/80'
               }`}
             >
-              {totalKanbanCards}
-            </span>
-          </button>
-
-          {projects.map((project) => {
-            const isSelected = String(selectedProjectId) === String(project.id);
-            const count = projectDealCounts[String(project.id)] || 0;
-
-            return (
-              <button
-                key={project.id}
-                type="button"
-                onClick={() => handleSelectProject(isSelected ? 'all' : String(project.id))}
-                className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs transition-all duration-150 cursor-pointer shrink-0 ${
-                  isSelected
-                    ? 'bg-black text-white font-bold shadow-xs'
-                    : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-black font-semibold border border-neutral-200 shadow-2xs'
+              <Layers className={`w-3.5 h-3.5 ${selectedProjectId === 'all' ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+              <span>{t.kanbanAllProjects || 'Все проекты'}</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold transition-colors ${
+                  selectedProjectId === 'all'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200/80 text-slate-600 group-hover:bg-slate-300/80'
                 }`}
               >
-                <span>{project.name}</span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${
+                {totalKanbanCards}
+              </span>
+            </button>
+
+            {projects.map((project) => {
+              const isSelected = String(selectedProjectId) === String(project.id);
+              const count = projectDealCounts[String(project.id)] || 0;
+
+              return (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => handleSelectProject(isSelected ? 'all' : String(project.id))}
+                  className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all duration-150 cursor-pointer shrink-0 ${
                     isSelected
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
+                      ? 'bg-black text-white font-bold shadow-2xs'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200/80'
                   }`}
                 >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+                  <span>{project.name}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold transition-colors ${
+                      isSelected
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-200/80 text-slate-600 group-hover:bg-slate-300/80'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-      {/* Search, Filter & Actions Bar */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-xl border border-neutral-200 shadow-xs">
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 flex-1">
-          {/* Search Bar: Compact icon by default, expands on click */}
-          {isSearchExpanded || searchQuery ? (
-            <div
-              className="relative flex items-center w-full sm:w-72 md:w-80 transition-all duration-200 animate-in fade-in"
-              onBlur={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node) && !searchQuery) {
-                  setIsSearchExpanded(false);
-                }
-              }}
-            >
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <div className="h-px bg-slate-100" />
+
+        {/* Search, Filter & Actions Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {/* Search Bar: Compact & direct input */}
+            <div className="relative flex items-center">
+              <Search className="absolute left-2.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -686,116 +682,86 @@ export default function KanbanView({
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     setSearchQuery('');
-                    setIsSearchExpanded(false);
                   }
                 }}
-                placeholder={t.kanbanSearchPlaceholder || 'Поиск по имени блогера или ссылке...'}
-                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
-                autoFocus
+                placeholder={t.kanbanSearchPlaceholder || 'Поиск по имени блогера...'}
+                className="w-44 sm:w-60 h-8 pl-8 pr-7 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1.5 focus:ring-black transition"
               />
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setIsSearchExpanded(false);
-                }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded transition cursor-pointer"
-                title={t.kanbanCloseSearchTitle || 'Закрыть поиск'}
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title={t.kanbanCloseSearchTitle || 'Очистить'}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-          ) : (
+
+            {/* Platform selector */}
+            <div className="flex items-center gap-1.5 h-8 bg-slate-50 hover:bg-slate-100/70 px-2.5 rounded-lg border border-slate-200 text-xs">
+              <span className="text-slate-400 font-medium">{t.kanbanPlatformLabel || 'Платформа:'}</span>
+              <select
+                value={selectedPlatform}
+                onChange={(e) => setSelectedPlatform(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+              >
+                <option value="all">{t.kanbanAllPlatformsOption || 'Все платформы'}</option>
+                <option value="Instagram">Instagram</option>
+                <option value="Telegram">Telegram</option>
+                <option value="YouTube">YouTube</option>
+                <option value="TikTok">TikTok</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onOpenRequisitesDirectory && (
+              <button
+                onClick={onOpenRequisitesDirectory}
+                className="flex items-center gap-1.5 h-8 px-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 transition cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-slate-500" />
+                <span>{t.kanbanRequisitesDirectoryBtn || 'База реквизитов'}</span>
+              </button>
+            )}
+
             <button
-              type="button"
               onClick={() => {
-                setIsSearchExpanded(true);
-                setTimeout(() => searchInputRef.current?.focus(), 50);
+                setEditingColumnId(null);
+                setColumnTitleInput('');
+                setIsColumnModalOpen(true);
               }}
-              className="flex items-center justify-center w-9 h-9 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg border border-slate-200 hover:border-slate-300 transition cursor-pointer shrink-0 shadow-2xs"
-              title={t.kanbanSearchTitle || 'Поиск блогеров'}
+              className="flex items-center gap-1.5 h-8 px-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 transition cursor-pointer"
             >
-              <Search className="w-4 h-4 text-slate-600" />
+              <Settings2 className="w-3.5 h-3.5 text-slate-500" />
+              <span>{t.kanbanConfigureColumnsBtn || 'Настройка столбцов'}</span>
             </button>
-          )}
 
-          {/* Project selector */}
-          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-            <span className="text-xs font-semibold text-slate-500">{t.kanbanProjectLabel || 'Проект:'}</span>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => handleSelectProject(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-            >
-              <option value="all">{t.kanbanAllProjectsOption || 'Все проекты'}</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Platform selector */}
-          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-            <span className="text-xs font-semibold text-slate-500">{t.kanbanPlatformLabel || 'Платформа:'}</span>
-            <select
-              value={selectedPlatform}
-              onChange={(e) => setSelectedPlatform(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-            >
-              <option value="all">{t.kanbanAllPlatformsOption || 'Все платформы'}</option>
-              <option value="Instagram">Instagram</option>
-              <option value="Telegram">Telegram</option>
-              <option value="YouTube">YouTube</option>
-              <option value="TikTok">TikTok</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Action Buttons moved from top container */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {onOpenRequisitesDirectory && (
             <button
-              onClick={onOpenRequisitesDirectory}
-              className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 transition cursor-pointer"
+              onClick={() => handleOpenCreateDealModal()}
+              className="flex items-center gap-1.5 h-8 px-3 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-lg shadow-2xs transition cursor-pointer"
             >
-              <FileText className="w-4 h-4 text-slate-600" />
-              <span>{t.kanbanRequisitesDirectoryBtn || 'База реквизитов'}</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t.kanbanAddBloggerBtn || 'Добавить блогера'}</span>
             </button>
-          )}
-
-          <button
-            onClick={() => {
-              setEditingColumnId(null);
-              setColumnTitleInput('');
-              setIsColumnModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 transition cursor-pointer"
-          >
-            <Settings2 className="w-4 h-4 text-slate-600" />
-            <span>{t.kanbanConfigureColumnsBtn || 'Настройка столбцов'}</span>
-          </button>
-
-          <button
-            onClick={() => handleOpenCreateDealModal()}
-            className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t.kanbanAddBloggerBtn || 'Добавить блогера'}</span>
-          </button>
+          </div>
         </div>
       </div>
 
       {/* Kanban Dynamic Columns Horizontal Scroll Container */}
-      <div className="flex gap-5 items-start overflow-x-auto pb-8 pt-2 snap-x min-h-[400px]">
+      <div className="flex gap-2.5 items-stretch overflow-x-auto overflow-y-hidden pb-1 pt-0.5 snap-x flex-1 min-h-0">
         {visibleColumns.length === 0 ? (
-          <div className="w-full flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-300 text-center px-6 shadow-xs">
-            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4 text-slate-600">
-              <Plus className="w-7 h-7" />
+          <div className="w-full flex flex-col items-center justify-center py-16 bg-white rounded-2xl border border-dashed border-slate-300 text-center px-6 shadow-xs">
+            <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mb-3 text-slate-600">
+              <Plus className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-extrabold text-slate-900 mb-1.5">
+            <h3 className="text-sm font-extrabold text-slate-900 mb-1">
               {t.kanbanEmptyColumnsTitle || 'Все этапы скрыты или отсутствуют'}
             </h3>
-            <p className="text-xs text-slate-500 max-w-md mb-6 leading-relaxed">
+            <p className="text-xs text-slate-500 max-w-md mb-4 leading-relaxed">
               {t.kanbanEmptyColumnsDesc || 'Откройте «Настройка столбцов», чтобы включить отображение столбцов или создать новые.'}
             </p>
             <button
@@ -804,7 +770,7 @@ export default function KanbanView({
                 setColumnTitleInput('');
                 setIsColumnModalOpen(true);
               }}
-              className="flex items-center gap-2 px-5 py-3 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
             >
               <Settings2 className="w-4 h-4" />
               <span>{t.kanbanConfigureColumnsBtn || 'Настройка столбцов'}</span>
@@ -850,12 +816,12 @@ export default function KanbanView({
                 }
                 handleDropOnColumn(e, column.id);
               }}
-              className={`relative flex flex-col bg-white rounded-2xl border overflow-hidden transition-all duration-150 w-[340px] min-w-[340px] shrink-0 ${
+              className={`relative flex flex-col bg-white rounded-xl border overflow-hidden transition-all duration-150 w-[290px] min-w-[290px] shrink-0 h-full max-h-full ${
                 isBacklogOverFirstCol
                   ? 'border-neutral-900 ring-2 ring-neutral-900/40 bg-neutral-100/60 shadow-md'
                   : isOver 
                     ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/20 shadow-md' 
-                    : 'border-neutral-200 shadow-xs'
+                    : 'border-neutral-200 shadow-2xs'
               }`}
             >
               {/* Backlog Drop Hint on first column when hovering left edge */}
@@ -865,27 +831,37 @@ export default function KanbanView({
                   <span>{t.kanbanBacklogDropHint || 'В архив Backlog (не договорились)'}</span>
                 </div>
               )}
-              {/* Column Header */}
-              <div className="p-3.5 border-b border-neutral-200 bg-slate-50/80 flex items-center justify-between">
-                <div className="flex items-center gap-2 truncate">
-                  <span className="font-extrabold text-xs text-slate-900 uppercase tracking-wider truncate">
+              {/* Column Header: Compact Single Row with Title, Count, Budget and Actions */}
+              <div className="px-3 py-2 border-b border-neutral-200 bg-slate-50/90 flex items-center justify-between gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="font-bold text-xs text-slate-900 uppercase tracking-wider truncate">
                     {getLocalizedColumnTitle(column, lang)}
                   </span>
                   {column.id === 'backlog' && (
-                    <span className="px-1.5 py-0.5 text-[9px] bg-slate-200 text-slate-700 rounded font-bold shrink-0">
+                    <span className="px-1.5 py-0.2 text-[9px] bg-slate-200 text-slate-700 rounded font-bold shrink-0">
                       {t.kanbanBacklogBadge || 'Отказы'}
                     </span>
                   )}
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-black text-white shrink-0">
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-black text-white shrink-0">
                     {columnDeals.length}
                   </span>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
+                  {totalColumnBudget > 0 && (
+                    <span 
+                      className="text-[10px] font-bold text-slate-600 bg-white border border-slate-200/90 px-1.5 py-0.5 rounded cursor-help"
+                      title={`${t.kanbanTotalLabel || 'Итого:'} ${totalColumnBudget.toLocaleString()} UZS`}
+                    >
+                      {totalColumnBudget >= 1_000_000 
+                        ? `${(totalColumnBudget / 1_000_000).toFixed(1).replace(/\.0$/, '')}M` 
+                        : `${Math.round(totalColumnBudget / 1_000)}k`} UZS
+                    </span>
+                  )}
                   {column.id === 'backlog' && (
                     <button
                       type="button"
                       onClick={() => handleToggleColumnVisibility('backlog')}
-                      className="p-1 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-black transition cursor-pointer"
+                      className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-black transition cursor-pointer"
                       title={t.kanbanHideBacklogTitle || 'Скрыть колонку Backlog с доски'}
                     >
                       <EyeOff className="w-3.5 h-3.5" />
@@ -905,7 +881,7 @@ export default function KanbanView({
                         }
                       }}
                       title={`${t.kanbanClearStageTooltip || 'Очистить столбец'} (${getLocalizedColumnTitle(column, lang)})`}
-                      className="p-1 rounded-lg hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                      className="p-1 rounded hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -914,27 +890,21 @@ export default function KanbanView({
                     type="button"
                     onClick={() => handleOpenCreateDealModal(column.id)}
                     title={`${t.kanbanAddCardTooltip || 'Добавить карточку'} -> ${getLocalizedColumnTitle(column, lang)}`}
-                    className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-black transition cursor-pointer"
+                    className="p-1 rounded hover:bg-slate-200 text-slate-500 hover:text-black transition cursor-pointer"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              {/* Column Total Budget */}
-              <div className="px-3.5 py-1.5 bg-white border-b border-slate-100 text-[11px] font-semibold text-slate-500 flex justify-between shrink-0">
-                <span>{t.kanbanTotalLabel || 'Итого:'}</span>
-                <span className="font-extrabold text-slate-900">{totalColumnBudget.toLocaleString()} UZS</span>
-              </div>
-
               {/* Cards List Drop Target with Internal Scrollable Area */}
-              <div className="p-3 space-y-3 max-h-[calc(100vh-280px)] min-h-[300px] overflow-y-auto flex-1">
+              <div className="p-2 space-y-1.5 overflow-y-auto flex-1 min-h-0">
                 {columnDeals.length === 0 ? (
-                  <div className={`flex flex-col items-center justify-center h-32 border-2 border-dashed rounded-xl p-4 text-center transition ${
+                  <div className={`flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-lg p-2 text-center transition ${
                     isOver ? 'border-indigo-400 bg-indigo-50/40 text-indigo-600' : 'border-slate-200 text-slate-400'
                   }`}>
-                    <Clock className="w-5 h-5 mb-1 opacity-50" />
-                    <span className="text-xs font-semibold">{t.kanbanDragHere || 'Перетащите сюда'}</span>
+                    <Clock className="w-4 h-4 mb-1 opacity-40" />
+                    <span className="text-[11px] font-semibold">{t.kanbanDragHere || 'Перетащите сюда'}</span>
                   </div>
                 ) : (
                   columnDeals.map((deal) => {
@@ -952,35 +922,35 @@ export default function KanbanView({
                           if (isDraggingRef.current) return;
                           handleOpenDealModal(deal);
                         }}
-                        className={`group relative bg-white p-4 rounded-xl border border-neutral-200 shadow-2xs hover:shadow-md hover:border-black transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
+                        className={`group relative bg-white p-2.5 rounded-lg border border-neutral-200 shadow-2xs hover:shadow-xs hover:border-slate-400 transition-all cursor-pointer flex flex-col justify-between space-y-1.5 ${
                           isDragging ? 'opacity-30 border-dashed border-neutral-400' : ''
                         } ${draggedDealId && !isDragging ? 'pointer-events-none' : ''}`}
                       >
-                        {/* Top Bar */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
-                            <GripVertical className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500 shrink-0 cursor-grab" />
-                            <span className={`px-2 py-0.5 text-[9px] font-black rounded-md uppercase tracking-wider shrink-0 ${getPlatformBadgeClasses(deal.platform)}`}>
+                        {/* Top Bar: Badges + Hover actions */}
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <GripVertical className="w-3 h-3 text-slate-300 group-hover:text-slate-500 shrink-0 cursor-grab" />
+                            <span className={`px-1.5 py-0.2 text-[9px] font-black rounded uppercase tracking-wider shrink-0 ${getPlatformBadgeClasses(deal.platform)}`}>
                               {deal.platform}
                             </span>
                             {project && (
-                              <span className="px-2.5 py-1 bg-slate-100 text-slate-800 text-xs font-bold rounded-md truncate max-w-[130px]">
+                              <span className="px-1.5 py-0.2 bg-slate-100 text-slate-700 text-[10px] font-bold rounded truncate max-w-[120px]">
                                 {project.name}
                               </span>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleOpenDealModal(deal);
                               }}
-                              className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-black transition cursor-pointer"
+                              className="p-0.5 text-slate-400 hover:text-black transition cursor-pointer"
                               title={t.kanbanEditDealTooltip || 'Редактировать сделку'}
                             >
-                              <Edit3 className="w-3.5 h-3.5" />
+                              <Edit3 className="w-3 h-3" />
                             </button>
 
                             {onDeleteIntegration && (
@@ -990,28 +960,28 @@ export default function KanbanView({
                                   e.stopPropagation();
                                   onDeleteIntegration(deal.id);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                                className="p-0.5 text-slate-400 hover:text-rose-600 transition cursor-pointer"
                                 title={t.deleteTooltip || 'Удалить'}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             )}
                           </div>
                         </div>
 
-                        {/* Blogger Name */}
+                        {/* Blogger Name & Contact Handles */}
                         <div>
-                          <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-600 transition">
+                          <h4 className="font-bold text-slate-900 text-xs group-hover:text-indigo-600 transition leading-snug line-clamp-1">
                             {deal.bloggerName}
                           </h4>
-                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                             {deal.bloggerPageLink && (
                               <a
                                 href={deal.bloggerPageLink}
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="text-[10px] text-slate-500 hover:text-black hover:underline flex items-center gap-1"
+                                className="text-[10px] text-slate-400 hover:text-black hover:underline inline-flex items-center gap-0.5"
                               >
                                 <ExternalLink className="w-2.5 h-2.5" />
                                 <span>{t.kanbanChannelLink || 'Канал'}</span>
@@ -1023,126 +993,114 @@ export default function KanbanView({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1 text-[10px] font-extrabold text-sky-700 bg-sky-50 hover:bg-sky-500 hover:text-white px-2 py-0.5 rounded-md border border-sky-200 transition shadow-2xs group/tg"
+                                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-500 hover:text-white px-1.5 py-0.2 rounded border border-sky-200/60 transition group/tg"
                                 title={t.kanbanTgChatTooltip || 'Перейти в личный Telegram (открыть чат)'}
                               >
                                 <Send className="w-2.5 h-2.5 text-sky-500 group-hover/tg:text-white transition-colors" />
                                 <span>{formatTelegramHandle(deal.telegramUsername)}</span>
                               </a>
                             )}
+                            {deal.createdBy && (
+                              <span className="text-[9px] text-slate-400 truncate max-w-[90px]" title={`${t.kanbanCreatedByLabel || 'Создал:'} ${deal.createdBy}`}>
+                                • {deal.createdBy}
+                              </span>
+                            )}
                           </div>
 
+                          {/* Compact Comment Preview */}
                           {(() => {
                             const commentsArr = parseComments(deal.comments);
                             if (commentsArr.length === 0) return null;
                             const lastComment = commentsArr[commentsArr.length - 1];
                             return (
-                              <div className="mt-2 bg-slate-50 p-2 rounded-xl border border-slate-200 text-[11px] text-slate-700 space-y-1">
-                                <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400 font-semibold">
-                                  <span className="flex items-center gap-1 font-bold text-slate-800 truncate max-w-[170px]">
-                                    <MessageSquare className="w-3 h-3 text-slate-500 shrink-0" />
-                                    <span className="truncate">{lastComment.author}</span>
-                                  </span>
-                                  {commentsArr.length > 1 && (
-                                    <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 font-bold rounded-md text-[9px] shrink-0">
-                                      +{commentsArr.length - 1}
-                                    </span>
-                                  )}
+                              <div className="mt-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/60 text-[10px] text-slate-600 flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-1 truncate">
+                                  <MessageSquare className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                  <span className="italic truncate font-medium">«{lastComment.text}»</span>
                                 </div>
-                                <p className="line-clamp-2 italic font-medium leading-snug pl-4 text-slate-700">
-                                  «{lastComment.text}»
-                                </p>
+                                {commentsArr.length > 1 && (
+                                  <span className="px-1 py-0.2 bg-slate-200 text-slate-700 font-bold rounded text-[9px] shrink-0">
+                                    +{commentsArr.length - 1}
+                                  </span>
+                                )}
                               </div>
                             );
                           })()}
                         </div>
 
-                        {/* Creator Info */}
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1">
-                          <User className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span className="truncate">
-                            {t.kanbanCreatedByLabel || 'Создал:'} <strong className="text-slate-800 font-bold">{deal.createdBy || (t.kanbanNotSpecified || 'Не указан')}</strong>
-                          </span>
-                        </div>
-
                         {/* Amount & Requisites */}
-                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                            <span>{t.kanbanAmountLabel || 'Сумма:'}</span>
-                            <span className="font-black text-black">
-                              {(deal.totalAmount || (deal.pricePerSlot * deal.slotsCount)).toLocaleString()} UZS
+                        <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-xs">
+                          <div className="flex items-baseline gap-1">
+                            <span className="font-black text-slate-900">
+                              {(deal.totalAmount || (deal.pricePerSlot * deal.slotsCount)).toLocaleString()}
                             </span>
+                            <span className="text-[9px] font-bold text-slate-400">UZS</span>
                           </div>
 
-                          {/* Requisites Status */}
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-slate-500 font-semibold">{t.kanbanRequisitesLabel || 'Реквизиты:'}</span>
+                          {/* Requisites Status & Quick Copy */}
+                          <div className="flex items-center gap-1">
                             {hasRequisites ? (
-                              <span className="flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {t.kanbanRequisitesFilled || 'Заполнены'}
+                              <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-700 font-bold bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded">
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                <span>{t.kanbanRequisitesFilled || 'Заполнены'}</span>
                               </span>
                             ) : (
-                              <span className="flex items-center gap-1 text-amber-700 font-medium bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                                <Clock className="w-3 h-3 text-amber-600" /> {t.kanbanRequisitesPending || 'Ожидаются'}
+                              <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-700 font-medium bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded">
+                                <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                <span>{t.kanbanRequisitesPending || 'Ожидаются'}</span>
                               </span>
                             )}
-                          </div>
-                        </div>
 
-                        {/* Stage Dropdown Selector & Magic Link Action */}
-                        <div className="pt-2 border-t border-slate-100 space-y-2">
-                          <select
-                            value={deal.kanbanStage || column.id}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              onUpdateIntegrationStage(deal.id, e.target.value);
-                            }}
-                            className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-black cursor-pointer"
-                          >
-                            {columns.map(c => (
-                              <option key={c.id} value={c.id}>
-                                {getLocalizedColumnTitle(c, lang)} {c.id === 'backlog' ? `📁 (${t.kanbanBacklogBadge || 'Отказы'})` : c.hidden ? `(${t.kanbanHiddenBadge || 'скрытая'})` : ''}
-                              </option>
-                            ))}
-                          </select>
-
-                          {/* Action Button for 'ready_for_payment' Stage: Создать отчёт */}
-                          {(column.id === 'ready_for_payment' || deal.kanbanStage === 'ready_for_payment') && onNavigateToReports && (
+                            {/* Quick copy requisites link button */}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onNavigateToReports(deal);
+                                handleCopyRequisitesLink(deal);
                               }}
-                              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                              title={copiedId === deal.id ? (t.kanbanCopiedSuccess || 'Скопировано!') : (t.kanbanRequisitesLinkBtn || 'Скопировать ссылку на реквизиты')}
+                              className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-800 transition cursor-pointer"
                             >
-                              <FilePlus className="w-3.5 h-3.5" />
-                              <span>{t.createReport || 'Создать отчет'}</span>
+                              {copiedId === deal.id ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
                             </button>
-                          )}
+                          </div>
+                        </div>
 
+                        {/* Action Button for 'ready_for_payment' Stage: Создать отчёт */}
+                        {(column.id === 'ready_for_payment' || deal.kanbanStage === 'ready_for_payment') && onNavigateToReports && (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleCopyRequisitesLink(deal);
+                              onNavigateToReports(deal);
                             }}
-                            className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-black hover:text-white text-slate-800 font-bold text-[11px] rounded-lg transition cursor-pointer"
+                            className="w-full flex items-center justify-center gap-1 py-1 bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white font-bold text-[11px] rounded-md shadow-2xs transition cursor-pointer"
                           >
-                            {copiedId === deal.id ? (
-                              <>
-                                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                <span>{t.kanbanCopiedSuccess || 'Скопировано!'}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5 text-slate-400" />
-                                <span>{t.kanbanRequisitesLinkBtn || 'Ссылка на реквизиты'}</span>
-                              </>
-                            )}
+                            <FilePlus className="w-3 h-3" />
+                            <span>{t.createReport || 'Создать отчет'}</span>
                           </button>
-                        </div>
+                        )}
+
+                        {/* Stage Micro-Selector */}
+                        <select
+                          value={deal.kanbanStage || column.id}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            onUpdateIntegrationStage(deal.id, e.target.value);
+                          }}
+                          className="w-full text-[10px] font-medium bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded px-1.5 py-0.5 text-slate-600 hover:text-slate-900 focus:outline-none focus:ring-1 focus:ring-black cursor-pointer transition"
+                        >
+                          {columns.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {getLocalizedColumnTitle(c, lang)} {c.id === 'backlog' ? `📁 (${t.kanbanBacklogBadge || 'Отказы'})` : c.hidden ? `(${t.kanbanHiddenBadge || 'скрытая'})` : ''}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     );
                   })
@@ -1152,7 +1110,7 @@ export default function KanbanView({
           );
         })
       )}
-  </div>
+      </div>
 
       {/* Column Management Modal */}
       {isColumnModalOpen && (

@@ -70,6 +70,9 @@ class BloggerSubmissionControllerTest extends TestCase
             'integration_id' => $this->integration->id,
         ]);
 
+        $sub = \App\Models\BloggerSubmission::where('integration_id', $this->integration->id)->first();
+        $this->assertNotNull($sub->data['slot_1_submitted_at'] ?? null);
+
         // Verify exactly 1 Telegram notification was sent for slot_1 with 2 remaining slots
         $recorded = Http::recorded();
         $this->assertCount(1, $recorded);

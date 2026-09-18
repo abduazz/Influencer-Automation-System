@@ -26,6 +26,7 @@ class Report extends Model
         'comments',
         'slots_config',
         'receipt',
+        'telegram_message_url',
         'telegram_sent',
         'sheets_sent',
         'created_by',

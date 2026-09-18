@@ -279,6 +279,29 @@ Artisan::command('bloggers:sync-subscribers {--dry-run : Only preview updates wi
 })->purpose('Sync blogger follower counts from Instagram/Telegram API twice monthly')
   ->twiceMonthly(1, 15, '03:00');
 
+Artisan::command('integrations:sync-reports {--id= : Specific integration ID to sync}', function () {
+    $id = $this->option('id');
+    $query = \App\Models\Integration::query();
+    if ($id) {
+        $query->where('id', $id);
+    }
+    $integrations = $query->get();
+
+    $this->info("Found {$integrations->count()} integration(s) to check and sync.");
+
+    $syncedCount = 0;
+    foreach ($integrations as $integration) {
+        $synced = $integration->syncWithReports();
+        if ($synced) {
+            $syncedCount++;
+            $this->comment("Synced Integration #{$integration->id} ({$integration->blogger_name}): Slots={$integration->slots_count}, Paid={$integration->paid_amount} UZS");
+        }
+    }
+
+    $this->info("Completed! {$syncedCount} integration(s) updated from actual reports.");
+})->purpose('Recalculate and sync integrations financials and slots from reports');
+
+
 
 
 

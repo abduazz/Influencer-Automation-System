@@ -121,9 +121,15 @@ class BloggerSubmissionController extends Controller
 
         $incomingData = $request->data ?? [];
         $mergedData = $oldData;
+        $nowIso = now()->toISOString();
         foreach ($incomingData as $k => $v) {
             if ($v !== null && $v !== '') {
                 $mergedData[$k] = $v;
+                if (preg_match('/^slot_\d+$/', $k)) {
+                    if (empty($mergedData["{$k}_submitted_at"])) {
+                        $mergedData["{$k}_submitted_at"] = $nowIso;
+                    }
+                }
             } elseif (!isset($mergedData[$k])) {
                 $mergedData[$k] = $v;
             }

@@ -14,13 +14,22 @@ class TelegramService
 
     public static function buildTelegramMessageUrl($resData, $fallbackChatId = null)
     {
-        if (!is_array($resData) || !isset($resData['result']['message_id'])) {
+        if (!is_array($resData) || !isset($resData['result'])) {
             return null;
         }
-        $messageId = $resData['result']['message_id'];
-        $chatId = $resData['result']['chat']['id'] ?? $fallbackChatId;
 
-        if (!$chatId) {
+        $messageId = null;
+        $chatId = null;
+
+        if (isset($resData['result']['message_id'])) {
+            $messageId = $resData['result']['message_id'];
+            $chatId = $resData['result']['chat']['id'] ?? $fallbackChatId;
+        } elseif (isset($resData['result'][0]['message_id'])) {
+            $messageId = $resData['result'][0]['message_id'];
+            $chatId = $resData['result'][0]['chat']['id'] ?? $fallbackChatId;
+        }
+
+        if (!$messageId || !$chatId) {
             return null;
         }
 
@@ -36,8 +45,23 @@ class TelegramService
         }
     }
 
+    public static function parseThreadId($rawThreadId): ?int
+    {
+        if (blank($rawThreadId)) {
+            return null;
+        }
+        if (is_numeric($rawThreadId)) {
+            return (int) $rawThreadId;
+        }
+        if (is_string($rawThreadId) && preg_match('/\/(\d+)\/?$/', trim($rawThreadId), $matches)) {
+            return (int) $matches[1];
+        }
+        return null;
+    }
+
     public static function sendMessage($chatId, $text, $threadId = null)
     {
+        $threadId = self::parseThreadId($threadId);
         $token = config('services.telegram.bot_token');
         if (!$token || !$chatId) {
             Log::info("Telegram Bot Token or Chat ID not set. Message: \n" . $text);
@@ -184,7 +208,7 @@ class TelegramService
         }
 
         $projectName = $report->project?->name ?? '—';
-        $threadId = $report->project?->telegram_thread_id ?? null;
+        $threadId = self::parseThreadId($report->project?->telegram_thread_id ?? null);
 
         $text = "{$t['new_report']}\n\n";
         if ($createdByName) {
@@ -277,6 +301,7 @@ class TelegramService
                         ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $photoParams);
 
                     if ($response->successful()) {
+                        self::recordReportTelegramUrl($report, $response->json(), $chatId);
                         return true;
                     }
 
@@ -290,6 +315,7 @@ class TelegramService
                         $response = Http::attach($field, $binaryData, $filename)
                             ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $photoParams);
                         if ($response->successful()) {
+                            self::recordReportTelegramUrl($report, $response->json(), $newChatId);
                             return true;
                         }
                         $body = $response->body();
@@ -298,7 +324,8 @@ class TelegramService
                     Log::warning("Telegram sendPhoto/Document HTML failed, retrying plain: " . $body);
 
                     // Fallback: send text first, then file without caption
-                    self::sendMessage($chatId, $text, $threadId);
+                    $msgRes = self::sendMessage($chatId, $text, $threadId);
+                    self::recordReportTelegramUrl($report, $msgRes, $chatId);
 
                     $fallbackPhotoParams = [
                         'chat_id' => $chatId,
@@ -371,6 +398,7 @@ class TelegramService
 
                         $response = $httpReq->post("https://api.telegram.org/bot{$token}/sendMediaGroup", $mediaParams);
                         if ($response->successful()) {
+                            self::recordReportTelegramUrl($report, $response->json(), $chatId);
                             return true;
                         }
 
@@ -381,6 +409,7 @@ class TelegramService
                             $mediaParams['chat_id'] = $chatId;
                             $retryRes = $httpReq->post("https://api.telegram.org/bot{$token}/sendMediaGroup", $mediaParams);
                             if ($retryRes->successful()) {
+                                self::recordReportTelegramUrl($report, $retryRes->json(), $chatId);
                                 return true;
                             }
                         }
@@ -388,7 +417,8 @@ class TelegramService
                     }
 
                     // Fallback or mixed/PDF: Send text message first
-                    self::sendMessage($chatId, $text, $threadId);
+                    $msgRes = self::sendMessage($chatId, $text, $threadId);
+                    self::recordReportTelegramUrl($report, $msgRes, $chatId);
 
                     // Then send each receipt file individually
                     foreach ($parsedReceipts as $idx => $item) {
@@ -412,7 +442,28 @@ class TelegramService
             }
         }
 
-        return self::sendMessage($chatId, $text, $threadId);
+        $msgRes = self::sendMessage($chatId, $text, $threadId);
+        if ($msgRes) {
+            self::recordReportTelegramUrl($report, $msgRes, $chatId);
+            return true;
+        }
+        return false;
+    }
+
+    protected static function recordReportTelegramUrl($report, $resData, $chatId): void
+    {
+        if (!$report || !is_object($report) || !($report instanceof \App\Models\Report)) {
+            return;
+        }
+        $tgUrl = self::buildTelegramMessageUrl($resData, $chatId);
+        if ($tgUrl) {
+            try {
+                $report->update(['telegram_message_url' => $tgUrl]);
+                Log::info("Saved telegram_message_url for report #{$report->id}: {$tgUrl}");
+            } catch (\Throwable $e) {
+                Log::error("Failed to save telegram_message_url for report #{$report->id}: " . $e->getMessage());
+            }
+        }
     }
 
     public static function sendSubmissionNotification($integration, $data, $lang = 'uz', $newlyFilledKeys = null)
@@ -470,7 +521,7 @@ class TelegramService
             return false;
         }
 
-        $threadId = $integration->project?->telegram_thread_id ?? null;
+        $threadId = self::parseThreadId($integration->project?->telegram_thread_id ?? null);
 
         // Loop over each slot and send it as a separate message
         foreach ($filledSlots as $key => $link) {
@@ -581,35 +632,173 @@ class TelegramService
 
     public static function sendRequisitesNotification($integration, $requisites, $lang = 'uz')
     {
-        $chatId = config('services.telegram.submissions_chat_id') ?: config('services.telegram.chat_id');
+        $chatId = config('services.telegram.requisites_chat_id')
+            ?: config('services.telegram.submissions_chat_id')
+            ?: config('services.telegram.chat_id');
         if (!$chatId) return false;
 
-        $projectName = $integration->project?->name ?? '—';
-        $threadId = $integration->project?->telegram_thread_id ?? null;
+        $threadId = self::parseThreadId(
+            config('services.telegram.requisites_thread_id')
+            ?: ($integration->project?->telegram_thread_id ?? null)
+        );
 
-        $bloggerName = self::escape($integration->blogger_name ?? '—');
+        $projectName = $integration->project?->name ?? ($requisites['projectName'] ?? '—');
+        $bloggerName = self::escape($integration->blogger_name ?? $requisites['bloggerName'] ?? '—');
         $fullName = self::escape($requisites['fullName'] ?? '—');
         $card = self::escape($requisites['cardNumberOrIban'] ?? '—');
-        $pinfl = self::escape($requisites['pinflOrTin'] ?? '—');
         $taxStatus = ($requisites['taxStatus'] ?? '') === 'contract' ? 'Договор (самозанятый/ИП)' : 'Прямой перевод на карту';
         $phone = self::escape($requisites['phone'] ?? '—');
 
         $text = "💳 <b>Получены реквизиты блогера!</b>\n\n";
-        $text .= "📁 <b>Проект:</b> " . self::escape($projectName) . "\n";
+        if (!empty($projectName) && $projectName !== '—') {
+            $text .= "📁 <b>Проект:</b> " . self::escape($projectName) . "\n";
+        }
         $text .= "👤 <b>Блогер:</b> {$bloggerName}\n";
         $text .= "📝 <b>Формат:</b> {$taxStatus}\n";
         $text .= "📋 <b>ФИО:</b> {$fullName}\n";
-        $text .= "💳 <b>Карта:</b> <code>{$card}</code>\n";
+        $text .= "💳 <b>Карта / Счёт:</b> <code>{$card}</code>\n";
         if (!empty($requisites['pinflOrTin'])) {
-            $text .= "🆔 <b>ПИНФЛ / ИНН:</b> <code>{$pinfl}</code>\n";
+            $text .= "🆔 <b>ПИНФЛ / ИНН:</b> <code>" . self::escape($requisites['pinflOrTin']) . "</code>\n";
+        }
+        if (!empty($requisites['passportSeriesNumber'])) {
+            $text .= "📄 <b>Паспорт:</b> <code>" . self::escape($requisites['passportSeriesNumber']) . "</code>\n";
         }
         if (!empty($requisites['phone'])) {
             $text .= "📞 <b>Телефон:</b> {$phone}\n";
         }
+        if (!empty($requisites['telegramHandle'])) {
+            $handle = ltrim($requisites['telegramHandle'], '@');
+            $text .= "✈️ <b>Telegram:</b> @{$handle}\n";
+        }
         if (!empty($requisites['bankName'])) {
             $text .= "🏦 <b>Банк:</b> " . self::escape($requisites['bankName']) . "\n";
         }
+        if (!empty($requisites['mfo'])) {
+            $text .= "🏛 <b>МФО:</b> <code>" . self::escape($requisites['mfo']) . "</code>\n";
+        }
+        if (!empty($requisites['bankInn'])) {
+            $text .= "🏢 <b>ИНН банка:</b> <code>" . self::escape($requisites['bankInn']) . "</code>\n";
+        }
+        if (!empty($requisites['transitAccount'])) {
+            $text .= "🔢 <b>Транзитный счёт:</b> <code>" . self::escape($requisites['transitAccount']) . "</code>\n";
+        }
+        if (!empty($requisites['recipientName']) && $requisites['recipientName'] !== ($requisites['fullName'] ?? '')) {
+            $text .= "👤 <b>Получатель:</b> " . self::escape($requisites['recipientName']) . "\n";
+        }
+        if (!empty($requisites['registrationAddress'])) {
+            $text .= "📍 <b>Адрес:</b> " . self::escape($requisites['registrationAddress']) . "\n";
+        }
 
+        // Parse passport front and back scans
+        $scans = [];
+        $rawScans = [
+            ['data' => $requisites['passportFrontScan'] ?? null, 'filename' => 'passport_front', 'label' => 'Лицевая сторона'],
+            ['data' => $requisites['passportBackScan'] ?? null, 'filename' => 'passport_back', 'label' => 'Обратная сторона'],
+        ];
+
+        foreach ($rawScans as $idx => $scanItem) {
+            $raw = $scanItem['data'];
+            if (!empty($raw) && is_string($raw)) {
+                if (preg_match('/^data:(\w+\/[\w\.\-]+);base64,(.+)$/', $raw, $matches)) {
+                    $mime = strtolower($matches[1]);
+                    $binary = base64_decode($matches[2]);
+                    $ext = str_contains($mime, 'pdf') ? 'pdf' : (str_contains($mime, 'png') ? 'png' : 'jpg');
+                    $scans[] = [
+                        'mime' => $mime,
+                        'binary' => $binary,
+                        'isPdf' => str_contains($mime, 'pdf'),
+                        'filename' => $scanItem['filename'] . '.' . $ext,
+                        'label' => $scanItem['label'],
+                    ];
+                } elseif (strlen($raw) > 50 && !str_starts_with($raw, 'http')) {
+                    // Raw base64 string
+                    $binary = base64_decode($raw);
+                    if ($binary !== false) {
+                        $scans[] = [
+                            'mime' => 'image/jpeg',
+                            'binary' => $binary,
+                            'isPdf' => false,
+                            'filename' => $scanItem['filename'] . '.jpg',
+                            'label' => $scanItem['label'],
+                        ];
+                    }
+                }
+            }
+        }
+
+        $token = config('services.telegram.bot_token');
+
+        // If we have photos and token is configured, send them
+        if (!empty($scans) && $token) {
+            try {
+                $hasPdf = false;
+                foreach ($scans as $s) {
+                    if ($s['isPdf']) {
+                        $hasPdf = true;
+                        break;
+                    }
+                }
+
+                // If all scans are photos (not PDF)
+                if (!$hasPdf) {
+                    $httpReq = Http::asMultipart();
+                    $media = [];
+                    foreach ($scans as $idx => $s) {
+                        $field = "scan_{$idx}";
+                        $mediaItem = [
+                            'type' => 'photo',
+                            'media' => "attach://{$field}",
+                        ];
+                        if ($idx === 0) {
+                            $mediaItem['caption'] = strlen($text) > 1024 ? substr(strip_tags($text), 0, 1020) . '...' : $text;
+                            $mediaItem['parse_mode'] = 'HTML';
+                        }
+                        $media[] = $mediaItem;
+                        $httpReq->attach($field, $s['binary'], $s['filename']);
+                    }
+
+                    $mediaParams = [
+                        'chat_id' => $chatId,
+                        'media' => json_encode($media),
+                    ];
+                    if ($threadId) {
+                        $mediaParams['message_thread_id'] = $threadId;
+                    }
+
+                    $response = $httpReq->post("https://api.telegram.org/bot{$token}/sendMediaGroup", $mediaParams);
+                    if ($response->successful()) {
+                        return true;
+                    }
+
+                    Log::warning('Telegram sendMediaGroup for requisites failed: ' . $response->body() . ', falling back to text + photos');
+                }
+
+                // Fallback or PDF: send text message first
+                self::sendMessage($chatId, $text, $threadId);
+
+                // Then send each document/scan
+                foreach ($scans as $s) {
+                    $endpoint = $s['isPdf'] ? 'sendDocument' : 'sendPhoto';
+                    $field = $s['isPdf'] ? 'document' : 'photo';
+                    $fileParams = [
+                        'chat_id' => $chatId,
+                        'caption' => '📄 ' . $s['label'],
+                    ];
+                    if ($threadId) {
+                        $fileParams['message_thread_id'] = $threadId;
+                    }
+
+                    Http::attach($field, $s['binary'], $s['filename'])
+                        ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $fileParams);
+                }
+
+                return true;
+            } catch (\Throwable $e) {
+                Log::error('Telegram sendRequisitesNotification photos exception: ' . $e->getMessage());
+            }
+        }
+
+        // Default: send text message if no photos or photo sending failed
         return self::sendMessage($chatId, $text, $threadId);
     }
 }

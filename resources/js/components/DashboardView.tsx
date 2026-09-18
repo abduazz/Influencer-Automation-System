@@ -30,7 +30,8 @@ import {
   X,
   Link,
   Send,
-  User
+  User,
+  Clock
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
@@ -270,6 +271,21 @@ export default function DashboardView({
     }
 
     if (editingIntegration) {
+      let preservedSlotsConfig = finalSlotsConfig;
+      if (!customizeSlots && editingIntegration.slotsConfig && editingIntegration.slotsConfig.length > 0) {
+        preservedSlotsConfig = [...editingIntegration.slotsConfig];
+        if (preservedSlotsConfig.length < slotsCount) {
+          for (let i = preservedSlotsConfig.length; i < slotsCount; i++) {
+            preservedSlotsConfig.push({
+              platform: platform,
+              format: getDefaultFormat(platform)
+            });
+          }
+        } else if (preservedSlotsConfig.length > slotsCount) {
+          preservedSlotsConfig = preservedSlotsConfig.slice(0, slotsCount);
+        }
+      }
+
       onEditIntegration(editingIntegration.id, {
         bloggerName,
         bloggerPageLink,
@@ -281,7 +297,9 @@ export default function DashboardView({
         pricePerSlot,
         slotsCount,
         totalAmount: pricePerSlot * slotsCount,
-        slotsConfig: finalSlotsConfig
+        paidSlotsCount: editingIntegration.paidSlotsCount,
+        paidAmount: editingIntegration.paidAmount,
+        slotsConfig: preservedSlotsConfig
       });
       setEditingIntegration(null);
     } else {
@@ -1605,103 +1623,136 @@ export default function DashboardView({
               </div>
 
               {/* Slots deliverables / submissions list */}
-              {selectedIntegrationForDetails.slotsConfig && Array.isArray(selectedIntegrationForDetails.slotsConfig) && selectedIntegrationForDetails.slotsConfig.length > 0 && (
-                <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
-                  <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5 flex justify-between items-center">
-                    <span>Публикации / Deliverables</span>
-                    {(() => {
-                      const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
-                      const threadId = parentProj?.telegramThreadId;
-                      const tgGroupUrl = threadId 
-                        ? (threadId.startsWith('http') ? threadId : `https://t.me/c/4329107459/${threadId}`)
-                        : 'https://t.me/c/4329107459';
-                      return (
-                        <a
-                          href={tgGroupUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 hover:text-sky-700 transition"
-                          title="Открыть Telegram"
-                        >
-                          <Send className="w-3 h-3 text-sky-500" />
-                          <span>Telegram Группа</span>
-                        </a>
-                      );
-                    })()}
-                  </h4>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {selectedIntegrationForDetails.slotsConfig.map((slot, index) => {
-                      if (!slot) return null;
-                      const sub = (Array.isArray(submissions) ? submissions : []).find(s => String(s.integrationId) === String(selectedIntegrationForDetails.id));
-                      const slotKey = `slot_${index + 1}`;
-                      const submissionUrl = (sub && sub.data) ? sub.data[slotKey] : undefined;
-                      const slotTgUrl = (sub && sub.data) ? sub.data[`${slotKey}_tg_url`] : undefined;
+              {(() => {
+                const sub = (Array.isArray(submissions) ? submissions : []).find(s => String(s.integrationId) === String(selectedIntegrationForDetails.id));
+                const slotsList = (selectedIntegrationForDetails.slotsConfig && Array.isArray(selectedIntegrationForDetails.slotsConfig) && selectedIntegrationForDetails.slotsConfig.length > 0)
+                  ? selectedIntegrationForDetails.slotsConfig
+                  : (selectedIntegrationForDetails.slotsCount || sub)
+                    ? Array.from({ length: selectedIntegrationForDetails.slotsCount || 1 }, () => ({
+                        platform: selectedIntegrationForDetails.platform || 'Instagram',
+                        format: 'Post'
+                      }))
+                    : [];
 
-                      const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
-                      const threadId = parentProj?.telegramThreadId;
-                      const defaultTgUrl = threadId 
-                        ? (threadId.startsWith('http') ? threadId : `https://t.me/c/4329107459/${threadId}`)
-                        : 'https://t.me/c/4329107459';
-                      const tgUrl = slotTgUrl || defaultTgUrl;
+                if (slotsList.length === 0) return null;
 
-                      return (
-                        <div key={index} className="flex justify-between items-center py-1.5 border-b border-neutral-50 last:border-b-0">
-                          <div>
-                            <span className="font-bold text-neutral-700">{(t.slotNumberLabel || 'Slot') + ' #' + (index + 1)}: </span>
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${getPlatformBadgeClasses(slot.platform)}`}>
-                              {slot.platform || ''}
-                            </span>
-                            <span className="ml-1 text-[10px] font-bold text-neutral-600">
-                              {slot.format || ''}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {submissionUrl ? (
-                              <div className="flex items-center gap-1.5">
-                                <a
-                                  href={submissionUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-600 hover:underline"
-                                >
-                                  <span>{t.publicationLinkLabel || 'Link'}</span>
-                                  <ExternalLink className="w-3 h-3 text-blue-500" />
-                                </a>
-                                {slotTgUrl && (
+                const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
+                const threadId = parentProj?.telegramThreadId;
+                const defaultTgUrl = threadId 
+                  ? (threadId.startsWith('http') ? threadId : `https://t.me/c/4329107459/${threadId}`)
+                  : 'https://t.me/c/4329107459';
+
+                const formatProofDate = (dateVal?: string) => {
+                  if (!dateVal) return '';
+                  try {
+                    const d = new Date(dateVal);
+                    if (isNaN(d.getTime())) return '';
+                    return d.toLocaleDateString(lang === 'uz' ? 'uz-UZ' : lang === 'en' ? 'en-US' : 'ru-RU', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+                  } catch {
+                    return '';
+                  }
+                };
+
+                return (
+                  <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
+                    <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5 flex justify-between items-center">
+                      <span>Публикации / Deliverables</span>
+                      <a
+                        href={defaultTgUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 hover:text-sky-700 transition"
+                        title="Открыть Telegram"
+                      >
+                        <Send className="w-3 h-3 text-sky-500" />
+                        <span>Telegram Группа</span>
+                      </a>
+                    </h4>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {slotsList.map((slot, index) => {
+                        if (!slot) return null;
+                        const slotKey = `slot_${index + 1}`;
+                        const submissionUrl = (sub && sub.data) ? sub.data[slotKey] : undefined;
+                        const slotTgUrl = (sub && sub.data) ? sub.data[`${slotKey}_tg_url`] : undefined;
+                        const slotSubmittedAt = (sub && sub.data && sub.data[`${slotKey}_submitted_at`]) 
+                          ? sub.data[`${slotKey}_submitted_at`] 
+                          : (submissionUrl ? sub?.submittedAt : undefined);
+                        const tgUrl = slotTgUrl || defaultTgUrl;
+
+                        return (
+                          <div key={index} className="flex justify-between items-center py-1.5 border-b border-neutral-50 last:border-b-0 gap-2">
+                            <div className="shrink-0">
+                              <span className="font-bold text-neutral-700">{(t.slotNumberLabel || 'Slot') + ' #' + (index + 1)}: </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${getPlatformBadgeClasses(slot.platform)}`}>
+                                {slot.platform || ''}
+                              </span>
+                              <span className="ml-1 text-[10px] font-bold text-neutral-600">
+                                {slot.format || ''}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 justify-end">
+                              {submissionUrl ? (
+                                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                  {slotSubmittedAt && (
+                                    <span 
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 text-[10px] font-semibold border border-neutral-200/60"
+                                      title={`${t.proofSubmittedDateLabel || 'Дата сдачи'}: ${formatProofDate(slotSubmittedAt)}`}
+                                    >
+                                      <Clock className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
+                                      <span>{formatProofDate(slotSubmittedAt)}</span>
+                                    </span>
+                                  )}
                                   <a
-                                    href={slotTgUrl}
+                                    href={submissionUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-600 hover:underline"
+                                  >
+                                    <span>{t.publicationLinkLabel || 'Link'}</span>
+                                    <ExternalLink className="w-3 h-3 text-blue-500" />
+                                  </a>
+                                  {slotTgUrl && (
+                                    <a
+                                      href={slotTgUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold text-[9px] border border-sky-150 transition cursor-pointer"
+                                      title="Открыть сообщение отчета в Telegram"
+                                    >
+                                      <Send className="w-2.5 h-2.5 text-sky-500" />
+                                      <span>Telegram</span>
+                                    </a>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-neutral-400 italic font-medium">{t.notPublishedLabel || 'Not published'}</span>
+                                  <a
+                                    href={tgUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold text-[9px] border border-sky-150 transition cursor-pointer"
-                                    title="Открыть сообщение отчета в Telegram"
+                                    title="Перейти в Telegram"
                                   >
                                     <Send className="w-2.5 h-2.5 text-sky-500" />
                                     <span>Telegram</span>
                                   </a>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] text-neutral-400 italic font-medium">{t.notPublishedLabel || 'Not published'}</span>
-                                <a
-                                  href={tgUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold text-[9px] border border-sky-150 transition cursor-pointer"
-                                  title="Перейти в Telegram"
-                                >
-                                  <Send className="w-2.5 h-2.5 text-sky-500" />
-                                  <span>Telegram</span>
-                                </a>
-                              </div>
-                            )}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}

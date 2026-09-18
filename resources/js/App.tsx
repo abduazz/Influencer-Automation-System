@@ -738,7 +738,11 @@ export default function App() {
       )}
 
       {/* Main Core View Area */}
-      <main className="flex-1 overflow-y-auto h-screen relative pt-16 p-4 pb-28 md:p-8 lg:p-12 md:pt-8">
+      <main className={`flex-1 ${
+        activeTab === 'kanban' 
+          ? 'h-screen overflow-hidden flex flex-col p-2 md:p-3 pt-16 md:pt-2.5 pb-20 md:pb-2' 
+          : 'overflow-y-auto h-screen relative pt-16 p-4 pb-28 md:p-8 lg:p-12 md:pt-8'
+      }`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
         {simulatedUrlParams.platform && currentUserRole === 'super_admin' && (
           <div className="mb-6 p-4 bg-white border-2 border-black rounded-lg flex items-center justify-between text-left text-xs text-black shadow-sm">

@@ -181,6 +181,16 @@ class IntegrationController extends Controller
         return response()->json($this->formatIntegration($integration));
     }
 
+    public function syncReports(Integration $integration)
+    {
+        $synced = $integration->syncWithReports();
+        return response()->json([
+            'success' => true,
+            'synced' => $synced,
+            'integration' => $this->formatIntegration($integration->fresh()),
+        ]);
+    }
+
     public function destroy(Integration $integration)
     {
         $integration->delete();

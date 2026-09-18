@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet } from 'lucide-react';
+import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send } from 'lucide-react';
 import { Project, Report, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
@@ -34,6 +34,35 @@ const getReportReceipts = (rep: Report | null | undefined): string[] => {
     return [rep.receipt];
   }
   return [];
+};
+
+const getTelegramReportUrl = (rep: Report | null | undefined, projects: Project[]): string => {
+  if (!rep) return 'https://t.me/c/4329107459';
+  if (rep.telegramMessageUrl) {
+    return rep.telegramMessageUrl;
+  }
+
+  let threadId: string | undefined;
+  if (rep.projectId) {
+    const p = projects.find(proj => String(proj.id) === String(rep.projectId));
+    threadId = p?.telegramThreadId;
+  } else if (rep.slotsConfig && rep.slotsConfig.length > 0) {
+    for (const s of rep.slotsConfig) {
+      if (s.projectId) {
+        const p = projects.find(proj => String(proj.id) === String(s.projectId));
+        if (p?.telegramThreadId) {
+          threadId = p.telegramThreadId;
+          break;
+        }
+      }
+    }
+  }
+
+  if (threadId) {
+    return threadId.startsWith('http') ? threadId : `https://t.me/c/4329107459/${threadId}`;
+  }
+
+  return 'https://t.me/c/4329107459';
 };
 
 export default function ReportsFeedView({ projects, integrations, reports, lang, userRole, onDeleteReport, title, description }: ReportsFeedViewProps) {
@@ -431,6 +460,7 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                   <th className="px-5 py-3 font-extrabold">{t.createdByField}</th>
                   <th className="px-5 py-3 font-extrabold text-right">{t.totalSumColumn}</th>
                   <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderReceipt}</th>
+                  <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderTelegram || 'Telegram'}</th>
                   {userRole !== 'executive' && (
                     <th className="px-5 py-3 text-center font-extrabold">{t.tableHeaderCabinet}</th>
                   )}
@@ -540,6 +570,21 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                             </button>
                           );
                         })()}
+                      </td>
+
+                      {/* Telegram Quick Jump Link */}
+                      <td className="px-5 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                        <a
+                          href={getTelegramReportUrl(rep, projects)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-sky-600 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-md transition cursor-pointer shadow-2xs hover:shadow-xs"
+                          title={lang === 'ru' ? 'Перейти к отчету в Telegram' : lang === 'uz' ? 'Telegram hisobotiga o‘tish' : 'Jump to report in Telegram'}
+                        >
+                          <Send className="w-3 h-3 text-sky-500" />
+                          <span>Telegram</span>
+                          <ExternalLink className="w-2.5 h-2.5 text-sky-400" />
+                        </a>
                       </td>
 
                       {/* Cabinet (Hidden for executive role) */}
@@ -686,12 +731,22 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                   );
                 })()}
 
-                {/* Blogger Cabinet Link Section (Hidden for executive role) */}
-                {userRole !== 'executive' && cabinetUrl && (
-                  <div className="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
-                    <span className="text-[9px] text-neutral-400 font-extrabold uppercase tracking-wide">
-                      {lang === 'ru' ? 'Линк блогера:' : lang === 'uz' ? 'Blogger havolasi:' : 'Cabinet Link:'}
-                    </span>
+                {/* Actions Bar: Telegram & Cabinet Link */}
+                <div className="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
+                  <a
+                    href={getTelegramReportUrl(rep, projects)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-sky-600 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition cursor-pointer"
+                    title={lang === 'ru' ? 'Перейти к отчету в Telegram' : lang === 'uz' ? 'Telegram hisobotiga o‘tish' : 'Jump to report in Telegram'}
+                  >
+                    <Send className="w-3 h-3 text-sky-500" />
+                    <span>{t.telegramReportBtn || 'Отчет в Telegram'}</span>
+                    <ExternalLink className="w-2.5 h-2.5 text-sky-400" />
+                  </a>
+
+                  {userRole !== 'executive' && cabinetUrl && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -699,13 +754,13 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                         navigator.clipboard.writeText(cabinetUrl);
                         alert(lang === 'ru' ? 'Ссылка кабинета скопирована!' : lang === 'uz' ? 'Kabinet havolasi nusxalandi!' : 'Cabinet link copied!');
                       }}
-                      className="text-[9px] font-black text-black hover:underline flex items-center gap-1 cursor-pointer bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded px-2 py-1 transition"
+                      className="text-[9px] font-black text-black hover:underline flex items-center gap-1 cursor-pointer bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded px-2 py-1 transition shrink-0"
                     >
                       <Link className="w-2.5 h-2.5 text-black" />
-                      <span>{lang === 'ru' ? 'Копировать' : lang === 'uz' ? 'Nusxalash' : 'Copy'}</span>
+                      <span>{lang === 'ru' ? 'Кабинет' : lang === 'uz' ? 'Kabinet' : 'Cabinet'}</span>
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -738,17 +793,55 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
                   {selectedReport.paymentType === 'other' ? t.paymentOther : selectedReport.channelBlogger}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedReport(null)}
-                className="p-1 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={getTelegramReportUrl(selectedReport, projects)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] font-bold shadow-xs transition"
+                  title="Открыть отчет в группе Telegram"
+                >
+                  <Send className="w-3 h-3" />
+                  <span className="hidden sm:inline">{t.telegramReportBtn || 'Отчет в Telegram'}</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setSelectedReport(null)}
+                  className="p-1 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Content Scroll Area */}
             <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Telegram quick jump banner */}
+              <div className="flex items-center justify-between gap-3 bg-sky-50/70 border border-sky-100 p-3 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-sky-500 flex items-center justify-center text-white shrink-0 shadow-2xs">
+                    <Send className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-sky-950">
+                      {lang === 'ru' ? 'Отчет в Telegram-группе' : lang === 'uz' ? 'Telegram guruhidagi hisobot' : 'Report in Telegram Group'}
+                    </p>
+                    <p className="text-[9px] text-sky-700">
+                      {lang === 'ru' ? 'Быстрый переход к публикации отчета' : lang === 'uz' ? 'Hisobot postiga tezkor o‘tish' : 'Quick jump to report message'}
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={getTelegramReportUrl(selectedReport, projects)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition shrink-0 cursor-pointer"
+                >
+                  <span>{t.openReportInTelegram || 'Открыть'}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
               {/* Main Fields Grid */}
               <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200/50">
                 <div>

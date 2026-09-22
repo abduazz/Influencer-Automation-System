@@ -31,9 +31,11 @@ import {
   Link,
   Send,
   User,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 import { Language, translations } from '../translations';
+import { syncIntegrationWithReports } from '../services/api';
 
 interface DashboardViewProps {
   projects: Project[];
@@ -51,6 +53,7 @@ interface DashboardViewProps {
   currentUserName?: string | null;
   currentUserEmail?: string | null;
   onNavigateToReports?: (projectId: string, bloggerName: string, paymentType: 'remaining') => void;
+  onUpdateIntegration?: (integration: Integration) => void;
 }
 
 export default function DashboardView({
@@ -68,8 +71,10 @@ export default function DashboardView({
   userRole,
   currentUserName,
   currentUserEmail,
-  onNavigateToReports
+  onNavigateToReports,
+  onUpdateIntegration
 }: DashboardViewProps) {
+  const [isSyncingReports, setIsSyncingReports] = useState(false);
   // Current active project selection
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     const saved = localStorage.getItem('tezi_dashboard_project_id');
@@ -1769,6 +1774,31 @@ export default function DashboardView({
                 >
                   <Edit3 className="w-3.5 h-3.5 text-neutral-600" />
                   <span>{lang === 'ru' ? 'Редактировать' : lang === 'uz' ? 'Tahrirlash' : 'Edit'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSyncingReports}
+                  onClick={async () => {
+                    try {
+                      setIsSyncingReports(true);
+                      const res = await syncIntegrationWithReports(selectedIntegrationForDetails.id);
+                      if (res && res.integration) {
+                        setSelectedIntegrationForDetails(res.integration);
+                        if (onUpdateIntegration) {
+                          onUpdateIntegration(res.integration);
+                        }
+                      }
+                    } catch (err) {
+                      console.error('Failed to sync integration with reports', err);
+                    } finally {
+                      setIsSyncingReports(false);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer border border-blue-200 disabled:opacity-50"
+                  title={lang === 'ru' ? 'Сверить выплаты с отчетами' : (lang === 'uz' ? 'To‘lovlarni hisobotlar bilan solishtirish' : 'Sync with reports')}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isSyncingReports ? 'animate-spin' : ''}`} />
+                  <span>{lang === 'ru' ? 'Синхронизировать' : lang === 'uz' ? 'Sinxronlash' : 'Sync'}</span>
                 </button>
                 {userRole === 'super_admin' && (
                   <button

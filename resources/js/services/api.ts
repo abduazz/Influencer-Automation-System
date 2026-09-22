@@ -104,6 +104,12 @@ export function addIntegrationSubscriberHistory(
   });
 }
 
+export function syncIntegrationWithReports(id: string): Promise<{ success: boolean; synced: boolean; integration: Integration }> {
+  return request<{ success: boolean; synced: boolean; integration: Integration }>(`/api/integrations/${id}/sync-reports`, {
+    method: 'POST',
+  });
+}
+
 // Kanban Columns API
 export function fetchKanbanColumns(): Promise<KanbanColumn[]> {
   return request<KanbanColumn[]>('/api/kanban-columns');

@@ -93,9 +93,10 @@ Route::get('/clear-server-cache', function (\Illuminate\Http\Request $request) {
     try {
         \Illuminate\Support\Facades\Artisan::call('optimize:clear');
         \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+        \Illuminate\Support\Facades\Artisan::call('integrations:sync-reports');
         return response()->json([
             'success' => true,
-            'message' => 'Cache cleared and migrations run successfully!'
+            'message' => 'Cache cleared, migrations run, and integrations synced successfully!'
         ]);
     } catch (\Throwable $e) {
         return response()->json([

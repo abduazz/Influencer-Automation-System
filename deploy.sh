@@ -16,6 +16,9 @@ php artisan db:seed --force
 echo "🔄 Syncing reports..."
 php artisan reports:sync
 
+echo "📊 Syncing integrations with actual reports..."
+php artisan integrations:sync-reports
+
 echo "⚡ Optimizing application caches..."
 php artisan optimize:clear
 php artisan optimize

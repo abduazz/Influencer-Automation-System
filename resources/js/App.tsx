@@ -845,7 +845,6 @@ export default function App() {
                   onAddIntegration={handleAddIntegration}
                   onEditIntegration={handleEditIntegration}
                   onDeleteIntegration={handleDeleteIntegration}
-                  onUpdateIntegration={(updated) => setIntegrations(prev => prev.map(i => i.id === updated.id ? updated : i))}
                   lang={lang}
                   allowedMetrics={(allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase())?.allowedMetrics || ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics']}
                   userRole={currentUserRole}

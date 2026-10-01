@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Calendar, MessageSquare, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Calendar, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send, FolderKanban } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Project, Report, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
@@ -70,6 +71,16 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlProj = params.get('project') || params.get('projectId');
+      if (urlProj) return urlProj;
+      const saved = localStorage.getItem('reports_feed_selected_project_id');
+      if (saved) return saved;
+    }
+    return 'all';
+  });
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [activeReceiptIndex, setActiveReceiptIndex] = useState<number>(0);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>(() => {
@@ -77,15 +88,74 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
     return (saved === 'grid' || saved === 'table') ? saved : 'table';
   });
 
+  const handleSelectProject = (projId: string) => {
+    setSelectedProjectId(projId);
+    if (typeof window !== 'undefined') {
+      if (projId === 'all') {
+        localStorage.removeItem('reports_feed_selected_project_id');
+      } else {
+        localStorage.setItem('reports_feed_selected_project_id', projId);
+      }
+    }
+  };
+
   const toggleViewMode = (mode: 'table' | 'grid') => {
     setViewMode(mode);
     localStorage.setItem('reports_feed_view_mode', mode);
   };
 
+  const selectedProject = useMemo(() => {
+    if (selectedProjectId === 'all') return null;
+    return projects.find(p => String(p.id) === String(selectedProjectId)) || null;
+  }, [projects, selectedProjectId]);
+
+  // Filtering reports based on search query, project filter, and date period
+  const filteredReports = useMemo(() => {
+    return reports.filter(rep => {
+      const resolvedProject = projects.find(p => String(p.id) === String(rep.projectId));
+      const multiProjectNames = rep.slotsConfig
+        ? rep.slotsConfig.map(s => s.projectId ? projects.find(p => String(p.id) === String(s.projectId))?.name : '').filter(Boolean).join(' ')
+        : '';
+      const projectName = (resolvedProject?.name || rep.projectName || '') + ' ' + multiProjectNames;
+      const blogger = rep.channelBlogger || '';
+      const destination = rep.destination || '';
+      const comments = rep.comments || '';
+      const createdBy = rep.createdBy || '';
+      const searchLower = searchQuery.toLowerCase().trim();
+
+      const matchesSearch = !searchLower || (
+        projectName.toLowerCase().includes(searchLower) ||
+        blogger.toLowerCase().includes(searchLower) ||
+        destination.toLowerCase().includes(searchLower) ||
+        comments.toLowerCase().includes(searchLower) ||
+        createdBy.toLowerCase().includes(searchLower)
+      );
+
+      const matchesDate = (!filterStartDate || rep.date >= filterStartDate) &&
+                          (!filterEndDate || rep.date <= filterEndDate);
+
+      const matchesProject = selectedProjectId === 'all' ||
+        (rep.projectId && String(rep.projectId) === String(selectedProjectId)) ||
+        (Array.isArray(rep.slotsConfig) && rep.slotsConfig.some(s => s.projectId && String(s.projectId) === String(selectedProjectId))) ||
+        (Boolean(selectedProject && rep.projectName && rep.projectName.trim().toLowerCase() === selectedProject.name.trim().toLowerCase()));
+
+      return matchesSearch && matchesDate && matchesProject;
+    });
+  }, [reports, projects, searchQuery, filterStartDate, filterEndDate, selectedProjectId, selectedProject]);
+
   const handleExportExcel = () => {
+    if (filteredReports.length === 0) {
+      alert(
+        lang === 'ru' ? 'Нет записей для экспорта по выбранным фильтрам.' :
+        lang === 'uz' ? 'Tanlangan filtrlar bo‘yicha eksport qilish uchun yozuvlar yo‘q.' :
+        'No records to export matching the selected filters.'
+      );
+      return;
+    }
+
     const hasOther = filteredReports.some(r => r.paymentType === 'other');
     let headers: string[] = [];
-    let rows: string[][] = [];
+    let rows: (string | number)[][] = [];
 
     if (hasOther) {
       // Other expenses columns
@@ -103,13 +173,13 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
 
       rows = filteredReports.map((rep, idx) => {
         const resolvedProject = projects.find(p => String(p.id) === String(rep.projectId));
-        const projName = resolvedProject ? resolvedProject.name : '—';
+        const projName = resolvedProject ? resolvedProject.name : (rep.projectName || '—');
         return [
-          String(idx + 1),
+          idx + 1,
           rep.destination || '—',
           rep.channelBlogger || '—',
           '—',
-          String(rep.totalAmount || 0),
+          Number(rep.totalAmount) || 0,
           rep.date,
           rep.comments || '',
           projName,
@@ -140,7 +210,7 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
         let projName = '—';
         if (rep.projectId) {
           const p = projects.find(proj => String(proj.id) === String(rep.projectId));
-          projName = p ? p.name : '—';
+          projName = p ? p.name : (rep.projectName || '—');
         } else if (rep.slotsConfig && rep.slotsConfig.length > 0) {
           const counts: { [name: string]: number } = {};
           rep.slotsConfig.forEach((s) => {
@@ -151,6 +221,8 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
             }
           });
           projName = Object.entries(counts).map(([name, cnt]) => `${name}: ${cnt}`).join(', ');
+        } else if (rep.projectName) {
+          projName = rep.projectName;
         }
 
         const isOther = rep.paymentType === 'other';
@@ -172,19 +244,19 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
         const cabinetUrl = token ? getCabinetUrl(token) : '';
 
         return [
-          String(idx + 1),
+          idx + 1,
           rep.destination || '—',
           rep.channelBlogger || '—',
           rep.platform || '—',
-          String(rep.totalAmount || 0),
+          Number(rep.totalAmount) || 0,
           rep.date,
           rep.comments || '',
           projName,
           paymentTypeText,
-          String(rep.slotsCount || 0),
-          String(rep.paidSlotsCount || 0),
-          String(rep.pricePerSlot || 0),
-          String(rep.paidAmount || 0),
+          Number(rep.slotsCount) || 0,
+          Number(rep.paidSlotsCount) || 0,
+          Number(rep.pricePerSlot) || 0,
+          Number(rep.paidAmount) || 0,
           rep.createdBy || '—',
           cabinetUrl || '—'
         ];
@@ -192,130 +264,61 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
     }
 
     const dateStr = new Date().toISOString().split('T')[0];
-    const fileTitle = hasOther ? `Other_Expenses_Report_${dateStr}` : `Blogger_Integrations_Report_${dateStr}`;
+    const projectSlug = selectedProject ? `_${selectedProject.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '_')}` : '';
+    const fileTitle = hasOther ? `Other_Expenses_Report${projectSlug}_${dateStr}` : `Blogger_Integrations_Report${projectSlug}_${dateStr}`;
+    const reportHeading = hasOther 
+      ? (lang === 'ru' ? 'Отчет по прочим расходам' : lang === 'uz' ? 'Boshqa xarajatlar hisoboti' : 'Other Expenses Report') 
+      : (lang === 'ru' ? 'Отчет по интеграциям с блогерами' : lang === 'uz' ? 'Blogger integratsiyalari hisoboti' : 'Blogger Integrations Report');
+    const projectHeadingPart = selectedProject ? ` (${selectedProject.name})` : '';
 
-    const excelContent = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
-        <!--[if gte mso 9]>
-        <xml>
-          <x:ExcelWorkbook>
-            <x:ExcelWorksheets>
-              <x:ExcelWorksheet>
-                <x:Name>Sheet1</x:Name>
-                <x:WorksheetOptions>
-                  <x:DisplayGridlines/>
-                </x:WorksheetOptions>
-              </x:ExcelWorksheet>
-            </x:ExcelWorksheets>
-          </x:ExcelWorkbook>
-        </xml>
-        <![endif]-->
-        <style>
-          body { font-family: 'Nunito', Arial, sans-serif; font-size: 11pt; }
-          table { border-collapse: collapse; width: 100%; }
-          th { font-weight: bold; border: 1px solid #D1D5DB; padding: 8px; text-align: left; font-size: 11pt; color: #000000; }
-          td { border: 1px solid #E5E7EB; padding: 8px; text-align: left; font-size: 11pt; color: #000000; }
-          .currency { text-align: right; mso-number-format: "#,##0"; }
-          .number { text-align: center; mso-number-format: "0"; }
-          .date { mso-number-format: "yyyy-mm-dd"; text-align: center; }
-          .title-row { font-size: 14pt; font-weight: bold; color: #000000; padding-bottom: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="title-row">${hasOther ? (lang === 'ru' ? 'Отчет по прочим расходам' : lang === 'uz' ? 'Boshqa xarajatlar hisoboti' : 'Other Expenses Report') : (lang === 'ru' ? 'Отчет по интеграциям с блогерами' : lang === 'uz' ? 'Blogger integratsiyalari hisoboti' : 'Blogger Integrations Report')} (${dateStr})</div>
-        <table>
-          <thead>
-            <tr>
-              ${headers.map(h => `<th>${h}</th>`).join('')}
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map(row => `
-              <tr>
-                ${row.map((cell, idx) => {
-                  let cellClass = '';
-                  let formattedCell = cell;
+    const filterInfo = [
+      selectedProject ? `${lang === 'ru' ? 'Проект' : lang === 'uz' ? 'Loyiha' : 'Project'}: ${selectedProject.name}` : null,
+      (filterStartDate || filterEndDate) ? `${lang === 'ru' ? 'Период' : lang === 'uz' ? 'Davr' : 'Period'}: ${filterStartDate || '...'} — ${filterEndDate || '...'}` : null,
+      searchQuery ? `${lang === 'ru' ? 'Поиск' : lang === 'uz' ? 'Qidiruv' : 'Search'}: "${searchQuery}"` : null,
+      `${lang === 'ru' ? 'Экспортировано записей' : lang === 'uz' ? 'Eksport qilingan yozuvlar' : 'Exported records'}: ${filteredReports.length}`
+    ].filter(Boolean).join(' | ');
 
-                  if (hasOther) {
-                    if (idx === 0) {
-                      cellClass = 'class="number"';
-                      formattedCell = Number(cell) || 0;
-                    }
-                    if (idx === 4) {
-                      cellClass = 'class="currency"';
-                      formattedCell = Number(cell) || 0;
-                    }
-                    if (idx === 5) {
-                      cellClass = 'class="date"';
-                    }
-                  } else {
-                    if (idx === 0 || idx === 9 || idx === 10) {
-                      cellClass = 'class="number"';
-                      formattedCell = Number(cell) || 0;
-                    }
-                    if (idx === 4 || idx === 11 || idx === 12) {
-                      cellClass = 'class="currency"';
-                      formattedCell = Number(cell) || 0;
-                    }
-                    if (idx === 5) {
-                      cellClass = 'class="date"';
-                    }
-                  }
+    // Build worksheet data
+    const aoa: (string | number)[][] = [
+      [`${reportHeading}${projectHeadingPart} (${dateStr})`],
+      ...(filterInfo ? [[filterInfo]] : []),
+      [],
+      headers,
+      ...rows
+    ];
 
-                  const safeVal = typeof formattedCell === 'string' 
-                    ? formattedCell.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") 
-                    : formattedCell;
-                  return `<td ${cellClass}>${safeVal}</td>`;
-                }).join('')}
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    // Auto-fit column widths
+    const colWidths = headers.map((h, i) => {
+      let maxLen = h.length;
+      rows.forEach(r => {
+        const val = r[i] != null ? String(r[i]) : '';
+        if (val.length > maxLen) maxLen = Math.min(val.length, 60);
+      });
+      return { wch: Math.max(maxLen + 3, 10) };
+    });
+    ws['!cols'] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, hasOther ? 'Expenses' : 'Reports');
+
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${fileTitle}.xls`);
+    link.setAttribute('download', `${fileTitle}.xlsx`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
-
-  // Filtering reports based on search query and date period
-  const filteredReports = reports.filter(rep => {
-    const resolvedProject = projects.find(p => String(p.id) === String(rep.projectId));
-    const multiProjectNames = rep.slotsConfig
-      ? rep.slotsConfig.map(s => s.projectId ? projects.find(p => String(p.id) === String(s.projectId))?.name : '').filter(Boolean).join(' ')
-      : '';
-    const projectName = (resolvedProject?.name || '') + ' ' + multiProjectNames;
-    const blogger = rep.channelBlogger || '';
-    const destination = rep.destination || '';
-    const comments = rep.comments || '';
-    const searchLower = searchQuery.toLowerCase();
-
-    const matchesSearch = (
-      projectName.toLowerCase().includes(searchLower) ||
-      blogger.toLowerCase().includes(searchLower) ||
-      destination.toLowerCase().includes(searchLower) ||
-      comments.toLowerCase().includes(searchLower)
-    );
-
-    const matchesDate = (!filterStartDate || rep.date >= filterStartDate) &&
-                        (!filterEndDate || rep.date <= filterEndDate);
-
-    return matchesSearch && matchesDate;
-  });
 
   const renderProjectCell = (rep: Report) => {
     if (rep.projectId) {
       const p = projects.find(proj => String(proj.id) === String(rep.projectId));
-      return p ? p.name : '—';
+      return p ? p.name : (rep.projectName || '—');
     }
 
     if (rep.slotsConfig && rep.slotsConfig.length > 0) {
@@ -351,16 +354,25 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
       }
     }
 
-    return '—';
+    return rep.projectName || '—';
   };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
-      {/* Page Header */}
+      {/* Page Header / Optional Title & Description */}
+      {title && (
+        <div className="text-left mb-2">
+          <h1 className="text-2xl font-black text-black tracking-tight">{title}</h1>
+          {description && <p className="text-xs text-neutral-500 mt-1">{description}</p>}
+        </div>
+      )}
+
+      {/* Toolbar */}
       <div className="border-b border-neutral-200 pb-5 text-left flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        {/* Search Bar & View Toggle */}
+        {/* Search Bar & Filters */}
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <div className="relative w-full md:w-72">
+          {/* Search Input */}
+          <div className="relative w-full md:w-64">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
               <Search className="h-4 w-4 text-neutral-400" />
             </span>
@@ -369,8 +381,51 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
               placeholder={lang === 'ru' ? 'Поиск отчетов...' : lang === 'uz' ? 'Hisobotlarni qidirish...' : 'Search reports...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-neutral-200 focus:bg-white rounded-xl text-xs focus:outline-none focus:border-black text-black shadow-3xs transition"
+              className="w-full pl-9 pr-7 py-2 bg-white border border-neutral-200 focus:bg-white rounded-xl text-xs focus:outline-none focus:border-black text-black shadow-3xs transition"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-0 pr-2 flex items-center text-neutral-400 hover:text-black cursor-pointer"
+                title={lang === 'ru' ? 'Очистить поиск' : 'Clear search'}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Project Filter Dropdown */}
+          <div className="flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs text-neutral-600 shadow-3xs shrink-0">
+            <FolderKanban className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+            <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider hidden lg:inline">
+              {lang === 'ru' ? 'Проект:' : lang === 'uz' ? 'Loyiha:' : 'Project:'}
+            </span>
+            <select
+              value={selectedProjectId}
+              onChange={(e) => handleSelectProject(e.target.value)}
+              className="bg-transparent border-none p-0 text-xs font-semibold text-neutral-700 focus:outline-none cursor-pointer max-w-[140px] sm:max-w-[180px] truncate"
+              title={lang === 'ru' ? 'Фильтр по проекту' : lang === 'uz' ? 'Loyiha bo\'yicha filter' : 'Filter by project'}
+            >
+              <option value="all">
+                {t.kanbanAllProjects || (lang === 'ru' ? 'Все проекты' : lang === 'uz' ? 'Barcha loyihalar' : 'All Projects')}
+              </option>
+              {projects.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {selectedProjectId !== 'all' && (
+              <button
+                type="button"
+                onClick={() => handleSelectProject('all')}
+                className="p-0.5 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition cursor-pointer shrink-0"
+                title={lang === 'ru' ? 'Сбросить проект' : lang === 'uz' ? 'Loyihani tozalash' : 'Clear project'}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Date range filters */}
@@ -411,11 +466,21 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
           {/* Export to Excel Button */}
           <button
             onClick={handleExportExcel}
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 hover:text-emerald-800 rounded-xl text-xs font-bold transition cursor-pointer shadow-3xs hover:shadow-2xs shrink-0"
-            title={t.exportExcel}
+            disabled={filteredReports.length === 0}
+            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-bold transition shadow-3xs hover:shadow-2xs shrink-0 ${
+              filteredReports.length === 0
+                ? 'bg-neutral-100 border-neutral-200 text-neutral-400 cursor-not-allowed opacity-60'
+                : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700 hover:text-emerald-800 cursor-pointer'
+            }`}
+            title={`${t.exportExcel} (${filteredReports.length})`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
             <span className="hidden sm:inline">{t.exportExcel}</span>
+            <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${
+              filteredReports.length === 0 ? 'bg-neutral-200 text-neutral-500' : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {filteredReports.length}
+            </span>
           </button>
 
           <div className="hidden md:flex bg-neutral-100 p-0.5 rounded-xl border border-neutral-200 shrink-0">
@@ -471,13 +536,12 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
               </thead>
               <tbody className="divide-y divide-neutral-100 text-xs">
                 {filteredReports.map((rep) => {
-                  const resolvedProject = projects.find(p => p.id === rep.projectId);
                   const isOther = rep.paymentType === 'other';
 
                   // Match report to integration for blogger link lookup
                   const matchingInt = isOther ? null : (
                     integrations.find(i => 
-                      i.projectId === rep.projectId &&
+                      String(i.projectId) === String(rep.projectId) &&
                       i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase() &&
                       i.platform.toLowerCase() === rep.platform?.toLowerCase()
                     ) || integrations.find(i => 
@@ -632,13 +696,12 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
       {/* Grid of Report Cards (Visible on mobile, or when viewMode is grid) */}
       <div className={`${viewMode === 'table' ? 'md:hidden' : ''} grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4`}>
         {filteredReports.map((rep) => {
-          const resolvedProject = projects.find(p => p.id === rep.projectId);
           const isOther = rep.paymentType === 'other';
 
           // Match report to integration for blogger link lookup
           const matchingInt = isOther ? null : (
             integrations.find(i => 
-              i.projectId === rep.projectId &&
+              String(i.projectId) === String(rep.projectId) &&
               i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase() &&
               i.platform.toLowerCase() === rep.platform?.toLowerCase()
             ) || integrations.find(i => 
@@ -776,6 +839,19 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
              lang === 'uz' ? 'Hisobotlar topilmadi. Qidiruv parametrlarini o‘zgartirib ko‘ring.' : 
              'No reports matching search query were found.'}
           </p>
+          {(searchQuery || selectedProjectId !== 'all' || filterStartDate || filterEndDate) && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                handleSelectProject('all');
+                setFilterStartDate('');
+                setFilterEndDate('');
+              }}
+              className="mt-3 px-3 py-1.5 text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition cursor-pointer"
+            >
+              {lang === 'ru' ? 'Сбросить все фильтры' : lang === 'uz' ? 'Barcha filtrlarni tozalash' : 'Reset all filters'}
+            </button>
+          )}
         </div>
       )}
 
@@ -846,9 +922,9 @@ export default function ReportsFeedView({ projects, integrations, reports, lang,
               <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200/50">
                 <div>
                   <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.campaignTitleField}</p>
-                  <p className="font-bold text-neutral-800 mt-0.5">
-                    {projects.find(p => p.id === selectedReport.projectId)?.name || '—'}
-                  </p>
+                  <div className="font-bold text-neutral-800 mt-0.5">
+                    {renderProjectCell(selectedReport)}
+                  </div>
                 </div>
                 <div>
                   <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.reportDateField}</p>

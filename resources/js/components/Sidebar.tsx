@@ -224,24 +224,6 @@ export default function Sidebar({
             </button>
           )}
 
-          {userRole !== 'product_manager' && hasAccess('other_expenses') && (
-            <button
-              id="nav-other-expenses-btn"
-              onClick={() => setActiveTab('other_expenses')}
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
-                activeTab === 'other_expenses'
-                  ? 'bg-black text-white'
-                  : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-              }`}
-              title={t.otherExpensesTab}
-            >
-              <div className="flex items-center gap-3.5">
-                <Receipt className={`w-4 h-4 ${activeTab === 'other_expenses' ? 'text-white' : 'text-black'}`} />
-                {!isCollapsed && <span>{t.otherExpensesTab}</span>}
-              </div>
-            </button>
-          )}
-
           {hasAccess('bloggers') && (
             <button
               id="nav-bloggers-btn"

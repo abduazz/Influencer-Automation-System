@@ -35,6 +35,7 @@ Route::post('/kanban-columns/clear-stage', [KanbanColumnController::class, 'clea
 
 Route::get('/reports', [ReportController::class, 'index']);
 Route::post('/reports', [ReportController::class, 'store']);
+Route::put('/reports/{report}', [ReportController::class, 'update']);
 Route::delete('/reports/{report}', [ReportController::class, 'destroy']);
 
 Route::get('/blogger-submissions', [BloggerSubmissionController::class, 'index']);

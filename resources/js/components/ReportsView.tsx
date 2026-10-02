@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { Project, Report, SlotConfig, Integration } from '../data/mockData';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Project, Report, SlotConfig, Integration, BloggerRequisites } from '../data/mockData';
 import {
   Send,
   CheckCircle2,
@@ -16,10 +16,13 @@ import {
   ChevronDown,
   Search,
   X,
-  User
+  User,
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
+import { getPlatformBadgeClasses } from '../utils/platform';
 
 interface StepperInputProps {
   value: number;
@@ -68,6 +71,7 @@ interface ReportsViewProps {
   projects: Project[];
   integrations: Integration[];
   reports: Report[];
+  bloggerRequisitesList?: BloggerRequisites[];
   onAddReport: (report: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'>) => Promise<Report | undefined>;
   lang: Language;
   userRole?: 'super_admin' | 'pr_manager' | 'product_manager';
@@ -161,6 +165,7 @@ export default function ReportsView({
   projects,
   integrations,
   reports,
+  bloggerRequisitesList = [],
   onAddReport,
   lang,
   userRole,
@@ -193,6 +198,253 @@ export default function ReportsView({
   const [paidAmount, setPaidAmount] = useState<number | ''>(0);
   const [slotsConfig, setSlotsConfig] = useState<SlotConfig[]>([]);
 
+  // Function to thoroughly populate all known blogger data
+  const populateBloggerData = (
+    selectedName: string,
+    targetProjectId?: string,
+    options?: {
+      preserveGivenFields?: boolean;
+      given?: Partial<NonNullable<ReportsViewProps['initialState']>>;
+    }
+  ) => {
+    if (!selectedName || !selectedName.trim()) return;
+
+    const clean = selectedName.replace(/^[@#]/, '').trim().toLowerCase();
+    const effectiveProjectId = targetProjectId !== undefined ? targetProjectId : projectId;
+
+    // 1. Find all matching integrations for this blogger
+    const matchingInts = integrations.filter((i) => {
+      if (!i.bloggerName) return false;
+      return i.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean;
+    });
+
+    // Best integration resolution order:
+    // a) In target/current project AND (ready_for_payment OR active)
+    // b) In target/current project
+    // c) ANY project AND (ready_for_payment OR active)
+    // d) Any matching integration (latest by array order)
+    let bestInt = matchingInts.find(
+      (i) =>
+        effectiveProjectId &&
+        String(i.projectId) === String(effectiveProjectId) &&
+        (i.kanbanStage === 'ready_for_payment' || i.status === 'active')
+    );
+    if (!bestInt && effectiveProjectId) {
+      bestInt = matchingInts.find((i) => String(i.projectId) === String(effectiveProjectId));
+    }
+    if (!bestInt) {
+      bestInt = matchingInts.find((i) => i.kanbanStage === 'ready_for_payment' || i.status === 'active');
+    }
+    if (!bestInt && matchingInts.length > 0) {
+      bestInt = matchingInts[matchingInts.length - 1];
+    }
+
+    // 2. Matching reports
+    const matchingReports = (reports || []).filter((r) => {
+      if (!r.channelBlogger) return false;
+      return r.channelBlogger.replace(/^[@#]/, '').trim().toLowerCase() === clean;
+    });
+    const latestReport = matchingReports.length > 0 ? matchingReports[matchingReports.length - 1] : null;
+
+    const given = options?.given || {};
+    const preserve = options?.preserveGivenFields;
+
+    // 3. Blogger name
+    if (!preserve || !given.bloggerName) {
+      setChannelBlogger(bestInt?.bloggerName || selectedName);
+    }
+
+    // 4. Platform
+    const foundPlatform =
+      given.platform ||
+      bestInt?.platform ||
+      latestReport?.platform ||
+      (matchingReports.slice().reverse().find((r) => r.platform)?.platform as any);
+    if (foundPlatform && (!preserve || !given.platform)) {
+      setPlatform(foundPlatform);
+    }
+
+    // 5. Blogger Page Link
+    let foundPageLink = given.bloggerPageLink || bestInt?.bloggerPageLink || '';
+    if (!foundPageLink) {
+      const intWithLink = matchingInts.slice().reverse().find((i) => i.bloggerPageLink && i.bloggerPageLink.trim());
+      if (intWithLink?.bloggerPageLink) {
+        foundPageLink = intWithLink.bloggerPageLink;
+      }
+    }
+    if (!foundPageLink && latestReport?.bloggerPageLink) {
+      foundPageLink = latestReport.bloggerPageLink;
+    }
+    if (!foundPageLink) {
+      const repWithLink = matchingReports.slice().reverse().find((r) => r.bloggerPageLink && r.bloggerPageLink.trim());
+      if (repWithLink?.bloggerPageLink) {
+        foundPageLink = repWithLink.bloggerPageLink;
+      }
+    }
+    // Smart fallback if missing: construct from handle
+    if (!foundPageLink && clean) {
+      const p = foundPlatform || platform;
+      if (p === 'Telegram') {
+        foundPageLink = `https://t.me/${clean}`;
+      } else if (p === 'Instagram') {
+        foundPageLink = `https://instagram.com/${clean}`;
+      }
+    }
+    if (foundPageLink && (!preserve || !given.bloggerPageLink)) {
+      setBloggerPageLink(foundPageLink);
+    }
+
+    // 6. Referral link / Destination
+    let foundDest = given.destination || bestInt?.referralLink || '';
+    if (!foundDest && latestReport?.destination) {
+      foundDest = latestReport.destination;
+    }
+    if (!foundDest) {
+      const intWithRef = matchingInts.slice().reverse().find((i) => i.referralLink && i.referralLink.trim());
+      if (intWithRef?.referralLink) {
+        foundDest = intWithRef.referralLink;
+      } else {
+        const repWithDest = matchingReports.slice().reverse().find((r) => r.destination && r.destination.trim());
+        if (repWithDest?.destination) {
+          foundDest = repWithDest.destination;
+        }
+      }
+    }
+    if (foundDest && (!preserve || !given.destination)) {
+      setDestination(foundDest);
+    }
+
+    // 7. Project ID (if not already selected)
+    const resolvedProjectId = given.projectId || (effectiveProjectId ? effectiveProjectId : (bestInt?.projectId ? String(bestInt.projectId) : ''));
+    if (resolvedProjectId && (!preserve || !given.projectId)) {
+      setProjectId(resolvedProjectId);
+    }
+
+    // 8. Deal / Integration link
+    const targetDeal =
+      bestInt && (bestInt.kanbanStage === 'ready_for_payment' || bestInt.status === 'active' || String(bestInt.id) === given.integrationId)
+        ? bestInt
+        : matchingInts.find((i) => i.kanbanStage === 'ready_for_payment');
+    if (targetDeal && (!preserve || given.integrationId === undefined)) {
+      setCurrentIntegrationId(String(targetDeal.id));
+    }
+
+    // 9. Price per slot & Slots count & Calculations
+    let foundPrice: number | null = null;
+    if (given.pricePerSlot !== undefined && given.pricePerSlot !== '') {
+      foundPrice = Number(given.pricePerSlot);
+    } else if (bestInt?.pricePerSlot !== undefined && bestInt.pricePerSlot !== null && Number(bestInt.pricePerSlot) > 0) {
+      foundPrice = Number(bestInt.pricePerSlot);
+    } else if (latestReport?.pricePerSlot !== undefined && latestReport.pricePerSlot !== null && Number(latestReport.pricePerSlot) > 0) {
+      foundPrice = Number(latestReport.pricePerSlot);
+    } else {
+      const intWithPrice = matchingInts.slice().reverse().find((i) => i.pricePerSlot && Number(i.pricePerSlot) > 0);
+      if (intWithPrice?.pricePerSlot) {
+        foundPrice = Number(intWithPrice.pricePerSlot);
+      }
+    }
+
+    const currentPayType = given.paymentType || paymentType;
+
+    if (foundPrice !== null && foundPrice > 0) {
+      setPricePerSlot(foundPrice);
+      setAmountError(null);
+
+      if (currentPayType === 'remaining') {
+        const unpaid = bestInt ? Math.max(0, bestInt.slotsCount - (bestInt.paidSlotsCount || 0)) : 1;
+        setSlotsCount(0);
+        const pSlots = given.paidSlotsCount !== undefined ? given.paidSlotsCount : (unpaid > 0 ? unpaid : 1);
+        setPaidSlotsCount(pSlots);
+        setTotalAmount(pSlots * foundPrice);
+        setPaidAmount(pSlots * foundPrice);
+      } else {
+        const slots = given.slotsCount !== undefined
+          ? given.slotsCount
+          : (bestInt?.slotsCount && bestInt.slotsCount > 0 ? bestInt.slotsCount : (slotsCount || 5));
+        setSlotsCount(slots);
+
+        let paidSlots: number;
+        if (given.paidSlotsCount !== undefined) {
+          paidSlots = given.paidSlotsCount;
+        } else if (currentPayType === 'full') {
+          paidSlots = slots;
+        } else if (bestInt?.paidSlotsCount && bestInt.paidSlotsCount > 0) {
+          paidSlots = bestInt.paidSlotsCount;
+        } else {
+          paidSlots = Math.max(1, Math.floor(slots / 2));
+        }
+        setPaidSlotsCount(paidSlots);
+
+        const calcTotal = given.totalAmount !== undefined ? given.totalAmount : slots * foundPrice;
+        const calcPaid = given.paidAmount !== undefined ? given.paidAmount : paidSlots * foundPrice;
+        setTotalAmount(calcTotal);
+        setPaidAmount(calcPaid);
+      }
+    }
+
+    // 10. Requisites and Comments
+    if (!preserve || !given.comments) {
+      const reqFromInt = bestInt?.requisites || matchingInts.find((i) => i.requisites)?.requisites;
+      const reqFromList = (bloggerRequisitesList || []).find((br) => {
+        if (bestInt?.id && br.integrationId && String(br.integrationId) === String(bestInt.id)) return true;
+        if (br.bloggerName && br.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean) return true;
+        if (br.channelName && br.channelName.replace(/^[@#]/, '').trim().toLowerCase() === clean) return true;
+        return false;
+      });
+      const resolvedReq = reqFromInt || reqFromList;
+      if (resolvedReq) {
+        const parts: string[] = [];
+        if (resolvedReq.fullName) parts.push(resolvedReq.fullName);
+        if (resolvedReq.cardNumberOrIban) parts.push(resolvedReq.cardNumberOrIban);
+        if (resolvedReq.bankName) parts.push(resolvedReq.bankName);
+        if (resolvedReq.pinflOrTin) parts.push(`ПИНФЛ/ИНН: ${resolvedReq.pinflOrTin}`);
+        if (resolvedReq.phone) parts.push(`Тел: ${resolvedReq.phone}`);
+        if (parts.length > 0) {
+          const reqStr = `Реквизиты: ${parts.join(', ')}`;
+          setComments((prev) => (!prev.trim() || prev.startsWith('Реквизиты:') ? reqStr : prev));
+        }
+      }
+    }
+  };
+
+  const handleSelectBlogger = (selectedName: string) => {
+    setIsBloggerModalOpen(false);
+    populateBloggerData(selectedName, projectId);
+  };
+
+  const handleProjectChange = (newProjId: string) => {
+    setProjectId(newProjId);
+    if (channelBlogger && channelBlogger.trim()) {
+      const clean = channelBlogger.replace(/^[@#]/, '').trim().toLowerCase();
+      const projDeal = integrations.find(
+        (i) =>
+          String(i.projectId) === String(newProjId) &&
+          i.bloggerName &&
+          i.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean
+      );
+      if (projDeal) {
+        if (projDeal.kanbanStage === 'ready_for_payment' || projDeal.status === 'active') {
+          setCurrentIntegrationId(String(projDeal.id));
+        }
+        if (projDeal.pricePerSlot && Number(projDeal.pricePerSlot) > 0) {
+          handlePricePerSlotChange(Number(projDeal.pricePerSlot));
+          if (projDeal.slotsCount && projDeal.slotsCount > 0 && paymentType !== 'remaining') {
+            handleSlotsCountChange(projDeal.slotsCount);
+          }
+        }
+        if (projDeal.referralLink) {
+          setDestination(projDeal.referralLink);
+        }
+        if (projDeal.bloggerPageLink && !bloggerPageLink) {
+          setBloggerPageLink(projDeal.bloggerPageLink);
+        }
+        if (projDeal.platform) {
+          setPlatform(projDeal.platform);
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     if (initialState) {
       if (initialState.paymentType) setPaymentType(initialState.paymentType);
@@ -218,6 +470,14 @@ export default function ReportsView({
       if (initialState.integrationId) {
         setCurrentIntegrationId(initialState.integrationId);
       }
+
+      // Auto-fill any missing blogger data from database
+      if (initialState.bloggerName) {
+        populateBloggerData(initialState.bloggerName, initialState.projectId, {
+          preserveGivenFields: true,
+          given: initialState,
+        });
+      }
       
       if (onClearInitialState) {
         onClearInitialState();
@@ -237,20 +497,59 @@ export default function ReportsView({
   const [bloggerSearch, setBloggerSearch] = useState('');
   const [amountError, setAmountError] = useState<string | null>(null);
 
-  const existingBloggers = Array.from(
-    new Set(
-      integrations
+  const existingBloggers = useMemo(() => {
+    if (paymentType === 'remaining') {
+      const list = integrations
         .filter((i) => {
-          if (paymentType === 'remaining') {
-            const unpaid = i.slotsCount > (i.paidSlotsCount || 0);
-            return String(i.projectId) === String(projectId) && unpaid && i.status === 'active';
+          const unpaid = i.slotsCount > (i.paidSlotsCount || 0);
+          if (projectId) {
+            return String(i.projectId) === String(projectId) && unpaid && i.status !== 'completed';
           }
-          return true;
+          return unpaid && i.status !== 'completed';
         })
-        .map((i) => i.bloggerName)
-        .filter(Boolean)
-    )
-  );
+        .map((i) => i.bloggerName?.trim())
+        .filter(Boolean) as string[];
+
+      return Array.from(new Set(list));
+    }
+
+    const nameMap = new Map<string, string>(); // cleanName -> bestDisplayName
+
+    // 1. Integrations (high priority)
+    integrations.forEach((i) => {
+      if (!i.bloggerName) return;
+      const raw = i.bloggerName.trim();
+      if (!raw) return;
+      const clean = raw.replace(/^[@#]/, '').toLowerCase();
+      if (!nameMap.has(clean)) {
+        nameMap.set(clean, raw);
+      }
+    });
+
+    // 2. Reports
+    (reports || []).forEach((r) => {
+      if (!r.channelBlogger) return;
+      const raw = r.channelBlogger.trim();
+      if (!raw) return;
+      const clean = raw.replace(/^[@#]/, '').toLowerCase();
+      if (!nameMap.has(clean)) {
+        nameMap.set(clean, raw);
+      }
+    });
+
+    // 3. Blogger Requisites
+    (bloggerRequisitesList || []).forEach((br) => {
+      const raw = (br.bloggerName || br.channelName || '').trim();
+      if (!raw) return;
+      const clean = raw.replace(/^[@#]/, '').toLowerCase();
+      if (!nameMap.has(clean)) {
+        nameMap.set(clean, raw);
+      }
+    });
+
+    return Array.from(nameMap.values()).sort((a, b) => a.localeCompare(b));
+  }, [integrations, reports, bloggerRequisitesList, paymentType, projectId]);
+
   const filteredExistingBloggers = existingBloggers.filter(name =>
     name.toLowerCase().includes(bloggerSearch.toLowerCase())
   );
@@ -262,11 +561,11 @@ export default function ReportsView({
     (i) =>
       String(i.projectId) === String(projectId) &&
       i.bloggerName.toLowerCase().replace(/[@#]/g, '').trim() === channelBlogger.toLowerCase().replace(/[@#]/g, '').trim() &&
-      i.status === 'active'
+      i.status !== 'completed'
   );
 
   useEffect(() => {
-    if (activeIntegration?.bloggerPageLink) {
+    if (activeIntegration?.bloggerPageLink && !bloggerPageLink) {
       setBloggerPageLink(activeIntegration.bloggerPageLink);
     }
   }, [activeIntegration]);
@@ -740,7 +1039,7 @@ export default function ReportsView({
                           <select
                             value={projectId}
                             required={paymentType !== 'other'}
-                            onChange={(e) => setProjectId(e.target.value)}
+                            onChange={(e) => handleProjectChange(e.target.value)}
                             className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
                           >
                             <option value="" disabled={paymentType !== 'other'}>
@@ -946,14 +1245,40 @@ export default function ReportsView({
                                   <input type="hidden" required value={channelBlogger} />
                                 </>
                               ) : (
-                                <input
-                                  type="text"
-                                  required
-                                  placeholder="e.g. @tech_geek_tg"
-                                  value={channelBlogger}
-                                  onChange={(e) => setChannelBlogger(e.target.value)}
-                                  className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
-                                />
+                                <>
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="e.g. @tech_geek_tg"
+                                    value={channelBlogger}
+                                    onChange={(e) => setChannelBlogger(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
+                                  />
+                                  {channelBlogger.trim().length >= 2 && (() => {
+                                    const match = existingBloggers.find(name => 
+                                      name.replace(/^[@#]/, '').toLowerCase() === channelBlogger.replace(/^[@#]/, '').toLowerCase()
+                                    );
+                                    if (!match) return null;
+                                    return (
+                                      <div className="mt-1.5 p-2 bg-neutral-50 border border-neutral-200 rounded-lg flex items-center justify-between text-[10px]">
+                                        <span className="text-neutral-700">
+                                          {lang === 'ru' ? 'Найден в базе:' : lang === 'uz' ? 'Bazada topildi:' : 'Found in DB:'}{' '}
+                                          <strong className="text-black">{match}</strong>
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setBloggerType('existing');
+                                            handleSelectBlogger(match);
+                                          }}
+                                          className="px-2 py-0.5 bg-black text-white rounded text-[9px] font-bold hover:bg-neutral-800 transition cursor-pointer"
+                                        >
+                                          {lang === 'ru' ? 'Подставить данные' : lang === 'uz' ? 'Ma\'lumotlarni to\'ldirish' : 'Auto-fill'}
+                                        </button>
+                                      </div>
+                                    );
+                                  })()}
+                                </>
                               )}
                             </div>
                           </div>
@@ -1593,42 +1918,103 @@ export default function ReportsView({
             </div>
 
             {/* Scrollable Blogger List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
               {filteredExistingBloggers.length > 0 ? (
-                filteredExistingBloggers.map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => {
-                      setChannelBlogger(name);
-                      setIsBloggerModalOpen(false);
+                filteredExistingBloggers.map((name) => {
+                  const clean = name.replace(/^[@#]/, '').trim().toLowerCase();
+                  const matchingInts = integrations.filter(
+                    (i) => i.bloggerName && i.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean
+                  );
+                  const bestInt = matchingInts.find(
+                    (i) =>
+                      projectId &&
+                      String(i.projectId) === String(projectId) &&
+                      (i.kanbanStage === 'ready_for_payment' || i.status === 'active')
+                  ) || matchingInts.find(i => i.kanbanStage === 'ready_for_payment' || i.status === 'active') || matchingInts[matchingInts.length - 1];
 
-                      const matchedInt = integrations.find(i => i.bloggerName.toLowerCase() === name.toLowerCase());
-                      if (matchedInt) {
-                        setPlatform(matchedInt.platform);
-                      }
+                  const bestRep = (reports || []).slice().reverse().find(
+                    (r) => r.channelBlogger && r.channelBlogger.replace(/^[@#]/, '').trim().toLowerCase() === clean
+                  );
 
-                      // Look up the last referral link for this blogger
-                      let prevLink = matchedInt?.referralLink || '';
-                      if (!prevLink && reports) {
-                        const matchedRep = reports.slice().reverse().find(r => r.channelBlogger && r.channelBlogger.toLowerCase() === name.toLowerCase());
-                        if (matchedRep) {
-                          prevLink = matchedRep.destination || '';
-                        }
-                      }
+                  const plat = bestInt?.platform || bestRep?.platform;
+                  const price = bestInt?.pricePerSlot || bestRep?.pricePerSlot;
+                  const proj = projects.find((p) => String(p.id) === String(bestInt?.projectId || bestRep?.projectId));
+                  const isReadyForPayment = bestInt?.kanbanStage === 'ready_for_payment';
+                  const hasReq = !!(
+                    bestInt?.requisites ||
+                    (bloggerRequisitesList || []).some(
+                      (br) =>
+                        (br.bloggerName && br.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean) ||
+                        (br.channelName && br.channelName.replace(/^[@#]/, '').trim().toLowerCase() === clean)
+                    )
+                  );
 
-                      if (prevLink) {
-                        setDestination(prevLink);
-                      }
-                    }}
-                    className="w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold text-neutral-800 hover:bg-neutral-50 transition flex items-center justify-between border border-transparent hover:border-neutral-200/50"
-                  >
-                    <span>{name}</span>
-                    {channelBlogger === name && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-black"></span>
-                    )}
-                  </button>
-                ))
+                  const isSelected = channelBlogger.toLowerCase().replace(/^[@#]/, '').trim() === clean;
+
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => handleSelectBlogger(name)}
+                      className={`w-full text-left px-3 py-2.5 rounded-xl text-xs transition flex items-center justify-between border cursor-pointer ${
+                        isSelected
+                          ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
+                          : 'bg-white text-neutral-800 border-neutral-100 hover:border-neutral-300 hover:bg-neutral-50/80'
+                      }`}
+                    >
+                      <div className="flex flex-col gap-1 min-w-0 flex-1 pr-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`font-bold text-xs ${isSelected ? 'text-white' : 'text-neutral-900'}`}>
+                            {name}
+                          </span>
+                          {plat && (
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+                              isSelected ? 'bg-white/20 text-white' : getPlatformBadgeClasses(plat)
+                            }`}>
+                              {plat}
+                            </span>
+                          )}
+                          {isReadyForPayment && (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-500 text-white shadow-2xs">
+                              {lang === 'ru' ? 'Готов к оплате' : lang === 'uz' ? 'To‘lovga tayyor' : 'Ready for payment'}
+                            </span>
+                          )}
+                          {hasReq && (
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
+                              isSelected ? 'bg-emerald-400/20 text-emerald-300' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            }`}>
+                              <Check className="w-2.5 h-2.5" />
+                              {lang === 'ru' ? 'Реквизиты' : lang === 'uz' ? 'Rekvizitlar' : 'Requisites'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 text-[10px] text-neutral-400">
+                          {proj && (
+                            <span className={isSelected ? 'text-neutral-300' : 'text-neutral-500'}>
+                              📁 {proj.name}
+                            </span>
+                          )}
+                          {price !== undefined && price !== null && Number(price) > 0 && (
+                            <span className={`font-semibold ${isSelected ? 'text-neutral-200' : 'text-neutral-700'}`}>
+                              💰 {formatPrice(Number(price))} UZS
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {isSelected ? (
+                        <span className="w-5 h-5 rounded-full bg-white text-black flex items-center justify-center shrink-0">
+                          <Check className="w-3 h-3 text-black stroke-[3]" />
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold text-neutral-400">
+                          →
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
               ) : (
                 <div className="py-8 text-center text-neutral-400 text-xs font-medium">
                   {lang === 'ru' ? 'Блогеры не найдены' : lang === 'uz' ? 'Bloggerlar topilmadi' : 'No bloggers found'}

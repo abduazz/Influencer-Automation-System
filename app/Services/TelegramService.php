@@ -137,16 +137,13 @@ class TelegramService
         }
     }
 
-    public static function sendReportNotification($report, $receiptBase64 = null, $lang = 'uz', $createdByName = null)
+    public static function buildReportNotificationText($report, $lang = 'uz', $createdByName = null, $isUpdate = false): string
     {
-        $chatId = config('services.telegram.reports_chat_id');
-        if (!$chatId) {
-            $chatId = config('services.telegram.chat_id'); // fallback
-        }
-
         $locales = [
             'ru' => [
                 'new_report' => '📝 <b>Создан новый отчет!</b>',
+                'updated_report' => '✏️ <b>Отчет обновлен!</b>',
+                'report_id' => '🆔 <b>ID отчета:</b>',
                 'date' => '📅 <b>Дата:</b>',
                 'project' => '📂 <b>Проект:</b>',
                 'blogger' => '👤 <b>Блогер:</b>',
@@ -160,6 +157,8 @@ class TelegramService
             ],
             'en' => [
                 'new_report' => '📝 <b>New Report Created!</b>',
+                'updated_report' => '✏️ <b>Report Updated!</b>',
+                'report_id' => '🆔 <b>Report ID:</b>',
                 'date' => '📅 <b>Date:</b>',
                 'project' => '📂 <b>Project:</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
@@ -173,6 +172,8 @@ class TelegramService
             ],
             'uz' => [
                 'new_report' => '📝 <b>Yangi hisobot yaratildi!</b>',
+                'updated_report' => '✏️ <b>Hisobot yangilandi!</b>',
+                'report_id' => '🆔 <b>Hisobot IDsi:</b>',
                 'date' => '📅 <b>Sana:</b>',
                 'project' => '📂 <b>Loyiha:</b>',
                 'blogger' => '👤 <b>Blogger:</b>',
@@ -208,13 +209,18 @@ class TelegramService
         }
 
         $projectName = $report->project?->name ?? '—';
-        $threadId = self::parseThreadId($report->project?->telegram_thread_id ?? null);
+        $title = $isUpdate ? $t['updated_report'] : $t['new_report'];
 
-        $text = "{$t['new_report']}\n\n";
-        if ($createdByName) {
-            $text .= "{$t['created_by']} " . self::escape($createdByName) . "\n";
+        $text = "{$title}\n\n";
+        if (!empty($report->id)) {
+            $text .= "{$t['report_id']} #{$report->id}\n";
         }
-        $text .= "{$t['date']} " . ($report->date ? $report->date->format('Y-m-d') : '—') . "\n";
+        $creator = $createdByName ?: $report->created_by;
+        if ($creator) {
+            $text .= "{$t['created_by']} " . self::escape($creator) . "\n";
+        }
+        $dateStr = $report->date ? (\is_string($report->date) ? substr($report->date, 0, 10) : $report->date->format('Y-m-d')) : '—';
+        $text .= "{$t['date']} {$dateStr}\n";
         $text .= "{$t['project']} " . self::escape($projectName) . "\n";
 
         if ($report->payment_type !== 'other') {
@@ -242,6 +248,23 @@ class TelegramService
             $text .= " - {$paymentTypeSuffix}";
         }
         $text .= "\n";
+
+        if (!empty($report->comments)) {
+            $text .= "{$t['comments']} " . self::escape($report->comments) . "\n";
+        }
+
+        return $text;
+    }
+
+    public static function sendReportNotification($report, $receiptBase64 = null, $lang = 'uz', $createdByName = null)
+    {
+        $chatId = config('services.telegram.reports_chat_id');
+        if (!$chatId) {
+            $chatId = config('services.telegram.chat_id'); // fallback
+        }
+
+        $text = self::buildReportNotificationText($report, $lang, $createdByName, false);
+        $threadId = self::parseThreadId($report->project?->telegram_thread_id ?? null);
 
         $receiptList = [];
         if (is_array($receiptBase64)) {
@@ -463,6 +486,210 @@ class TelegramService
             } catch (\Throwable $e) {
                 Log::error("Failed to save telegram_message_url for report #{$report->id}: " . $e->getMessage());
             }
+        }
+    }
+
+    public static function extractMessageIdentifiers($report): ?array
+    {
+        if (!$report) {
+            return null;
+        }
+
+        $url = is_string($report) ? $report : ($report->telegram_message_url ?? null);
+        if (empty($url)) {
+            return null;
+        }
+
+        $url = trim($url);
+
+        // Pattern 1: https://t.me/c/4329107459/123
+        if (preg_match('#(?:https?://)?t\.me/c/(\d+)/(\d+)#', $url, $matches)) {
+            $cleanChatId = $matches[1];
+            $messageId = (int)$matches[2];
+
+            $chatId = '-100' . $cleanChatId;
+
+            $defaultChatId = (string)(config('services.telegram.reports_chat_id') ?: config('services.telegram.chat_id'));
+            if ($defaultChatId) {
+                $cleanDefault = ltrim($defaultChatId, '-');
+                if (str_starts_with($cleanDefault, '100')) {
+                    $cleanDefault = substr($cleanDefault, 3);
+                }
+                if ($cleanDefault === $cleanChatId) {
+                    $chatId = $defaultChatId;
+                }
+            }
+
+            return [
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+            ];
+        }
+
+        // Pattern 2: https://t.me/channel_name/123
+        if (preg_match('#(?:https?://)?t\.me/([a-zA-Z0-9_]+)/(\d+)#', $url, $matches)) {
+            return [
+                'chat_id' => '@' . $matches[1],
+                'message_id' => (int)$matches[2],
+            ];
+        }
+
+        return null;
+    }
+
+    public static function deleteReportNotification($report): bool
+    {
+        $identifiers = self::extractMessageIdentifiers($report);
+        if (!$identifiers) {
+            Log::info("deleteReportNotification: No telegram message identifiers found for report #" . ($report->id ?? 'unknown'));
+            return false;
+        }
+
+        $token = config('services.telegram.bot_token');
+        if (!$token) {
+            Log::warning("deleteReportNotification: Telegram Bot Token not set.");
+            return false;
+        }
+
+        try {
+            $chatId = $identifiers['chat_id'];
+            $messageId = $identifiers['message_id'];
+
+            $response = Http::post("https://api.telegram.org/bot{$token}/deleteMessage", [
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+            ]);
+
+            if ($response->successful()) {
+                Log::info("Deleted telegram message {$messageId} in chat {$chatId} for report #" . ($report->id ?? 'unknown'));
+                return true;
+            }
+
+            $body = $response->body();
+            $resData = json_decode($body, true);
+            if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                $newChatId = $resData['parameters']['migrate_to_chat_id'];
+                $response2 = Http::post("https://api.telegram.org/bot{$token}/deleteMessage", [
+                    'chat_id' => $newChatId,
+                    'message_id' => $messageId,
+                ]);
+                if ($response2->successful() || str_contains($response2->body(), 'message to delete not found')) {
+                    return true;
+                }
+            }
+
+            if (str_contains($body, 'message to delete not found')) {
+                Log::info("Telegram message {$messageId} in chat {$chatId} was already deleted.");
+                return true;
+            }
+
+            Log::warning("Failed to delete telegram message {$messageId} in chat {$chatId}: {$body}");
+            return false;
+        } catch (\Throwable $e) {
+            Log::error("Telegram deleteReportNotification exception: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    public static function updateReportNotification($report, $lang = 'uz', $createdByName = null): bool
+    {
+        $identifiers = self::extractMessageIdentifiers($report);
+        if (!$identifiers) {
+            Log::info("updateReportNotification: No telegram message identifiers found for report #" . ($report->id ?? 'unknown'));
+            return false;
+        }
+
+        $token = config('services.telegram.bot_token');
+        if (!$token) {
+            Log::warning("updateReportNotification: Telegram Bot Token not set.");
+            return false;
+        }
+
+        if (!$report->relationLoaded('project')) {
+            $report->load('project');
+        }
+
+        $text = self::buildReportNotificationText($report, $lang, $createdByName, true);
+        $chatId = $identifiers['chat_id'];
+        $messageId = $identifiers['message_id'];
+
+        $safeCaption = mb_strlen($text) > 1024 ? mb_substr(strip_tags($text), 0, 1020) . '...' : $text;
+
+        try {
+            // First attempt: editMessageCaption (for photo/document media messages)
+            $response = Http::post("https://api.telegram.org/bot{$token}/editMessageCaption", [
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+                'caption' => $safeCaption,
+                'parse_mode' => 'HTML',
+            ]);
+
+            if ($response->successful()) {
+                Log::info("Updated Telegram message caption for report #{$report->id}");
+                return true;
+            }
+
+            $body = $response->body();
+            if (str_contains($body, 'message is not modified')) {
+                return true;
+            }
+
+            $resData = json_decode($body, true);
+            if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                $chatId = $resData['parameters']['migrate_to_chat_id'];
+                $response = Http::post("https://api.telegram.org/bot{$token}/editMessageCaption", [
+                    'chat_id' => $chatId,
+                    'message_id' => $messageId,
+                    'caption' => $safeCaption,
+                    'parse_mode' => 'HTML',
+                ]);
+                if ($response->successful() || str_contains($response->body(), 'message is not modified')) {
+                    return true;
+                }
+                $body = $response->body();
+            }
+
+            if (str_contains($body, 'can\'t parse entities') || str_contains($body, 'failed to find end tag')) {
+                $retryCaption = Http::post("https://api.telegram.org/bot{$token}/editMessageCaption", [
+                    'chat_id' => $chatId,
+                    'message_id' => $messageId,
+                    'caption' => strip_tags($safeCaption),
+                ]);
+                if ($retryCaption->successful() || str_contains($retryCaption->body(), 'message is not modified')) {
+                    return true;
+                }
+            }
+
+            // Second attempt: editMessageText (for plain text messages)
+            $textResponse = Http::post("https://api.telegram.org/bot{$token}/editMessageText", [
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+                'text' => $text,
+                'parse_mode' => 'HTML',
+            ]);
+
+            if ($textResponse->successful() || str_contains($textResponse->body(), 'message is not modified')) {
+                Log::info("Updated Telegram message text for report #{$report->id}");
+                return true;
+            }
+
+            $textBody = $textResponse->body();
+            if (str_contains($textBody, 'can\'t parse entities') || str_contains($textBody, 'failed to find end tag')) {
+                $retryText = Http::post("https://api.telegram.org/bot{$token}/editMessageText", [
+                    'chat_id' => $chatId,
+                    'message_id' => $messageId,
+                    'text' => strip_tags($text),
+                ]);
+                if ($retryText->successful() || str_contains($retryText->body(), 'message is not modified')) {
+                    return true;
+                }
+            }
+
+            Log::warning("Failed to update telegram message for report #{$report->id}: Caption error: {$body} | Text error: {$textBody}");
+            return false;
+        } catch (\Throwable $e) {
+            Log::error("Telegram updateReportNotification Exception for report #{$report->id}: " . $e->getMessage());
+            return false;
         }
     }
 

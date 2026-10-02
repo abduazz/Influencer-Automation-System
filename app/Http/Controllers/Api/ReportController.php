@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Report;
 use App\Models\Integration;
+use App\Services\TelegramService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -375,12 +376,148 @@ class ReportController extends Controller
         }
     }
 
+    public function update(Request $request, Report $report)
+    {
+        try {
+            $request->validate([
+                'paymentType' => 'nullable|string|in:prepaid,full,other,remaining',
+                'date' => 'sometimes|required|date',
+                'projectId' => 'nullable|exists:projects,id',
+                'destination' => 'nullable|string|max:255',
+                'channelBlogger' => 'nullable|string|max:255',
+                'bloggerPageLink' => 'nullable|string',
+                'platform' => 'nullable|in:Telegram,Instagram,YouTube,MAX,TikTok',
+                'slotsCount' => 'nullable|integer|min:0',
+                'paidSlotsCount' => 'nullable|integer|min:0',
+                'pricePerSlot' => 'nullable|numeric|min:0',
+                'comments' => 'nullable|string',
+                'slotsConfig' => 'nullable|array',
+                'amount' => 'nullable|numeric|min:0',
+                'receipt' => 'nullable|string',
+                'receipts' => 'nullable|array',
+            ]);
+
+            $oldProject = $report->project_id;
+            $oldPlatform = $report->platform;
+            $oldBlogger = $report->channel_blogger;
+
+            $updateData = [];
+            if ($request->has('date')) $updateData['date'] = $request->date;
+            if ($request->has('projectId')) $updateData['project_id'] = $request->projectId ?: null;
+            if ($request->has('destination')) $updateData['destination'] = $request->destination ?: null;
+            if ($request->has('comments')) $updateData['comments'] = $request->comments;
+            if ($request->has('channelBlogger')) $updateData['channel_blogger'] = $request->channelBlogger;
+            if ($request->has('bloggerPageLink')) $updateData['blogger_page_link'] = $request->bloggerPageLink;
+            if ($request->has('platform')) $updateData['platform'] = $request->platform;
+            if ($request->has('slotsCount')) $updateData['slots_count'] = $request->slotsCount;
+            if ($request->has('paidSlotsCount')) $updateData['paid_slots_count'] = $request->paidSlotsCount;
+            if ($request->has('pricePerSlot')) $updateData['price_per_slot'] = $request->pricePerSlot;
+            if ($request->has('slotsConfig')) $updateData['slots_config'] = $request->slotsConfig;
+            if ($request->has('paymentType')) $updateData['payment_type'] = $request->paymentType;
+
+            if ($request->has('receipts') && is_array($request->input('receipts'))) {
+                $cleanReceipts = array_values(array_filter($request->input('receipts'), fn($r) => !empty($r) && is_string($r)));
+                if (count($cleanReceipts) === 1) {
+                    $updateData['receipt'] = $cleanReceipts[0];
+                } elseif (count($cleanReceipts) > 1) {
+                    $updateData['receipt'] = json_encode($cleanReceipts);
+                } else {
+                    $updateData['receipt'] = null;
+                }
+            } elseif ($request->has('receipt')) {
+                $updateData['receipt'] = $request->input('receipt');
+            }
+
+            if ($report->payment_type === 'other' || $request->input('paymentType') === 'other') {
+                if ($request->has('amount')) {
+                    $amt = (float)$request->amount;
+                    $updateData['total_amount'] = $amt;
+                    $updateData['paid_amount'] = $amt;
+                    $updateData['price_per_slot'] = $amt;
+                }
+            } else {
+                $slots = $request->input('slotsCount', $report->slots_count) ?? 1;
+                $price = $request->input('pricePerSlot', $report->price_per_slot) ?? 0;
+                $paidSlots = $request->input('paidSlotsCount', $report->paid_slots_count) ?? $slots;
+                if ($request->has('pricePerSlot') || $request->has('slotsCount')) {
+                    $updateData['total_amount'] = $slots * $price;
+                }
+                if ($request->has('paidSlotsCount') || $request->has('pricePerSlot')) {
+                    $updateData['paid_amount'] = $paidSlots * $price;
+                }
+            }
+
+            $report->update($updateData);
+            $report->refresh();
+
+            // Sync integration if applicable
+            if ($report->payment_type !== 'other') {
+                $targetProject = $report->project_id ?: $oldProject;
+                $targetPlatform = $report->platform ?: $oldPlatform;
+                $targetBlogger = $report->channel_blogger ?: $oldBlogger;
+                if ($targetProject && $targetPlatform && $targetBlogger) {
+                    $cleanTarget = strtolower(trim(str_replace(['@', '#'], '', $targetBlogger)));
+                    $integration = Integration::where('project_id', $targetProject)
+                        ->where('platform', $targetPlatform)
+                        ->whereRaw('LOWER(blogger_name) = ?', [$cleanTarget])
+                        ->first();
+                    if ($integration) {
+                        $integration->syncWithReports();
+                    }
+                }
+            }
+
+            // Sync Telegram message if URL exists
+            $lang = $request->input('lang', 'uz');
+            dispatch(function () use ($report, $lang) {
+                try {
+                    TelegramService::updateReportNotification($report, $lang);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning("Failed to update Telegram report notification: " . $e->getMessage());
+                }
+            })->afterResponse();
+
+            return response()->json([
+                'id' => (string) $report->id,
+                'date' => $report->date->format('Y-m-d'),
+                'projectId' => $report->project_id ? (string) $report->project_id : null,
+                'projectName' => $report->project?->name ?? '',
+                'destination' => $report->destination,
+                'channelBlogger' => $report->channel_blogger,
+                'bloggerPageLink' => $report->blogger_page_link,
+                'platform' => $report->platform,
+                'slotsCount' => $report->slots_count,
+                'paidSlotsCount' => $report->paid_slots_count,
+                'pricePerSlot' => (float) $report->price_per_slot,
+                'paidAmount' => (float) $report->paid_amount,
+                'totalAmount' => (float) $report->total_amount,
+                'comments' => $report->comments ?? '',
+                'slotsConfig' => $report->slots_config ?? [],
+                'paymentType' => $report->payment_type,
+                'receipt' => $report->receipt,
+                'receipts' => $report->receipts,
+                'telegramMessageUrl' => $report->telegram_message_url ?? null,
+                'createdBy' => $report->created_by,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Report update error: ' . $e->getMessage());
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
     public function destroy(Report $report)
     {
         $projectId = $report->project_id;
         $platform = $report->platform;
         $channelBlogger = $report->channel_blogger;
         $paymentType = $report->payment_type;
+
+        // Delete telegram notification if exists
+        try {
+            TelegramService::deleteReportNotification($report);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to delete telegram message for report #{$report->id}: " . $e->getMessage());
+        }
 
         $report->delete();
 

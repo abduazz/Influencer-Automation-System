@@ -133,6 +133,18 @@ export function createReport(data: Omit<Report, 'id' | 'totalAmount' | 'paidAmou
     body: JSON.stringify(data),
   });
 }
+export function updateReport(
+  id: string,
+  data: Partial<Report> & { amount?: number },
+  userEmail?: string
+): Promise<Report> {
+  const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
+  return request<Report>(`/api/reports/${id}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(data),
+  });
+}
 export function deleteReport(id: string): Promise<void> {
   return request<void>(`/api/reports/${id}`, { method: 'DELETE' });
 }

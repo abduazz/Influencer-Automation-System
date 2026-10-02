@@ -41,6 +41,7 @@ import {
   deleteIntegration,
   fetchReports,
   createReport,
+  updateReport,
   deleteReport,
   fetchSubmissions,
   createSubmission,
@@ -331,11 +332,30 @@ export default function App() {
   const handleEditIntegration = async (id: string, updatedFields: Partial<Integration>) => {
     const integration = await updateIntegration(id, updatedFields, currentUserEmail || undefined);
     setIntegrations((prev) => prev.map(item => item.id === id ? { ...item, ...integration } : item));
+    const [freshReports, freshIntegrations] = await Promise.all([
+      fetchReports(),
+      fetchIntegrations()
+    ]);
+    setReports(freshReports);
+    setIntegrations(freshIntegrations);
   };
 
   const handleDeleteIntegration = async (id: string) => {
     await deleteIntegration(id);
     setIntegrations((prev) => prev.filter(i => i.id !== id));
+    const [freshReports, freshIntegrations] = await Promise.all([
+      fetchReports(),
+      fetchIntegrations()
+    ]);
+    setReports(freshReports);
+    setIntegrations(freshIntegrations);
+  };
+
+  const handleEditReport = async (id: string, updatedFields: Partial<Report> & { amount?: number }) => {
+    const updated = await updateReport(id, updatedFields, currentUserEmail || undefined);
+    setReports((prev) => prev.map(r => r.id === id ? { ...r, ...updated } : r));
+    const freshIntegrations = await fetchIntegrations();
+    setIntegrations(freshIntegrations);
   };
 
   const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'> & { integrationId?: string; createdBy?: string }) => {
@@ -378,6 +398,47 @@ export default function App() {
       }
     }
 
+    if (!requisitesNote && bloggerRequisitesList && deal.bloggerName) {
+      const clean = deal.bloggerName.replace(/^[@#]/, '').trim().toLowerCase();
+      const br = bloggerRequisitesList.find(r => 
+        (r.integrationId && String(r.integrationId) === String(deal.id)) ||
+        (r.bloggerName && r.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean) ||
+        (r.channelName && r.channelName.replace(/^[@#]/, '').trim().toLowerCase() === clean)
+      );
+      if (br) {
+        const parts: string[] = [];
+        if (br.fullName) parts.push(br.fullName);
+        if (br.cardNumberOrIban) parts.push(br.cardNumberOrIban);
+        if (br.bankName) parts.push(br.bankName);
+        if (br.pinflOrTin) parts.push(`ПИНФЛ/ИНН: ${br.pinflOrTin}`);
+        if (parts.length > 0) {
+          requisitesNote = `Реквизиты: ${parts.join(', ')}`;
+        }
+      }
+    }
+
+    let bloggerPageLink = deal.bloggerPageLink || '';
+    if (!bloggerPageLink && deal.bloggerName) {
+      const clean = deal.bloggerName.replace(/^[@#]/, '').trim().toLowerCase();
+      const otherInt = integrations.find(i => 
+        i.bloggerName && i.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean && i.bloggerPageLink
+      );
+      if (otherInt?.bloggerPageLink) {
+        bloggerPageLink = otherInt.bloggerPageLink;
+      } else {
+        const rep = (reports || []).slice().reverse().find(r => 
+          r.channelBlogger && r.channelBlogger.replace(/^[@#]/, '').trim().toLowerCase() === clean && r.bloggerPageLink
+        );
+        if (rep?.bloggerPageLink) {
+          bloggerPageLink = rep.bloggerPageLink;
+        } else if (deal.platform === 'Telegram') {
+          bloggerPageLink = `https://t.me/${clean}`;
+        } else if (deal.platform === 'Instagram') {
+          bloggerPageLink = `https://instagram.com/${clean}`;
+        }
+      }
+    }
+
     setReportsInitialState({
       projectId: deal.projectId,
       bloggerName: deal.bloggerName,
@@ -386,7 +447,7 @@ export default function App() {
       pricePerSlot: deal.pricePerSlot,
       slotsCount: deal.slotsCount || 5,
       paidSlotsCount: deal.paidSlotsCount ?? Math.ceil((deal.slotsCount || 5) / 2),
-      bloggerPageLink: deal.bloggerPageLink,
+      bloggerPageLink,
       destination: deal.referralLink || '',
       comments: requisitesNote,
       totalAmount: deal.totalAmount || (deal.pricePerSlot * (deal.slotsCount || 1)),
@@ -400,6 +461,8 @@ export default function App() {
     if (!window.confirm(lang === 'ru' ? 'Вы уверены, что хотите удалить этот отчет?' : lang === 'uz' ? 'Ushbu hisobotni o\'chirishni xohlaysizmi?' : 'Are you sure you want to delete this report?')) return;
     await deleteReport(id);
     setReports((prev) => prev.filter((r) => r.id !== id));
+    const freshIntegrations = await fetchIntegrations();
+    setIntegrations(freshIntegrations);
   };
 
   const handleAddSubmission = async (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => {
@@ -850,13 +913,27 @@ export default function App() {
                   userRole={currentUserRole}
                   currentUserName={currentUserName}
                   currentUserEmail={currentUserEmail}
-                  onNavigateToReports={(projectId, bloggerName, paymentType) => {
-                    setReportsInitialState({
-                      projectId,
-                      bloggerName,
-                      paymentType
-                    });
-                    setActiveTab('reports');
+                  onNavigateToReports={(dealOrProjId: any, maybeBloggerName?: string, maybePaymentType?: any) => {
+                    if (dealOrProjId && typeof dealOrProjId === 'object' && dealOrProjId.bloggerName) {
+                      handleNavigateFromKanbanToReports(dealOrProjId);
+                    } else {
+                      const blogger = maybeBloggerName || '';
+                      const clean = blogger.replace(/^[@#]/, '').trim().toLowerCase();
+                      const matchedInt = integrations.find(i => 
+                        String(i.projectId) === String(dealOrProjId) && 
+                        i.bloggerName && i.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean
+                      );
+                      if (matchedInt) {
+                        handleNavigateFromKanbanToReports(matchedInt);
+                      } else {
+                        setReportsInitialState({
+                          projectId: dealOrProjId,
+                          bloggerName: maybeBloggerName,
+                          paymentType: maybePaymentType || 'remaining'
+                        });
+                        setActiveTab('reports');
+                      }
+                    }
                   }}
                 />
               )
@@ -878,6 +955,7 @@ export default function App() {
                 projects={projects}
                 integrations={integrations}
                 reports={reports}
+                bloggerRequisitesList={bloggerRequisitesList}
                 onAddReport={handleAddReport}
                 lang={lang}
                 userRole={currentUserRole}
@@ -907,7 +985,23 @@ export default function App() {
                 reports={reports.filter((r) => r.paymentType !== 'other')}
                 lang={lang}
                 userRole={currentUserRole}
+                currentUserName={currentUserName}
+                currentUserEmail={currentUserEmail}
                 onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
+                onEditIntegration={handleEditIntegration}
+                onDeleteIntegration={currentUserRole === 'super_admin' ? handleDeleteIntegration : undefined}
+                onEditReport={handleEditReport}
+                title={translations[lang].reportsListTab || translations[lang].pageReportsFeed || (lang === 'ru' ? 'Список отчетов' : lang === 'uz' ? 'Hisobotlar ro‘yxati' : 'Reports List')}
+                description={
+                  lang === 'ru' ? 'Просматривайте все отчеты по блогерам и интеграциям.' :
+                  lang === 'uz' ? 'Barcha bloggerlar va integratsiyalar bo‘yicha hisobotlarni ko‘ring.' :
+                  'View all reports on bloggers and integrations.'
+                }
+                onNavigateToOtherExpenses={
+                  currentUserRole !== 'product_manager' && currentUserRole !== 'executive' && hasPageAccess('other_expenses')
+                    ? () => setActiveTab('other_expenses')
+                    : undefined
+                }
               />
             )}
 
@@ -918,13 +1012,19 @@ export default function App() {
                 reports={reports.filter((r) => r.paymentType === 'other')}
                 lang={lang}
                 userRole={currentUserRole}
+                currentUserName={currentUserName}
+                currentUserEmail={currentUserEmail}
                 onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
+                onEditIntegration={handleEditIntegration}
+                onDeleteIntegration={currentUserRole === 'super_admin' ? handleDeleteIntegration : undefined}
+                onEditReport={handleEditReport}
                 title={translations[lang].otherExpensesTab}
                 description={
                   lang === 'ru' ? 'Просматривайте все созданные прочие расходы.' : 
                   lang === 'uz' ? 'Barcha yaratilgan boshqa xarajatlarni ko‘ring.' : 
                   'View all created other expenses.'
                 }
+                onNavigateToReportsFeed={() => setActiveTab('reports_feed')}
               />
             )}
 
@@ -1055,21 +1155,6 @@ export default function App() {
                 <FileText className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
                   {lang === 'ru' ? 'Лента' : lang === 'uz' ? 'Lenta' : 'Feed'}
-                </span>
-              </button>
-            )}
-
-            {/* Other Expenses Tab */}
-            {currentUserRole !== 'product_manager' && hasPageAccess('other_expenses') && (
-              <button
-                onClick={() => setActiveTab('other_expenses')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'other_expenses' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
-              >
-                <Receipt className="w-5 h-5" />
-                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
-                  {lang === 'ru' ? 'Расходы' : lang === 'uz' ? 'Xarajat' : 'Expenses'}
                 </span>
               </button>
             )}

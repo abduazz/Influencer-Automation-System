@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Integration;
+use App\Models\Report;
 use App\Services\InstagramApiService;
+use App\Services\TelegramService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -176,7 +178,48 @@ class IntegrationController extends Controller
             $updateData['subscribers_history'] = $request->subscribersHistory;
         }
 
+        $oldBloggerName = $integration->blogger_name;
+        $oldPlatform = $integration->platform;
+        $oldProjectId = $integration->project_id;
+
         $integration->update($updateData);
+
+        // Sync changes to associated reports if key fields changed
+        if ($oldBloggerName && $oldProjectId) {
+            $cleanOld = strtolower(trim(str_replace(['@', '#'], '', $oldBloggerName)));
+            $reportsToUpdate = Report::where('project_id', $oldProjectId)
+                ->where('platform', $oldPlatform)
+                ->get()
+                ->filter(function ($r) use ($cleanOld) {
+                    if (!$r->channel_blogger) return false;
+                    return strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger))) === $cleanOld;
+                });
+
+            foreach ($reportsToUpdate as $rep) {
+                $repUpdate = [];
+                if (isset($updateData['blogger_name'])) $repUpdate['channel_blogger'] = $updateData['blogger_name'];
+                if (isset($updateData['platform'])) $repUpdate['platform'] = $updateData['platform'];
+                if (isset($updateData['project_id'])) $repUpdate['project_id'] = $updateData['project_id'];
+                if (isset($updateData['blogger_page_link'])) $repUpdate['blogger_page_link'] = $updateData['blogger_page_link'];
+                if (isset($updateData['referral_link'])) $repUpdate['destination'] = $updateData['referral_link'];
+                if (isset($updateData['price_per_slot'])) {
+                    $repUpdate['price_per_slot'] = $updateData['price_per_slot'];
+                    $repUpdate['total_amount'] = ($rep->slots_count ?: 1) * $updateData['price_per_slot'];
+                    $repUpdate['paid_amount'] = ($rep->paid_slots_count ?: $rep->slots_count ?: 1) * $updateData['price_per_slot'];
+                }
+                if (!empty($repUpdate)) {
+                    $rep->update($repUpdate);
+                    $rep->refresh();
+                    dispatch(function () use ($rep) {
+                        try {
+                            TelegramService::updateReportNotification($rep);
+                        } catch (\Throwable $e) {
+                            Log::warning("Failed to update telegram message for report #{$rep->id}: " . $e->getMessage());
+                        }
+                    })->afterResponse();
+                }
+            }
+        }
 
         return response()->json($this->formatIntegration($integration));
     }
@@ -193,6 +236,29 @@ class IntegrationController extends Controller
 
     public function destroy(Integration $integration)
     {
+        $projectId = $integration->project_id;
+        $platform = $integration->platform;
+        $cleanBloggerName = strtolower(trim(str_replace(['@', '#'], '', $integration->blogger_name)));
+
+        if ($projectId && $cleanBloggerName !== '') {
+            $reportsToDelete = Report::where('project_id', $projectId)
+                ->where('platform', $platform)
+                ->get()
+                ->filter(function ($r) use ($cleanBloggerName) {
+                    if (!$r->channel_blogger) return false;
+                    return strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger))) === $cleanBloggerName;
+                });
+
+            foreach ($reportsToDelete as $rep) {
+                try {
+                    TelegramService::deleteReportNotification($rep);
+                } catch (\Throwable $e) {
+                    Log::warning("Failed to delete telegram message for report #{$rep->id}: " . $e->getMessage());
+                }
+                $rep->delete();
+            }
+        }
+
         $integration->delete();
         return response()->noContent();
     }

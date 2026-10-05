@@ -181,8 +181,10 @@ export default function BloggerCabinetView({
       const key = `slot_${i}`;
       initialData[key] = submittedData[key] || '';
       
-      // If it's a file submission (visual simulator), set a fake preview URL
-      if (submittedData[key] && !submittedData[key].startsWith('http')) {
+      // If it's a base64 image submission, load it directly into previews; otherwise mock preview
+      if (submittedData[key] && submittedData[key].startsWith('data:image/')) {
+        initialPreviews[key] = submittedData[key];
+      } else if (submittedData[key] && !submittedData[key].startsWith('http')) {
         initialPreviews[key] = 'mock-file-url';
       }
     }
@@ -244,12 +246,25 @@ export default function BloggerCabinetView({
     }));
   };
 
-  const validateSlotUrl = (url: string, platform: string): { valid: boolean; errorKey?: 'cabinetUrlForbidden' | 'invalidPlatformUrl' } => {
+  const validateSlotUrl = (
+    url: string, 
+    platform: string, 
+    format?: string
+  ): { valid: boolean; errorKey?: 'cabinetUrlForbidden' | 'invalidPlatformUrl' | 'screenshotNotAllowed' } => {
     if (!url || typeof url !== 'string' || !url.trim()) {
       return { valid: true };
     }
 
+    const isStoriesScreenshot = platform === 'Instagram' && (format?.toLowerCase() === 'stories');
+
     if (url.startsWith('data:image/')) {
+      if (isStoriesScreenshot) {
+        return { valid: true };
+      }
+      return { valid: false, errorKey: 'screenshotNotAllowed' };
+    }
+
+    if (isStoriesScreenshot && url.startsWith('mock')) {
       return { valid: true };
     }
 
@@ -321,10 +336,19 @@ export default function BloggerCabinetView({
       if (!submittedData[key] && val && val.trim() !== '') {
         const slotConfig = selectedIntegration?.slotsConfig?.[idx];
         const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
-        const validation = validateSlotUrl(val, slotPlatform);
+        const slotFormat = slotConfig ? slotConfig.format : (
+          activePlatform === 'Instagram' ? 'Stories' :
+          activePlatform === 'Telegram' ? 'Post' :
+          activePlatform === 'YouTube' ? 'Shorts' :
+          activePlatform === 'TikTok' ? 'VideoPost' :
+          'Post'
+        );
+        const validation = validateSlotUrl(val, slotPlatform, slotFormat);
         if (!validation.valid) {
           const errorMsg = validation.errorKey === 'cabinetUrlForbidden'
             ? `Slot #${slotNum} (${slotPlatform}): ${t.cabinetUrlForbidden}`
+            : validation.errorKey === 'screenshotNotAllowed'
+            ? `Slot #${slotNum} (${slotPlatform} - ${slotFormat}): ${(t as any).screenshotNotAllowed?.replace('{platform}', slotPlatform).replace('{format}', slotFormat) || 'Screenshots are only allowed for Instagram Stories. Please provide a link.'}`
             : `Slot #${slotNum} (${slotPlatform}): ${t.invalidPlatformUrl.replace('{platform}', slotPlatform)}`;
           alert(errorMsg);
           return;
@@ -689,61 +713,88 @@ export default function BloggerCabinetView({
                           ) : (
                             /* URL TEXT INPUT FIELD FOR ALL POSTS/REELS/RELEASES (INCLUDING INSTAGRAM REELS/POSTS) */
                             <div>
-                              <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                  <Link className="w-3.5 h-3.5 text-neutral-400" />
-                                </div>
-                                {(() => {
-                                  const slotVal = formData[slotKey] || '';
-                                  const isInvalid = !isSlotSubmitted && slotVal.trim() !== '' && !validateSlotUrl(slotVal, slotPlatform).valid;
-                                  return (
-                                    <input
-                                      type="text"
-                                      disabled={isSlotSubmitted}
-                                      placeholder={
-                                        slotPlatform === 'Instagram'
-                                          ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
-                                          : slotPlatform === 'Telegram' 
-                                          ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
-                                          : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
+                              {isSlotSubmitted && slotVal.startsWith('data:image/') ? (
+                                <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl select-none text-left">
+                                  <div 
+                                    className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 cursor-pointer hover:opacity-80 transition flex items-center justify-center"
+                                    onClick={() => {
+                                      const win = window.open();
+                                      if (win) {
+                                        win.document.write(`<img src="${slotVal}" style="max-width:100%; height:auto;" />`);
                                       }
-                                      value={slotVal}
-                                      onChange={(e) => handleLinkChange(slotKey, e.target.value)}
-                                      className={`w-full pl-9 pr-10 py-1.5 border focus:outline-none rounded-md text-xs transition ${
-                                        isSlotSubmitted 
-                                          ? 'bg-neutral-100 border-neutral-200 text-neutral-400 font-mono font-bold select-all' 
-                                          : isInvalid
-                                          ? 'bg-red-50 border-red-500 text-red-900 focus:border-red-600'
-                                          : 'bg-white border-neutral-200 text-black font-medium focus:border-black'
-                                      }`}
-                                    />
-                                  );
-                                })()}
-                                {isSlotSubmitted && (
-                                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                    }}
+                                    title={lang === 'ru' ? 'Нажмите, чтобы открыть фото' : lang === 'uz' ? 'Rasmni ochish uchun bosing' : 'Click to view image'}
+                                  >
+                                    <img src={slotVal} alt="Screenshot" className="w-full h-full object-cover" />
                                   </div>
-                                )}
-                              </div>
-                              {(() => {
-                                const slotVal = formData[slotKey] || '';
-                                if (!isSlotSubmitted && slotVal.trim() !== '') {
-                                  const v = validateSlotUrl(slotVal, slotPlatform);
-                                  if (!v.valid) {
-                                    return (
-                                      <p className="text-[10px] font-bold text-red-600 mt-1 flex items-center gap-1">
-                                        <AlertCircle className="w-3 h-3 text-red-600 shrink-0" />
-                                        <span>
-                                          {v.errorKey === 'cabinetUrlForbidden'
-                                            ? t.cabinetUrlForbidden
-                                            : t.invalidPlatformUrl.replace('{platform}', slotPlatform)}
-                                        </span>
-                                      </p>
-                                    );
-                                  }
-                                }
-                                return null;
-                              })()}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[11px] font-bold text-amber-700 truncate">
+                                      {lang === 'ru' ? 'Скриншот-отчет' : lang === 'uz' ? 'Skrinshot-hisobot' : 'Screenshot report'}
+                                    </p>
+                                    <p className="text-[9px] text-emerald-600 font-extrabold uppercase">
+                                      ✓ {lang === 'ru' ? 'Отправлено' : lang === 'uz' ? 'Yuborilgan' : 'Submitted'}
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                      <Link className="w-3.5 h-3.5 text-neutral-400" />
+                                    </div>
+                                    {(() => {
+                                      const isInvalid = !isSlotSubmitted && slotVal.trim() !== '' && !validateSlotUrl(slotVal, slotPlatform, slotFormat).valid;
+                                      return (
+                                        <input
+                                          type="text"
+                                          disabled={isSlotSubmitted}
+                                          placeholder={
+                                            slotPlatform === 'Instagram'
+                                              ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
+                                              : slotPlatform === 'Telegram' 
+                                              ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
+                                              : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
+                                          }
+                                          value={slotVal}
+                                          onChange={(e) => handleLinkChange(slotKey, e.target.value)}
+                                          className={`w-full pl-9 pr-10 py-1.5 border focus:outline-none rounded-md text-xs transition ${
+                                            isSlotSubmitted 
+                                              ? 'bg-neutral-100 border-neutral-200 text-neutral-400 font-mono font-bold select-all' 
+                                              : isInvalid
+                                              ? 'bg-red-50 border-red-500 text-red-900 focus:border-red-600'
+                                              : 'bg-white border-neutral-200 text-black font-medium focus:border-black'
+                                          }`}
+                                        />
+                                      );
+                                    })()}
+                                    {isSlotSubmitted && (
+                                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                        <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  {(() => {
+                                    if (!isSlotSubmitted && slotVal.trim() !== '') {
+                                      const v = validateSlotUrl(slotVal, slotPlatform, slotFormat);
+                                      if (!v.valid) {
+                                        return (
+                                          <p className="text-[10px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                                            <AlertCircle className="w-3 h-3 text-red-600 shrink-0" />
+                                            <span>
+                                              {v.errorKey === 'cabinetUrlForbidden'
+                                                ? t.cabinetUrlForbidden
+                                                : v.errorKey === 'screenshotNotAllowed'
+                                                ? ((t as any).screenshotNotAllowed?.replace('{platform}', slotPlatform).replace('{format}', slotFormat) || 'Screenshots are only allowed for Stories. Please provide a link.')
+                                                : t.invalidPlatformUrl.replace('{platform}', slotPlatform)}
+                                            </span>
+                                          </p>
+                                        );
+                                      }
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              )}
                             </div>
 
                           )}

@@ -60,13 +60,59 @@ class BloggerSubmissionController extends Controller
         $appHost = strtolower(parse_url(config('app.url', ''), PHP_URL_HOST) ?? '');
 
         foreach ($submittedData as $key => $val) {
-            if (!is_string($val) || trim($val) === '' || str_starts_with($val, 'data:image/')) {
+            if (!is_string($val) || trim($val) === '') {
                 continue;
             }
 
-            $slotNum = (int) str_replace('slot_', '', $key);
-            $slotConfig = $integration->slots_config[$slotNum - 1] ?? null;
+            // Only validate slot values (ignore slot_X_submitted_at or other metadata)
+            if (!preg_match('/^slot_(\d+)$/', $key, $matchSlot)) {
+                continue;
+            }
+            $slotNum = (int) $matchSlot[1];
+
+            // Resolve slot configuration safely (supports both indexed and associative slot items)
+            $slotConfig = null;
+            if (!empty($integration->slots_config) && is_array($integration->slots_config)) {
+                foreach ($integration->slots_config as $cfg) {
+                    if (is_array($cfg) && isset($cfg['slot']) && (int) $cfg['slot'] === $slotNum) {
+                        $slotConfig = $cfg;
+                        break;
+                    }
+                }
+                if (!$slotConfig && isset($integration->slots_config[$slotNum - 1]) && is_array($integration->slots_config[$slotNum - 1])) {
+                    $slotConfig = $integration->slots_config[$slotNum - 1];
+                }
+            }
+
             $slotPlatform = $slotConfig['platform'] ?? $integration->platform ?? 'Instagram';
+            $slotFormat = $slotConfig['format'] ?? null;
+            if (!$slotFormat) {
+                $slotFormat = match ($slotPlatform) {
+                    'Instagram' => 'Stories',
+                    'Telegram' => 'Post',
+                    'YouTube' => 'Shorts',
+                    'TikTok' => 'VideoPost',
+                    default => 'Post',
+                };
+            }
+
+            $isStoriesScreenshot = ($slotPlatform === 'Instagram' && strtolower((string) $slotFormat) === 'stories');
+            $isBase64Image = str_starts_with($val, 'data:image/');
+
+            if ($isBase64Image) {
+                if ($isStoriesScreenshot) {
+                    continue; // Valid screenshot proof for Instagram Stories
+                }
+                return response()->json([
+                    'message' => "Slot #{$slotNum} ({$slotPlatform} - {$slotFormat}): Skrinshot faqat Instagram Stories uchun ruxsat etilgan. Ushbu slot uchun to'g'ridan-to'g'ri havola talab qilinadi!",
+                    'errors' => [$key => ["Skrinshot faqat Instagram Stories uchun ruxsat etilgan. Havola talab qilinadi."]]
+                ], 422);
+            }
+
+            // Mock file preview simulator for Stories
+            if ($isStoriesScreenshot && str_starts_with($val, 'mock')) {
+                continue;
+            }
 
             $trimmed = strtolower(trim($val));
 

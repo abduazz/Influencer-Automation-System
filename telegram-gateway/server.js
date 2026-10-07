@@ -21,8 +21,11 @@ const API_HASH = process.env.TELEGRAM_API_HASH || '22e627a9308edd6aabb1371ad5c00
 const PORT = parseInt(process.env.TELEGRAM_GATEWAY_PORT || '5005', 10);
 const CANDIDATE_WEBHOOK_URLS = [
   process.env.LARAVEL_GATEWAY_WEBHOOK_URL,
+  'http://127.0.0.1/api/telegram-gateway/webhook',
+  'http://localhost/api/telegram-gateway/webhook',
   'http://127.0.0.1:8000/api/telegram-gateway/webhook',
   'http://127.0.0.1:8001/api/telegram-gateway/webhook',
+  'http://127.0.0.1:8080/api/telegram-gateway/webhook',
 ].filter(Boolean);
 const SESSION_FILE = path.resolve(__dirname, '../storage/app/telegram_user_session.json');
 

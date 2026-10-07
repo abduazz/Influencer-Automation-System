@@ -35,7 +35,20 @@ class TelegramGatewayController extends Controller
         // Auto-launch the gateway microservice if it stopped
         $scriptPath = escapeshellarg(base_path('telegram-gateway/server.js'));
         $logPath = escapeshellarg(storage_path('logs/telegram-gateway.log'));
-        $nodePath = file_exists('/usr/local/bin/node') ? '/usr/local/bin/node' : 'node';
+        
+        $nodePath = 'node';
+        if (file_exists('/usr/bin/node')) {
+            $nodePath = '/usr/bin/node';
+        } elseif (file_exists('/usr/local/bin/node')) {
+            $nodePath = '/usr/local/bin/node';
+        } elseif (file_exists('/opt/homebrew/bin/node')) {
+            $nodePath = '/opt/homebrew/bin/node';
+        } else {
+            $which = @shell_exec('which node');
+            if ($which && trim($which)) {
+                $nodePath = trim($which);
+            }
+        }
 
         $cmd = "nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
         @exec($cmd);

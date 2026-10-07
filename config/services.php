@@ -37,6 +37,9 @@ return [
 
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'api_id' => env('TELEGRAM_API_ID'),
+        'api_hash' => env('TELEGRAM_API_HASH'),
+        'gateway_port' => env('TELEGRAM_GATEWAY_PORT', 5005),
         'reports_chat_id' => env('TELEGRAM_REPORTS_CHAT_ID') === '-4904683057' ? '-1004329107459' : (env('TELEGRAM_REPORTS_CHAT_ID') ?: '-1004329107459'),
         'submissions_chat_id' => env('TELEGRAM_SUBMISSIONS_CHAT_ID'),
         'requisites_chat_id' => env('TELEGRAM_REQUISITES_CHAT_ID', '-1004424306910'),

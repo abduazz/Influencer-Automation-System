@@ -11,6 +11,7 @@ import {
   BloggerSubmission
 } from '../data/mockData';
 import { getCabinetUrl } from '../utils/url';
+import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses, formatTelegramLink, formatTelegramHandle } from '../utils/platform';
 import { 
   Plus, 
@@ -102,6 +103,7 @@ export default function DashboardView({
   const [showAddIntegrationModal, setShowAddIntegrationModal] = useState(false);
   const [editingIntegration, setEditingIntegration] = useState<Integration | null>(null);
   const [selectedIntegrationForDetails, setSelectedIntegrationForDetails] = useState<Integration | null>(null);
+  const [copiedCabinetLink, setCopiedCabinetLink] = useState(false);
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
 
@@ -402,7 +404,7 @@ export default function DashboardView({
   const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto text-neutral-900">
+    <div className="space-y-4 w-full text-neutral-900">
       {/* Project Directory Header */}
       <div className="flex justify-between items-center border-b border-neutral-200 pb-5">
         <div className="flex items-center gap-2">
@@ -452,225 +454,262 @@ export default function DashboardView({
         )}
       </div>
 
-      {/* Date Filter Bar */}
+      {/* Unified Project Campaign Header (merged Campaign Details + Inline Date Filter) */}
       {selectedProject && (
-        <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs text-neutral-700">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-black shrink-0" />
-            <span className="font-bold text-black text-[11px] uppercase tracking-wider">
-              {lang === 'ru' ? 'Фильтр по дате начала' : lang === 'uz' ? 'Boshlanish sanasi bo‘yicha filtr' : 'Filter by Start Date'}
-            </span>
+        <div className="bg-white border border-neutral-200/90 rounded-2xl p-4 sm:p-5 shadow-xs text-left space-y-3.5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            {/* Left: Project title, description, actions */}
+            <div className="space-y-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.selectedCampaignDetails}</span>
+                {userRole === 'super_admin' && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setEditProjectName(selectedProject.name);
+                        setEditProjectDesc(selectedProject.description || '');
+                        setEditProjectThreadId(selectedProject.telegramThreadId || '');
+                        setEditProjectMonthlyLimit(selectedProject.monthlyLimit ? String(selectedProject.monthlyLimit) : '');
+                        setShowEditProjectModal(true);
+                      }}
+                      className="text-neutral-400 hover:text-black p-1 rounded transition duration-150 cursor-pointer"
+                      title={lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(t.confirmDeleteProject)) {
+                          onDeleteProject(selectedProject.id);
+                          if (projects.length > 1) {
+                            const remaining = projects.filter(p => p.id !== selectedProject.id);
+                            handleSelectProject(remaining[0].id);
+                          } else {
+                            handleSelectProject('');
+                          }
+                        }
+                      }}
+                      id={`delete-project-${selectedProject.id}`}
+                      className="text-neutral-400 hover:text-red-600 p-1 rounded transition duration-150 cursor-pointer"
+                      title={t.deleteProjectTooltip}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <h3 className="text-base font-black text-black tracking-tight">{selectedProject.name}</h3>
+              {selectedProject.description && (
+                <p className="text-xs text-neutral-500 max-w-3xl leading-relaxed">
+                  {selectedProject.description}
+                </p>
+              )}
+            </div>
+
+            {/* Right: Inline compact date filter */}
+            <div className="flex flex-wrap items-center gap-2 bg-neutral-50 border border-neutral-200/80 rounded-xl p-1.5 shrink-0 text-xs">
+              <div className="flex items-center gap-1.5 px-2 text-neutral-500">
+                <Calendar className="w-3.5 h-3.5 text-neutral-700" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
+                  {lang === 'ru' ? 'Период' : lang === 'uz' ? 'Davr' : 'Period'}:
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'С' : lang === 'uz' ? 'Dan' : 'From'}</span>
+                <input
+                  type="date"
+                  value={filterStartDate}
+                  onChange={(e) => setFilterStartDate(e.target.value)}
+                  className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'По' : lang === 'uz' ? 'Gacha' : 'To'}</span>
+                <input
+                  type="date"
+                  value={filterEndDate}
+                  onChange={(e) => setFilterEndDate(e.target.value)}
+                  className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
+                />
+              </div>
+              {(filterStartDate || filterEndDate) && (
+                <button
+                  onClick={() => {
+                    setFilterStartDate('');
+                    setFilterEndDate('');
+                  }}
+                  className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 font-bold text-[10px] uppercase rounded-lg transition border border-neutral-200 cursor-pointer shadow-2xs"
+                >
+                  {lang === 'ru' ? 'Сбросить' : lang === 'uz' ? 'Tozalash' : 'Reset'}
+                </button>
+              )}
+            </div>
           </div>
-          
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-neutral-400 font-bold uppercase text-[9px]">{lang === 'ru' ? 'С' : lang === 'uz' ? 'Dan' : 'From'}</span>
-              <input
-                type="date"
-                value={filterStartDate}
-                onChange={(e) => setFilterStartDate(e.target.value)}
-                className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-black transition duration-150 font-medium"
-              />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-neutral-400 font-bold uppercase text-[9px]">{lang === 'ru' ? 'По' : lang === 'uz' ? 'Gacha' : 'To'}</span>
-              <input
-                type="date"
-                value={filterEndDate}
-                onChange={(e) => setFilterEndDate(e.target.value)}
-                className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-black transition duration-150 font-medium"
-              />
-            </div>
-            {(filterStartDate || filterEndDate) && (
-              <button
-                onClick={() => {
-                  setFilterStartDate('');
-                  setFilterEndDate('');
-                }}
-                className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs rounded-lg transition border border-neutral-200 cursor-pointer"
+
+          {/* Row 2: Campaign Quick Spend & Limit Badges */}
+          <div className="flex flex-wrap items-center gap-2 pt-2.5 border-t border-neutral-100 text-[10px] font-bold uppercase tracking-wider">
+            <span className="px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-600 border border-neutral-200/60">
+              {activeProjectIntegrations.length} {t.integrationsCount}
+            </span>
+            {allowedMetrics.includes('set_limit') || userRole === 'super_admin' ? (
+              selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null ? (
+                <button
+                  onClick={() => {
+                    const val = prompt(t.enterMonthlyLimitPrompt, String(selectedProject.monthlyLimit));
+                    if (val !== null) {
+                      const parsed = val.trim() === '' ? null : parseInt(val, 10);
+                      if (parsed === null || !isNaN(parsed)) {
+                        if (onEditProject) {
+                          onEditProject(
+                            selectedProject.id,
+                            selectedProject.name,
+                            selectedProject.description || '',
+                            selectedProject.telegramThreadId,
+                            parsed
+                          );
+                        }
+                      }
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center gap-1 transition cursor-pointer"
+                  title={t.setMonthlyLimit}
+                >
+                  <Coins className="w-3.5 h-3.5 text-amber-600" />
+                  <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const val = prompt(t.enterMonthlyLimitPrompt, '');
+                    if (val !== null) {
+                      const parsed = val.trim() === '' ? null : parseInt(val, 10);
+                      if (parsed === null || !isNaN(parsed)) {
+                        if (onEditProject) {
+                          onEditProject(
+                            selectedProject.id,
+                            selectedProject.name,
+                            selectedProject.description || '',
+                            selectedProject.telegramThreadId,
+                            parsed
+                          );
+                        }
+                      }
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-600 flex items-center gap-1 transition cursor-pointer"
+                  title={t.setMonthlyLimit}
+                >
+                  <Coins className="w-3.5 h-3.5 text-neutral-500" />
+                  <span>{t.setMonthlyLimit}</span>
+                </button>
+              )
+            ) : (
+              selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null && (
+                <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex items-center gap-1">
+                  <Coins className="w-3.5 h-3.5 text-amber-600" />
+                  <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
+                </span>
+              )
+            )}
+            {allowedMetrics.includes('financial_metrics') && (
+              <span
+                className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 font-bold ${
+                  remainingLimit !== null && remainingLimit < 0
+                    ? 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse'
+                    : remainingLimit !== null
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-neutral-100 border-neutral-200 text-neutral-500'
+                }`}
+                title={t.remainingLimit}
               >
-                {lang === 'ru' ? 'Сбросить' : lang === 'uz' ? 'Tozalash' : 'Reset'}
-              </button>
+                <span>{t.remainingLimit}: {remainingLimit !== null ? remainingLimit.toLocaleString() : t.limitNotSet}</span>
+              </span>
             )}
           </div>
         </div>
       )}
 
-      {/* Analytics Mini Bar */}
-      <div className="flex flex-wrap items-center gap-4 md:gap-8 border border-neutral-200 bg-white p-4 rounded-xl shadow-xs">
+      {/* Analytics Metric Cards Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
         {allowedMetrics.includes('deals') && (
-          <div className="text-left min-w-[100px]">
-            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.bloggerDeals}</p>
-            <p className="text-xl font-black text-black">{filteredIntegrations.length}</p>
+          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+              {t.bloggerDeals}
+            </span>
+            <span className="text-xl font-black text-black mt-1">
+              {filteredIntegrations.length}
+            </span>
           </div>
         )}
         {allowedMetrics.includes('spend') && (
-          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
-            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.allocatedSpend}</p>
-            <p className="text-xl font-black text-black">{totalSpend.toLocaleString()}</p>
+          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+              {t.allocatedSpend}
+            </span>
+            <span className="text-xl font-black text-black mt-1">
+              {totalSpend.toLocaleString()}
+            </span>
+          </div>
+        )}
+        {allowedMetrics.includes('spend') && (
+          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+              {t.monthlySpend}
+            </span>
+            <span className="text-xl font-black text-black mt-1">
+              {selectedProjectMonthlySpend.toLocaleString()}
+            </span>
           </div>
         )}
         {allowedMetrics.includes('financial_metrics') && (
-          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
-            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricRemainingToPay}</p>
-            <p className="text-xl font-black text-rose-600">{totalRemainingToPay.toLocaleString()}</p>
-          </div>
-        )}
-        {allowedMetrics.includes('financial_metrics') && (
-          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
-            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.remainingLimit}</p>
-            <p className={`text-xl font-black ${remainingLimit !== null && remainingLimit < 0 ? 'text-rose-600 animate-pulse' : 'text-neutral-900'}`}>
-              {remainingLimit !== null ? remainingLimit.toLocaleString() : t.limitNotSet}
-            </p>
+          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+              {t.metricRemainingToPay}
+            </span>
+            <span className="text-xl font-black text-rose-600 mt-1">
+              {totalRemainingToPay.toLocaleString()}
+            </span>
           </div>
         )}
         {allowedMetrics.includes('total_slots') && (
-          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
-            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.totalSlotsLabel}</p>
-            <p className="text-xl font-black text-black">{totalSlotsCount}</p>
+          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+              {t.totalSlotsLabel}
+            </span>
+            <span className="text-xl font-black text-black mt-1">
+              {totalSlotsCount}
+            </span>
           </div>
         )}
         {allowedMetrics.includes('slots_published') && (
-          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
-            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricSlotsPublished}</p>
-            <p className="text-xl font-black text-emerald-600">{totalPublishedSlots}</p>
+          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+              {t.metricSlotsPublished}
+            </span>
+            <span className="text-xl font-black text-emerald-600 mt-1">
+              {totalPublishedSlots}
+            </span>
           </div>
         )}
         {allowedMetrics.includes('slots_remaining') && (
-          <div className="text-left border-l border-neutral-100 pl-4 md:pl-8 min-w-[100px]">
-            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.metricSlotsRemaining}</p>
-            <p className="text-xl font-black text-amber-600">{totalRemainingSlots}</p>
+          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+              {t.metricSlotsRemaining}
+            </span>
+            <span className="text-xl font-black text-amber-600 mt-1">
+              {totalRemainingSlots}
+            </span>
           </div>
         )}
       </div>
 
       {/* Primary Panels Layout */}
       <div className="w-full">
-        {/* Selected Project Integrations Manager (Filament RelationManager simulation) */}
+        {/* Selected Project Integrations Manager */}
         <div className="w-full">
           {selectedProject ? (
-            <div className="space-y-6">
-              {/* Project Info Block - Displayed below when opened */}
-              <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-5 text-left flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.selectedCampaignDetails}</span>
-                    {userRole === 'super_admin' && (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            setEditProjectName(selectedProject.name);
-                            setEditProjectDesc(selectedProject.description || '');
-                            setEditProjectThreadId(selectedProject.telegramThreadId || '');
-                            setEditProjectMonthlyLimit(selectedProject.monthlyLimit ? String(selectedProject.monthlyLimit) : '');
-                            setShowEditProjectModal(true);
-                          }}
-                          className="text-neutral-400 hover:text-black p-1 rounded transition duration-150 cursor-pointer"
-                          title={lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm(t.confirmDeleteProject)) {
-                              onDeleteProject(selectedProject.id);
-                              if (projects.length > 1) {
-                                const remaining = projects.filter(p => p.id !== selectedProject.id);
-                                handleSelectProject(remaining[0].id);
-                              } else {
-                                handleSelectProject('');
-                              }
-                            }
-                          }}
-                          id={`delete-project-${selectedProject.id}`}
-                          className="text-neutral-400 hover:text-red-600 p-1 rounded transition duration-150 cursor-pointer"
-                          title={t.deleteProjectTooltip}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <h3 className="text-sm font-black text-black">{selectedProject.name}</h3>
-                  <p className="text-xs text-neutral-500 max-w-3xl leading-relaxed">
-                    {selectedProject.description || t.noDescription}
-                  </p>
-                </div>
-                
-                <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wider shrink-0">
-                  <span className="px-2.5 py-1 rounded bg-white border border-neutral-200 text-neutral-600">
-                    {activeProjectIntegrations.length} {t.integrationsCount}
-                  </span>
-                  <span className="px-2.5 py-1 rounded bg-black text-white" title={t.monthlySpend}>
-                    {t.monthlySpend}: {selectedProjectMonthlySpend.toLocaleString()}
-                  </span>
-                  <span className="px-2.5 py-1 rounded bg-neutral-800 text-white" title={t.totalSpend}>
-                    {t.totalSpend}: {selectedProjectTotalSpend.toLocaleString()}
-                  </span>
-                  {allowedMetrics.includes('set_limit') || userRole === 'super_admin' ? (
-                    selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null ? (
-                      <button
-                        onClick={() => {
-                          const val = prompt(t.enterMonthlyLimitPrompt, String(selectedProject.monthlyLimit));
-                          if (val !== null) {
-                            const parsed = val.trim() === '' ? null : parseInt(val, 10);
-                            if (parsed === null || !isNaN(parsed)) {
-                              if (onEditProject) {
-                                onEditProject(
-                                  selectedProject.id,
-                                  selectedProject.name,
-                                  selectedProject.description || '',
-                                  selectedProject.telegramThreadId,
-                                  parsed
-                                );
-                              }
-                            }
-                          }
-                        }}
-                        className="px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center gap-1 transition cursor-pointer"
-                        title={t.setMonthlyLimit}
-                      >
-                        <Coins className="w-3.5 h-3.5 text-amber-600" />
-                        <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          const val = prompt(t.enterMonthlyLimitPrompt, '');
-                          if (val !== null) {
-                            const parsed = val.trim() === '' ? null : parseInt(val, 10);
-                            if (parsed === null || !isNaN(parsed)) {
-                              if (onEditProject) {
-                                onEditProject(
-                                  selectedProject.id,
-                                  selectedProject.name,
-                                  selectedProject.description || '',
-                                  selectedProject.telegramThreadId,
-                                  parsed
-                                );
-                              }
-                            }
-                          }
-                        }}
-                        className="px-2.5 py-1 rounded bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-600 flex items-center gap-1 transition cursor-pointer"
-                        title={t.setMonthlyLimit}
-                      >
-                        <Coins className="w-3.5 h-3.5 text-neutral-500" />
-                        <span>{t.setMonthlyLimit}</span>
-                      </button>
-                    )
-                  ) : (
-                    selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null && (
-                      <span className="px-2.5 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 flex items-center gap-1">
-                        <Coins className="w-3.5 h-3.5 text-amber-600" />
-                        <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
-                      </span>
-                    )
-                  )}
-                </div>
-              </div>
-
+            <div>
               {/* Integrations Table Card */}
               <div className="bg-white border border-neutral-200 rounded-xl shadow-xs overflow-hidden">
                 {/* RelationManager Title & Header */}
@@ -1607,14 +1646,19 @@ export default function DashboardView({
                         <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{cabinetUrl}</span>
                         <button
                           type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(cabinetUrl);
-                            alert(lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!');
+                          onClick={async () => {
+                            await copyToClipboard(cabinetUrl);
+                            setCopiedCabinetLink(true);
+                            setTimeout(() => setCopiedCabinetLink(false), 2000);
                           }}
-                          className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0 cursor-pointer"
-                          title="Copy link"
+                          className={`p-1 rounded border transition shrink-0 cursor-pointer ${
+                            copiedCabinetLink
+                              ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                              : 'bg-white hover:bg-neutral-100 border-neutral-200 text-neutral-600'
+                          }`}
+                          title={copiedCabinetLink ? (lang === 'ru' ? 'Скопировано!' : 'Copied!') : (lang === 'ru' ? 'Копировать ссылку' : 'Copy link')}
                         >
-                          <Link className="w-3.5 h-3.5" />
+                          {copiedCabinetLink ? <Check className="w-3.5 h-3.5 text-white" /> : <Link className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     );

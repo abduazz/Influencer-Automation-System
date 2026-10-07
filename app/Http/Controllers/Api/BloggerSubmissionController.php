@@ -96,32 +96,34 @@ class BloggerSubmissionController extends Controller
                 };
             }
 
-            $isStoriesScreenshot = ($slotPlatform === 'Instagram' && strtolower((string) $slotFormat) === 'stories');
             $isBase64Image = str_starts_with($val, 'data:image/');
 
             if ($isBase64Image) {
-                if ($isStoriesScreenshot) {
-                    continue; // Valid screenshot proof for Instagram Stories
-                }
-                return response()->json([
-                    'message' => "Slot #{$slotNum} ({$slotPlatform} - {$slotFormat}): Skrinshot faqat Instagram Stories uchun ruxsat etilgan. Ushbu slot uchun to'g'ridan-to'g'ri havola talab qilinadi!",
-                    'errors' => [$key => ["Skrinshot faqat Instagram Stories uchun ruxsat etilgan. Havola talab qilinadi."]]
-                ], 422);
-            }
-
-            // Mock file preview simulator for Stories
-            if ($isStoriesScreenshot && str_starts_with($val, 'mock')) {
+                // Screenshot/image proof is valid for any slot platform and format
                 continue;
             }
 
-            $trimmed = strtolower(trim($val));
+            // Mock file preview simulator
+            if (str_starts_with($val, 'mock')) {
+                continue;
+            }
+
+            $trimmed = trim($val);
+
+            // Auto-prefix protocol if missing
+            if (!preg_match('~^https?://~i', $trimmed)) {
+                $trimmed = 'https://' . ltrim($trimmed, '/');
+                $submittedData[$key] = $trimmed;
+            }
+
+            $trimmedLower = strtolower($trimmed);
 
             // 1. Block cabinet links
             if (
-                str_contains($trimmed, '/c/') ||
-                str_contains($trimmed, 'cabinet') ||
-                str_contains($trimmed, 'khalilovdev.uz') ||
-                ($appHost !== '' && str_contains($trimmed, $appHost))
+                str_contains($trimmedLower, '/c/') ||
+                str_contains($trimmedLower, 'cabinet') ||
+                str_contains($trimmedLower, 'khalilovdev.uz') ||
+                ($appHost !== '' && str_contains($trimmedLower, $appHost))
             ) {
                 return response()->json([
                     'message' => "Slot #{$slotNum}: Kabinet havolasini yuborish taqiqlangan. Iltimos, e'lon qilingan post havolasini kiriting!",
@@ -130,7 +132,7 @@ class BloggerSubmissionController extends Controller
             }
 
             // 2. Validate URL protocol
-            if (!str_starts_with($trimmed, 'http://') && !str_starts_with($trimmed, 'https://')) {
+            if (!str_starts_with($trimmedLower, 'http://') && !str_starts_with($trimmedLower, 'https://')) {
                 return response()->json([
                     'message' => "Slot #{$slotNum} ({$slotPlatform}): Havola formati noto'g'ri.",
                     'errors' => [$key => ["Havola formati noto'g'ri."]]
@@ -138,22 +140,22 @@ class BloggerSubmissionController extends Controller
             }
 
             // 3. Platform specific domain validation
-            if ($slotPlatform === 'Instagram' && !str_contains($trimmed, 'instagram.com') && !str_contains($trimmed, 'instagr.am')) {
+            if ($slotPlatform === 'Instagram' && !str_contains($trimmedLower, 'instagram.com') && !str_contains($trimmedLower, 'instagr.am')) {
                 return response()->json([
                     'message' => "Slot #{$slotNum} (Instagram): Iltimos, haqiqiy Instagram havolasini kiriting!",
                     'errors' => [$key => ["Haqiqiy Instagram havolasi talab qilinadi."]]
                 ], 422);
-            } elseif ($slotPlatform === 'Telegram' && !str_contains($trimmed, 't.me') && !str_contains($trimmed, 'telegram.me') && !str_contains($trimmed, 'telegram.org')) {
+            } elseif ($slotPlatform === 'Telegram' && !str_contains($trimmedLower, 't.me') && !str_contains($trimmedLower, 'telegram.me') && !str_contains($trimmedLower, 'telegram.org') && !str_contains($trimmedLower, 'telegram.dog')) {
                 return response()->json([
                     'message' => "Slot #{$slotNum} (Telegram): Iltimos, haqiqiy Telegram havolasini kiriting!",
                     'errors' => [$key => ["Haqiqiy Telegram havolasi talab qilinadi."]]
                 ], 422);
-            } elseif ($slotPlatform === 'YouTube' && !str_contains($trimmed, 'youtube.com') && !str_contains($trimmed, 'youtu.be')) {
+            } elseif ($slotPlatform === 'YouTube' && !str_contains($trimmedLower, 'youtube.com') && !str_contains($trimmedLower, 'youtu.be')) {
                 return response()->json([
                     'message' => "Slot #{$slotNum} (YouTube): Iltimos, haqiqiy YouTube havolasini kiriting!",
                     'errors' => [$key => ["Haqiqiy YouTube havolasi talab qilinadi."]]
                 ], 422);
-            } elseif ($slotPlatform === 'TikTok' && !str_contains($trimmed, 'tiktok.com')) {
+            } elseif ($slotPlatform === 'TikTok' && !str_contains($trimmedLower, 'tiktok.com')) {
                 return response()->json([
                     'message' => "Slot #{$slotNum} (TikTok): Iltimos, haqiqiy TikTok havolasini kiriting!",
                     'errors' => [$key => ["Haqiqiy TikTok havolasi talab qilinadi."]]
@@ -165,7 +167,7 @@ class BloggerSubmissionController extends Controller
         $existingSub = BloggerSubmission::where('integration_id', $integration->id)->first();
         $oldData = $existingSub ? ($existingSub->data ?? []) : [];
 
-        $incomingData = $request->data ?? [];
+        $incomingData = $submittedData;
         $mergedData = $oldData;
         $nowIso = now()->toISOString();
         foreach ($incomingData as $k => $v) {
@@ -193,7 +195,7 @@ class BloggerSubmissionController extends Controller
         Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
 
         // Find newly filled slot keys
-        $newData = $request->data ?? [];
+        $newData = $incomingData;
         $newlyFilledKeys = [];
         foreach ($newData as $key => $value) {
             $oldValue = $oldData[$key] ?? null;
@@ -210,7 +212,7 @@ class BloggerSubmissionController extends Controller
 
         // Trigger Telegram submission notification after response to speed up submission
         $lang = $request->input('lang', 'uz');
-        $data = $request->data;
+        $data = $incomingData;
         dispatch(function () use ($integration, $data, $lang, $newlyFilledKeys) {
             try {
                 Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);

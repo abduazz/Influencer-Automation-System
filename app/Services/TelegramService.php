@@ -1028,5 +1028,67 @@ class TelegramService
         // Default: send text message if no photos or photo sending failed
         return self::sendMessage($chatId, $text, $threadId);
     }
+
+    public static function getBotInfo(): ?array
+    {
+        $token = config('services.telegram.bot_token');
+        if (!$token) return null;
+
+        return \Illuminate\Support\Facades\Cache::remember('telegram_bot_info', 86400, function () use ($token) {
+            try {
+                $res = Http::timeout(5)->get("https://api.telegram.org/bot{$token}/getMe");
+                if ($res->successful() && isset($res['result'])) {
+                    return $res['result'];
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Telegram getMe error: ' . $e->getMessage());
+            }
+            return null;
+        });
+    }
+
+    public static function getBotUsername(): ?string
+    {
+        $info = self::getBotInfo();
+        return $info['username'] ?? null;
+    }
+
+    public static function getBloggerChatUrl($integrationId, $token = null): string
+    {
+        $botUsername = self::getBotUsername() ?? 'bot';
+        $payload = $integrationId ? "deal_{$integrationId}" : ($token ? "token_{$token}" : '');
+        return "https://t.me/{$botUsername}" . ($payload ? "?start={$payload}" : '');
+    }
+
+    public static function setWebhook($webhookUrl): array
+    {
+        $token = config('services.telegram.bot_token');
+        if (!$token) {
+            return ['ok' => false, 'description' => 'Bot token not set'];
+        }
+        try {
+            $res = Http::post("https://api.telegram.org/bot{$token}/setWebhook", [
+                'url' => $webhookUrl,
+                'allowed_updates' => ['message', 'edited_message', 'callback_query'],
+            ]);
+            return $res->json() ?? ['ok' => false, 'description' => 'Invalid JSON'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'description' => $e->getMessage()];
+        }
+    }
+
+    public static function getWebhookInfo(): array
+    {
+        $token = config('services.telegram.bot_token');
+        if (!$token) {
+            return ['ok' => false, 'description' => 'Bot token not set'];
+        }
+        try {
+            $res = Http::get("https://api.telegram.org/bot{$token}/getWebhookInfo");
+            return $res->json() ?? ['ok' => false, 'description' => 'Invalid JSON'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'description' => $e->getMessage()];
+        }
+    }
 }
 

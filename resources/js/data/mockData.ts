@@ -76,12 +76,46 @@ export interface SubscriberHistoryItem {
   note?: string | null;
 }
 
+export interface ChatMessage {
+  id: string;
+  integrationId: string;
+  senderType: 'manager' | 'blogger' | 'system';
+  senderName?: string | null;
+  text: string;
+  telegramMessageId?: number | null;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+  createdAt: string;
+}
+
+export interface SiblingBlogger {
+  id: string;
+  bloggerName: string;
+  platform: string;
+  kanbanStage?: string;
+}
+
+export interface ChatResponse {
+  integration: {
+    id: string;
+    bloggerName: string;
+    telegramUsername?: string;
+    telegramChatId?: string | null;
+    chatUrl: string;
+  };
+  botUsername?: string | null;
+  siblingBloggers?: SiblingBlogger[];
+  messages: ChatMessage[];
+}
+
 export interface Integration {
   id: string;
   projectId: string;
   bloggerName: string;
   bloggerPageLink?: string;
   telegramUsername?: string;
+  telegramChatId?: string | null;
   startDate?: string;
   platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
   referralLink?: string;

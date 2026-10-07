@@ -1,4 +1,4 @@
-import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase, KanbanColumn, BloggerRequisites } from '../data/mockData';
+import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase, KanbanColumn, BloggerRequisites, ChatMessage, ChatResponse } from '../data/mockData';
 
 // Fetch helper that handles errors
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -32,6 +32,22 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   return res.json();
+}
+
+// Bootstrap API (loads all initial core data in a single ultra-fast HTTP request)
+export interface BootstrapData {
+  users: AllowedUser[];
+  projects: Project[];
+  integrations: Integration[];
+  reports: Report[];
+  submissions: BloggerSubmission[];
+  bulkPurchases: BulkPurchase[];
+  kanbanColumns: KanbanColumn[];
+  bloggerRequisites: BloggerRequisites[];
+}
+
+export function fetchBootstrapData(): Promise<BootstrapData> {
+  return request<BootstrapData>('/api/bootstrap');
 }
 
 // Projects API
@@ -263,6 +279,114 @@ export function submitBloggerRequisites(data: {
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+// Telegram Live Chat API
+export function fetchChatMessages(integrationId: string, sinceId?: string): Promise<ChatResponse> {
+  const url = sinceId ? `/api/integrations/${integrationId}/messages?since_id=${encodeURIComponent(sinceId)}` : `/api/integrations/${integrationId}/messages`;
+  return request<ChatResponse>(url);
+}
+
+export function sendChatMessage(integrationId: string, text: string, senderName?: string): Promise<{
+  message: ChatMessage;
+  delivered: boolean;
+  hasChatId: boolean;
+  telegramError?: string | null;
+  chatUrl: string;
+}> {
+  return request<{
+    message: ChatMessage;
+    delivered: boolean;
+    hasChatId: boolean;
+    telegramError?: string | null;
+    chatUrl: string;
+  }>(`/api/integrations/${integrationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ text, senderName }),
+  });
+}
+
+export function updateIntegrationChatSettings(
+  integrationId: string,
+  telegramChatId?: string | null,
+  telegramUsername?: string | null
+): Promise<{
+  success: boolean;
+  telegramChatId: string | null;
+  telegramUsername?: string | null;
+}> {
+  return request<{
+    success: boolean;
+    telegramChatId: string | null;
+    telegramUsername?: string | null;
+  }>(`/api/integrations/${integrationId}/chat-settings`, {
+    method: 'PUT',
+    body: JSON.stringify({ telegramChatId, telegramUsername }),
+  });
+}
+
+export function fetchTelegramWebhookStatus(): Promise<{
+  info: any;
+  botUsername: string | null;
+  expectedUrl: string;
+}> {
+  return request<{
+    info: any;
+    botUsername: string | null;
+    expectedUrl: string;
+  }>('/api/telegram/webhook-status');
+}
+
+export function setupTelegramWebhook(url?: string): Promise<{
+  result: any;
+  webhookUrl: string;
+}> {
+  return request<{
+    result: any;
+    webhookUrl: string;
+  }>('/api/telegram/setup-webhook', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  });
+}
+
+// Telegram Personal MTProto Gateway API (QR Login)
+export interface TelegramGatewayStatus {
+  isRunning: boolean;
+  isAuthorized: boolean;
+  user?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    username?: string | null;
+    phone?: string | null;
+  } | null;
+  qr?: {
+    tgUrl: string;
+    dataUrl: string;
+    expires?: number;
+  } | null;
+  qrLoginActive?: boolean;
+}
+
+export function fetchTelegramGatewayStatus(): Promise<TelegramGatewayStatus> {
+  return request<TelegramGatewayStatus>('/api/telegram-gateway/status');
+}
+
+export function startTelegramGatewayQr(): Promise<{
+  isAuthorized?: boolean;
+  qr?: { tgUrl: string; dataUrl: string; expires?: number };
+  user?: any;
+}> {
+  return request<{
+    isAuthorized?: boolean;
+    qr?: { tgUrl: string; dataUrl: string; expires?: number };
+    user?: any;
+  }>('/api/telegram-gateway/qr', { method: 'POST' });
+}
+
+export function logoutTelegramGateway(): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>('/api/telegram-gateway/logout', { method: 'POST' });
 }
 
 

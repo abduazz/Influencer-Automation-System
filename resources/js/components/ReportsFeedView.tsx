@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calendar, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send, FolderKanban, Edit3, User, Receipt, ArrowRight, Filter } from 'lucide-react';
+import { Calendar, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send, FolderKanban, Edit3, User, Receipt, ArrowRight, Filter, Check } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Project, Report, Integration, SlotConfig } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
+import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses } from '../utils/platform';
 
 interface ReportsFeedViewProps {
@@ -129,6 +130,7 @@ export default function ReportsFeedView({
   onNavigateToReportsFeed
 }: ReportsFeedViewProps) {
   const t = translations[lang];
+  const [copiedCabinetRepId, setCopiedCabinetRepId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
@@ -982,14 +984,19 @@ export default function ReportsFeedView({
                           {cabinetUrl ? (
                             <button
                               type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(cabinetUrl);
-                                alert(lang === 'ru' ? 'Ссылка кабинета скопирована!' : lang === 'uz' ? 'Kabinet havolasi nusxalandi!' : 'Cabinet link copied!');
+                              onClick={async () => {
+                                await copyToClipboard(cabinetUrl);
+                                setCopiedCabinetRepId(rep.id);
+                                setTimeout(() => setCopiedCabinetRepId(null), 2000);
                               }}
-                              className="inline-flex items-center justify-center p-1.5 text-black hover:bg-neutral-100 border border-neutral-200 rounded-lg transition shadow-2xs cursor-pointer"
-                              title={lang === 'ru' ? 'Копировать ссылку' : lang === 'uz' ? 'Havolani nusxalash' : 'Copy cabinet link'}
+                              className={`inline-flex items-center justify-center p-1.5 border rounded-lg transition shadow-2xs cursor-pointer ${
+                                copiedCabinetRepId === rep.id
+                                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                                  : 'text-black hover:bg-neutral-100 border-neutral-200'
+                              }`}
+                              title={copiedCabinetRepId === rep.id ? (lang === 'ru' ? 'Скопировано!' : 'Copied!') : (lang === 'ru' ? 'Копировать ссылку' : lang === 'uz' ? 'Havolani nusxalash' : 'Copy cabinet link')}
                             >
-                              <Link className="w-3.5 h-3.5" />
+                              {copiedCabinetRepId === rep.id ? <Check className="w-3.5 h-3.5 text-white" /> : <Link className="w-3.5 h-3.5" />}
                             </button>
                           ) : (
                             <span className="text-neutral-300">—</span>
@@ -1155,16 +1162,21 @@ export default function ReportsFeedView({
                   {userRole !== 'executive' && cabinetUrl && (
                     <button
                       type="button"
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        navigator.clipboard.writeText(cabinetUrl);
-                        alert(lang === 'ru' ? 'Ссылка кабинета скопирована!' : lang === 'uz' ? 'Kabinet havolasi nusxalandi!' : 'Cabinet link copied!');
+                        await copyToClipboard(cabinetUrl);
+                        setCopiedCabinetRepId(rep.id);
+                        setTimeout(() => setCopiedCabinetRepId(null), 2000);
                       }}
-                      className="text-[10px] font-bold text-neutral-600 hover:text-black bg-neutral-100 hover:bg-neutral-200 rounded-lg px-2 py-1 transition shrink-0 flex items-center gap-1 cursor-pointer"
-                      title={lang === 'ru' ? 'Копировать кабинет' : 'Copy cabinet'}
+                      className={`text-[10px] font-bold rounded-lg px-2 py-1 transition shrink-0 flex items-center gap-1 cursor-pointer ${
+                        copiedCabinetRepId === rep.id
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-neutral-600 hover:text-black bg-neutral-100 hover:bg-neutral-200'
+                      }`}
+                      title={copiedCabinetRepId === rep.id ? (lang === 'ru' ? 'Скопировано!' : 'Copied!') : (lang === 'ru' ? 'Копировать кабинет' : 'Copy cabinet')}
                     >
-                      <Link className="w-2.5 h-2.5" />
-                      <span>{lang === 'ru' ? 'Кабинет' : 'Cabinet'}</span>
+                      {copiedCabinetRepId === rep.id ? <Check className="w-2.5 h-2.5 text-white" /> : <Link className="w-2.5 h-2.5" />}
+                      <span>{copiedCabinetRepId === rep.id ? (lang === 'ru' ? 'Скопировано!' : lang === 'uz' ? 'Nusxalandi!' : 'Copied!') : (lang === 'ru' ? 'Кабинет' : 'Cabinet')}</span>
                     </button>
                   )}
                 </div>

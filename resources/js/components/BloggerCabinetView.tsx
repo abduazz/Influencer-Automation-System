@@ -9,23 +9,22 @@ import {
   Upload, 
   Link, 
   Send, 
-  Settings, 
   CheckCircle, 
   FileText, 
   ExternalLink,
-  ChevronRight,
-  Eye,
-  AlertCircle
+  AlertCircle,
+  Check
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
+import { copyToClipboard } from '../utils/clipboard';
 
 
 interface BloggerCabinetViewProps {
   projects: Project[];
   integrations: Integration[];
   submissions: BloggerSubmission[];
-  onAddSubmission: (submission: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => void;
+  onAddSubmission: (submission: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => Promise<void> | void;
   urlParams?: { platform?: string; slotsCount?: string; integrationId?: string };
   lang: Language;
   userRole?: string | null;
@@ -165,9 +164,12 @@ export default function BloggerCabinetView({
   // Dynamic state object mapping slot keys (e.g. "slot_1") to text link or mock file name
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [filePreviews, setFilePreviews] = useState<Record<string, string>>({});
+  const [slotInputModes, setSlotInputModes] = useState<Record<string, 'link' | 'screenshot'>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [copiedCabinetLink, setCopiedCabinetLink] = useState(false);
 
   // Re-initialize form data state when platform or slots count changes
   useEffect(() => {
@@ -239,6 +241,18 @@ export default function BloggerCabinetView({
     }
   };
 
+  const handleClearSlot = (slotKey: string) => {
+    setFilePreviews(prev => {
+      const copy = { ...prev };
+      delete copy[slotKey];
+      return copy;
+    });
+    setFormData(prev => ({
+      ...prev,
+      [slotKey]: ''
+    }));
+  };
+
   const handleLinkChange = (slotKey: string, val: string) => {
     setFormData(prev => ({
       ...prev,
@@ -249,56 +263,52 @@ export default function BloggerCabinetView({
   const validateSlotUrl = (
     url: string, 
     platform: string, 
-    format?: string
-  ): { valid: boolean; errorKey?: 'cabinetUrlForbidden' | 'invalidPlatformUrl' | 'screenshotNotAllowed' } => {
+    _format?: string
+  ): { valid: boolean; errorKey?: 'cabinetUrlForbidden' | 'invalidPlatformUrl' } => {
     if (!url || typeof url !== 'string' || !url.trim()) {
       return { valid: true };
     }
 
-    const isStoriesScreenshot = platform === 'Instagram' && (format?.toLowerCase() === 'stories');
-
-    if (url.startsWith('data:image/')) {
-      if (isStoriesScreenshot) {
-        return { valid: true };
-      }
-      return { valid: false, errorKey: 'screenshotNotAllowed' };
-    }
-
-    if (isStoriesScreenshot && url.startsWith('mock')) {
+    if (url.startsWith('data:image/') || url.startsWith('mock')) {
       return { valid: true };
     }
 
-    const trimmed = url.trim().toLowerCase();
+    let trimmed = url.trim();
+    if (!trimmed.match(/^https?:\/\//i)) {
+      trimmed = `https://${trimmed}`;
+    }
+
+    const lower = trimmed.toLowerCase();
 
     // 1. Block cabinet links
-    const isCabinetLink = trimmed.includes('/c/') || 
-                          trimmed.includes('cabinet') || 
-                          (window.location.host && trimmed.includes(window.location.host.toLowerCase())) || 
-                          trimmed.includes('khalilovdev.uz');
+    const isCabinetLink = lower.includes('/c/') || 
+                          lower.includes('cabinet') || 
+                          (typeof window !== 'undefined' && window.location.host && lower.includes(window.location.host.toLowerCase())) || 
+                          lower.includes('khalilovdev.uz');
     if (isCabinetLink) {
       return { valid: false, errorKey: 'cabinetUrlForbidden' };
     }
 
     // 2. Validate HTTP/HTTPS protocol
-    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
       return { valid: false, errorKey: 'invalidPlatformUrl' };
     }
 
     // 3. Platform specific rules
     if (platform === 'Instagram') {
-      if (!trimmed.includes('instagram.com') && !trimmed.includes('instagr.am')) {
+      if (!lower.includes('instagram.com') && !lower.includes('instagr.am')) {
         return { valid: false, errorKey: 'invalidPlatformUrl' };
       }
     } else if (platform === 'Telegram') {
-      if (!trimmed.includes('t.me') && !trimmed.includes('telegram.me') && !trimmed.includes('telegram.org')) {
+      if (!lower.includes('t.me') && !lower.includes('telegram.me') && !lower.includes('telegram.org') && !lower.includes('telegram.dog')) {
         return { valid: false, errorKey: 'invalidPlatformUrl' };
       }
     } else if (platform === 'YouTube') {
-      if (!trimmed.includes('youtube.com') && !trimmed.includes('youtu.be')) {
+      if (!lower.includes('youtube.com') && !lower.includes('youtu.be')) {
         return { valid: false, errorKey: 'invalidPlatformUrl' };
       }
     } else if (platform === 'TikTok') {
-      if (!trimmed.includes('tiktok.com')) {
+      if (!lower.includes('tiktok.com')) {
         return { valid: false, errorKey: 'invalidPlatformUrl' };
       }
     }
@@ -312,10 +322,21 @@ export default function BloggerCabinetView({
     const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
     const submittedData = existingSub?.data || {};
 
+    // Auto-normalize any URLs that lack protocol
+    const normalizedFormData: Record<string, string> = { ...formData };
+    for (let idx = 0; idx < activeSlotsCount; idx++) {
+      const k = `slot_${idx + 1}`;
+      let val = (normalizedFormData[k] || '').trim();
+      if (val && !val.match(/^https?:\/\//i) && !val.startsWith('data:') && !val.startsWith('mock')) {
+        normalizedFormData[k] = `https://${val}`;
+      }
+    }
+    setFormData(normalizedFormData);
+
     // Check if at least one new slot is being filled in this turn
     const hasNewInput = Array.from({ length: activeSlotsCount }).some((_, idx) => {
       const key = `slot_${idx + 1}`;
-      return !submittedData[key] && !!formData[key] && formData[key].trim() !== '';
+      return !submittedData[key] && !!normalizedFormData[key] && normalizedFormData[key].trim() !== '';
     });
 
     if (!hasNewInput) {
@@ -332,7 +353,7 @@ export default function BloggerCabinetView({
     for (let idx = 0; idx < activeSlotsCount; idx++) {
       const slotNum = idx + 1;
       const key = `slot_${slotNum}`;
-      const val = formData[key];
+      const val = normalizedFormData[key];
       if (!submittedData[key] && val && val.trim() !== '') {
         const slotConfig = selectedIntegration?.slotsConfig?.[idx];
         const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
@@ -347,8 +368,6 @@ export default function BloggerCabinetView({
         if (!validation.valid) {
           const errorMsg = validation.errorKey === 'cabinetUrlForbidden'
             ? `Slot #${slotNum} (${slotPlatform}): ${t.cabinetUrlForbidden}`
-            : validation.errorKey === 'screenshotNotAllowed'
-            ? `Slot #${slotNum} (${slotPlatform} - ${slotFormat}): ${(t as any).screenshotNotAllowed?.replace('{platform}', slotPlatform).replace('{format}', slotFormat) || 'Screenshots are only allowed for Instagram Stories. Please provide a link.'}`
             : `Slot #${slotNum} (${slotPlatform}): ${t.invalidPlatformUrl.replace('{platform}', slotPlatform)}`;
           alert(errorMsg);
           return;
@@ -360,7 +379,7 @@ export default function BloggerCabinetView({
   };
 
 
-  const handleFinalSubmit = () => {
+  const handleFinalSubmit = async () => {
     const confirmText = lang === 'ru' 
       ? "Вы уверены, что хотите отправить материалы? Отправленные материалы будут заблокированы и их нельзя будет изменить!" 
       : lang === 'uz' 
@@ -374,18 +393,30 @@ export default function BloggerCabinetView({
     const submittedPayload: Record<string, string> = {};
     for (let i = 1; i <= activeSlotsCount; i++) {
       const key = `slot_${i}`;
-      submittedPayload[key] = formData[key] || '';
+      let val = (formData[key] || '').trim();
+      if (val && !val.match(/^https?:\/\//i) && !val.startsWith('data:') && !val.startsWith('mock')) {
+        val = `https://${val}`;
+      }
+      submittedPayload[key] = val;
     }
 
-    onAddSubmission({
-      integrationId: selectedIntegration?.id || selectedIntegrationId,
-      status: 'approved',
-      data: submittedPayload,
-      lang: lang
-    });
+    setIsSubmitting(true);
+    try {
+      await onAddSubmission({
+        integrationId: selectedIntegration?.id || selectedIntegrationId,
+        status: 'approved',
+        data: submittedPayload,
+        lang: lang
+      });
 
-    setFormSubmitted(true);
-    setShowConfirm(false);
+      setFormSubmitted(true);
+      setShowConfirm(false);
+    } catch (err: any) {
+      console.error('Failed to submit deliverable:', err);
+      alert(err?.message || (lang === 'ru' ? 'Ошибка при отправке материалов' : 'Xatolik yuz berdi'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -422,17 +453,24 @@ export default function BloggerCabinetView({
             onClick={async () => {
               const tokenOrId = selectedIntegration?.bloggerCabinetToken || selectedIntegrationId;
               const cabinetUrl = getCabinetUrl(tokenOrId);
-              try {
-                await navigator.clipboard.writeText(cabinetUrl);
-                alert(`${t.copiedAlert}\n${cabinetUrl}`);
-              } catch (err) {
-                console.error("Failed to copy cabinet URL", err);
+              const ok = await copyToClipboard(cabinetUrl);
+              if (ok) {
+                setCopiedCabinetLink(true);
+                setTimeout(() => setCopiedCabinetLink(false), 2000);
               }
             }}
-            className="px-3.5 py-1.5 bg-black hover:bg-neutral-900 text-white font-extrabold rounded-lg transition duration-100 flex items-center gap-1.5 cursor-pointer"
+            className={`px-3.5 py-1.5 font-extrabold rounded-lg transition duration-150 flex items-center gap-1.5 cursor-pointer ${
+              copiedCabinetLink
+                ? 'bg-emerald-600 text-white'
+                : 'bg-black hover:bg-neutral-900 text-white'
+            }`}
           >
-            <Link className="w-3.5 h-3.5" />
-            <span>{lang === 'ru' ? 'Копировать ссылку для блогера' : lang === 'uz' ? 'Blogger havolasini nusxalash' : 'Copy Blogger Link'}</span>
+            {copiedCabinetLink ? <Check className="w-3.5 h-3.5 text-white" /> : <Link className="w-3.5 h-3.5" />}
+            <span>
+              {copiedCabinetLink 
+                ? (lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!')
+                : (lang === 'ru' ? 'Копировать ссылку для блогера' : lang === 'uz' ? 'Blogger havolasini nusxalash' : 'Copy Blogger Link')}
+            </span>
           </button>
         </div>
       )}
@@ -531,6 +569,7 @@ export default function BloggerCabinetView({
                   <div className="flex gap-3 pt-2">
                     <button
                       type="button"
+                      disabled={isSubmitting}
                       onClick={() => setShowConfirm(false)}
                       className="flex-1 py-2.5 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
                     >
@@ -538,10 +577,15 @@ export default function BloggerCabinetView({
                     </button>
                     <button
                       type="button"
+                      disabled={isSubmitting}
                       onClick={handleFinalSubmit}
-                      className="flex-1 py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition cursor-pointer"
+                      className="flex-1 py-2.5 bg-black hover:bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition cursor-pointer flex items-center justify-center gap-2"
                     >
-                      {lang === 'ru' ? 'Подтверждаю отправку' : lang === 'uz' ? 'Yuborishni tasdiqlayman' : 'Confirm & Submit'}
+                      {isSubmitting ? (
+                        <span>{lang === 'ru' ? 'Отправка...' : lang === 'uz' ? 'Yuborilmoqda...' : 'Submitting...'}</span>
+                      ) : (
+                        <span>{lang === 'ru' ? 'Подтверждаю отправку' : lang === 'uz' ? 'Yuborishni tasdiqlayman' : 'Confirm & Submit'}</span>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -567,6 +611,19 @@ export default function BloggerCabinetView({
                             >
                               <span>{lang === 'ru' ? 'Страница блогера' : lang === 'uz' ? 'Blogger sahifasi' : 'Blogger Page'}</span>
                               <ExternalLink className="w-3 h-3 text-blue-500" />
+                            </a>
+                          )}
+                          {selectedIntegration && (
+                            <a
+                              href={`/api/integrations/${selectedIntegration.id}/chat-redirect`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-[10px] text-sky-700 font-extrabold hover:bg-sky-500 hover:text-white transition group"
+                              title={lang === 'ru' ? 'Открыть диалог с менеджером в Telegram' : lang === 'uz' ? 'Telegramda menejer bilan bog‘lanish' : 'Open Telegram chat with manager'}
+                            >
+                              <Send className="w-2.5 h-2.5 text-sky-500 group-hover:text-white" />
+                              <span>{lang === 'ru' ? 'Чат с менеджером в Telegram' : lang === 'uz' ? 'Menejer bilan Telegram chat' : 'Telegram chat with manager'}</span>
+                              <ExternalLink className="w-2.5 h-2.5 text-sky-400 group-hover:text-white" />
                             </a>
                           )}
                         </div>
@@ -623,6 +680,14 @@ export default function BloggerCabinetView({
                         ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
                         : true; // fallback to true if no integration mapped
 
+                      const slotVal = formData[slotKey] || '';
+                      const isImageValue = slotVal.startsWith('data:image/') || slotVal.startsWith('mock') || !!filePreviews[slotKey];
+                      const currentMode = slotInputModes[slotKey] || (
+                        isImageValue 
+                          ? 'screenshot' 
+                          : (slotPlatform === 'Instagram' && slotFormat === 'Stories' ? 'screenshot' : 'link')
+                      );
+
                       return (
                         <div 
                           key={slotKey} 
@@ -660,47 +725,140 @@ export default function BloggerCabinetView({
                             </span>
                           </div>
 
-                          {(slotPlatform === 'Instagram' && slotFormat === 'Stories') ? (
-                            /* SCREENSHOT FILE UPLOAD COMPONENT FOR INSTAGRAM STORIES ONLY */
-                            <div className="space-y-2">
-                              {isSlotSubmitted ? (
-                                <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl opacity-90 select-none text-left">
-                                  <div className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 flex items-center justify-center">
-                                    {formData[slotKey]?.startsWith('mock') || !filePreviews[slotKey] ? (
-                                      <CheckCircle className="w-5 h-5 text-emerald-600" />
-                                    ) : (
-                                      <img src={filePreviews[slotKey]} alt="Screenshot" className="w-full h-full object-cover" />
-                                    )}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-[11px] font-bold text-black truncate">{formData[slotKey]}</p>
-                                    <p className="text-[9px] text-emerald-600 font-extrabold uppercase">✓ {lang === 'ru' ? 'Отправлено' : lang === 'uz' ? 'Yuborilgan' : 'Submitted'}</p>
-                                  </div>
+                          {/* Submission Mode Selector (Link vs Screenshot) - when slot is not locked */}
+                          {!isSlotSubmitted && (
+                            <div className="flex items-center gap-1 bg-neutral-100 p-0.5 rounded-lg border border-neutral-200 w-fit text-[10px] font-bold">
+                              <button
+                                type="button"
+                                onClick={() => setSlotInputModes(prev => ({ ...prev, [slotKey]: 'link' }))}
+                                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer ${
+                                  currentMode === 'link' ? 'bg-white text-black shadow-2xs' : 'text-neutral-500 hover:text-black'
+                                }`}
+                              >
+                                <Link className="w-3 h-3" />
+                                <span>{lang === 'ru' ? 'Ссылка на пост' : lang === 'uz' ? 'Post havolasi' : 'Post Link'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSlotInputModes(prev => ({ ...prev, [slotKey]: 'screenshot' }))}
+                                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer ${
+                                  currentMode === 'screenshot' ? 'bg-white text-black shadow-2xs' : 'text-neutral-500 hover:text-black'
+                                }`}
+                              >
+                                <Upload className="w-3 h-3" />
+                                <span>{lang === 'ru' ? 'Фото / Скриншот' : lang === 'uz' ? 'Rasm / Skrinshot' : 'Photo / Screenshot'}</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Slot content */}
+                          {isSlotSubmitted ? (
+                            /* Already submitted slot */
+                            isImageValue ? (
+                              <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl select-none text-left">
+                                <div 
+                                  className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 cursor-pointer hover:opacity-80 transition flex items-center justify-center"
+                                  onClick={() => {
+                                    const src = filePreviews[slotKey] || slotVal;
+                                    if (src) {
+                                      const win = window.open();
+                                      if (win) {
+                                        win.document.write(`<img src="${src}" style="max-width:100%; height:auto;" />`);
+                                      }
+                                    }
+                                  }}
+                                  title={lang === 'ru' ? 'Нажмите, чтобы открыть фото' : lang === 'uz' ? 'Rasmni ochish uchun bosing' : 'Click to view image'}
+                                >
+                                  {filePreviews[slotKey] || slotVal.startsWith('data:image/') ? (
+                                    <img src={filePreviews[slotKey] || slotVal} alt="Screenshot" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                                  )}
                                 </div>
-                              ) : filePreviews[slotKey] ? (
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[11px] font-bold text-amber-700 truncate">
+                                    {lang === 'ru' ? '📸 Скриншот-отчет' : lang === 'uz' ? '📸 Skrinshot-hisobot' : '📸 Screenshot report'}
+                                  </p>
+                                  <p className="text-[9px] text-emerald-600 font-extrabold uppercase">
+                                    ✓ {lang === 'ru' ? 'Отправлено' : lang === 'uz' ? 'Yuborilgan' : 'Submitted'}
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl select-none text-left">
+                                <div className="w-8 h-8 rounded bg-white border border-neutral-200 flex items-center justify-center shrink-0">
+                                  <Link className="w-4 h-4 text-neutral-500" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <a 
+                                    href={slotVal.startsWith('http') ? slotVal : `https://${slotVal}`} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="text-[11px] font-bold text-blue-600 hover:underline truncate block"
+                                  >
+                                    {slotVal}
+                                  </a>
+                                  <p className="text-[9px] text-emerald-600 font-extrabold uppercase">
+                                    ✓ {lang === 'ru' ? 'Отправлено' : lang === 'uz' ? 'Yuborilgan' : 'Submitted'}
+                                  </p>
+                                </div>
+                                <ExternalLink className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                              </div>
+                            )
+                          ) : currentMode === 'screenshot' ? (
+                            /* SCREENSHOT FILE UPLOAD COMPONENT */
+                            <div className="space-y-2">
+                              {filePreviews[slotKey] || slotVal.startsWith('data:image/') ? (
                                 <div className="flex items-center gap-3 p-2 bg-neutral-50 border border-neutral-200 rounded-lg">
-                                  <div className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0">
-                                    <img src={filePreviews[slotKey]} alt="Screenshot" className="w-full h-full object-cover" />
+                                  <div 
+                                    className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 cursor-pointer"
+                                    onClick={() => {
+                                      const src = filePreviews[slotKey] || slotVal;
+                                      if (src) {
+                                        const win = window.open();
+                                        if (win) {
+                                          win.document.write(`<img src="${src}" style="max-width:100%; height:auto;" />`);
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    <img src={filePreviews[slotKey] || slotVal} alt="Screenshot" className="w-full h-full object-cover" />
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-[11px] font-bold text-black truncate">{formData[slotKey]}</p>
-                                    <p className="text-[9px] text-neutral-500">Screenshot proof loaded</p>
+                                    <p className="text-[11px] font-bold text-black truncate">
+                                      {lang === 'ru' ? 'Фото-пруф загружен' : lang === 'uz' ? 'Rasm yuklandi' : 'Photo proof loaded'}
+                                    </p>
+                                    <p className="text-[9px] text-emerald-600 font-medium">
+                                      {lang === 'ru' ? 'Готово к отправке' : lang === 'uz' ? 'Yuborishga tayyor' : 'Ready to submit'}
+                                    </p>
                                   </div>
-                                  <label className="text-[10px] font-bold text-black hover:bg-neutral-50 px-2.5 py-1 bg-white border border-neutral-200 rounded cursor-pointer transition shrink-0">
-                                    Change
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={(e) => handleFileChangeSim(slotKey, e)}
-                                      className="hidden"
-                                    />
-                                  </label>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <label className="text-[10px] font-bold text-black hover:bg-neutral-50 px-2.5 py-1 bg-white border border-neutral-200 rounded cursor-pointer transition">
+                                      {lang === 'ru' ? 'Заменить' : lang === 'uz' ? 'O‘zgartirish' : 'Change'}
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => handleFileChangeSim(slotKey, e)}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleClearSlot(slotKey)}
+                                      className="text-[10px] font-bold text-red-600 hover:bg-red-50 px-2 py-1 bg-white border border-neutral-200 rounded cursor-pointer transition"
+                                      title={lang === 'ru' ? 'Очистить' : 'Tozalash'}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
                                 </div>
                               ) : (
                                 <div className="border border-dashed border-neutral-200 hover:border-black rounded-lg p-5 transition duration-150 bg-neutral-50/50 flex flex-col items-center justify-center cursor-pointer text-center relative group">
                                   <Upload className="w-5 h-5 text-neutral-300 group-hover:text-black mb-1.5 transition" />
-                                  <p className="text-[11px] font-bold text-neutral-600">{t.uploadProof} ({slotFormat})</p>
-                                  <p className="text-[9px] text-neutral-400 mt-0.5">PNG, JPG up to 10MB</p>
+                                  <p className="text-[11px] font-bold text-neutral-600">
+                                    {t.uploadProof} ({slotPlatform} - {slotFormat})
+                                  </p>
+                                  <p className="text-[9px] text-neutral-400 mt-0.5">PNG, JPG up to 15MB</p>
                                   <input
                                     type="file"
                                     accept="image/*"
@@ -711,92 +869,60 @@ export default function BloggerCabinetView({
                               )}
                             </div>
                           ) : (
-                            /* URL TEXT INPUT FIELD FOR ALL POSTS/REELS/RELEASES (INCLUDING INSTAGRAM REELS/POSTS) */
+                            /* URL TEXT INPUT FIELD */
                             <div>
-                              {isSlotSubmitted && slotVal.startsWith('data:image/') ? (
-                                <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl select-none text-left">
-                                  <div 
-                                    className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 cursor-pointer hover:opacity-80 transition flex items-center justify-center"
-                                    onClick={() => {
-                                      const win = window.open();
-                                      if (win) {
-                                        win.document.write(`<img src="${slotVal}" style="max-width:100%; height:auto;" />`);
-                                      }
-                                    }}
-                                    title={lang === 'ru' ? 'Нажмите, чтобы открыть фото' : lang === 'uz' ? 'Rasmni ochish uchun bosing' : 'Click to view image'}
-                                  >
-                                    <img src={slotVal} alt="Screenshot" className="w-full h-full object-cover" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-[11px] font-bold text-amber-700 truncate">
-                                      {lang === 'ru' ? 'Скриншот-отчет' : lang === 'uz' ? 'Skrinshot-hisobot' : 'Screenshot report'}
-                                    </p>
-                                    <p className="text-[9px] text-emerald-600 font-extrabold uppercase">
-                                      ✓ {lang === 'ru' ? 'Отправлено' : lang === 'uz' ? 'Yuborilgan' : 'Submitted'}
-                                    </p>
-                                  </div>
+                              <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                  <Link className="w-3.5 h-3.5 text-neutral-400" />
                                 </div>
-                              ) : (
-                                <div>
-                                  <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                      <Link className="w-3.5 h-3.5 text-neutral-400" />
-                                    </div>
-                                    {(() => {
-                                      const isInvalid = !isSlotSubmitted && slotVal.trim() !== '' && !validateSlotUrl(slotVal, slotPlatform, slotFormat).valid;
-                                      return (
-                                        <input
-                                          type="text"
-                                          disabled={isSlotSubmitted}
-                                          placeholder={
-                                            slotPlatform === 'Instagram'
-                                              ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
-                                              : slotPlatform === 'Telegram' 
-                                              ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
-                                              : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
-                                          }
-                                          value={slotVal}
-                                          onChange={(e) => handleLinkChange(slotKey, e.target.value)}
-                                          className={`w-full pl-9 pr-10 py-1.5 border focus:outline-none rounded-md text-xs transition ${
-                                            isSlotSubmitted 
-                                              ? 'bg-neutral-100 border-neutral-200 text-neutral-400 font-mono font-bold select-all' 
-                                              : isInvalid
-                                              ? 'bg-red-50 border-red-500 text-red-900 focus:border-red-600'
-                                              : 'bg-white border-neutral-200 text-black font-medium focus:border-black'
-                                          }`}
-                                        />
-                                      );
-                                    })()}
-                                    {isSlotSubmitted && (
-                                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                        <CheckCircle className="w-4 h-4 text-emerald-600" />
-                                      </div>
-                                    )}
-                                  </div>
-                                  {(() => {
-                                    if (!isSlotSubmitted && slotVal.trim() !== '') {
-                                      const v = validateSlotUrl(slotVal, slotPlatform, slotFormat);
-                                      if (!v.valid) {
-                                        return (
-                                          <p className="text-[10px] font-bold text-red-600 mt-1 flex items-center gap-1">
-                                            <AlertCircle className="w-3 h-3 text-red-600 shrink-0" />
-                                            <span>
-                                              {v.errorKey === 'cabinetUrlForbidden'
-                                                ? t.cabinetUrlForbidden
-                                                : v.errorKey === 'screenshotNotAllowed'
-                                                ? ((t as any).screenshotNotAllowed?.replace('{platform}', slotPlatform).replace('{format}', slotFormat) || 'Screenshots are only allowed for Stories. Please provide a link.')
-                                                : t.invalidPlatformUrl.replace('{platform}', slotPlatform)}
-                                            </span>
-                                          </p>
-                                        );
+                                {(() => {
+                                  const isInvalid = slotVal.trim() !== '' && !validateSlotUrl(slotVal, slotPlatform, slotFormat).valid;
+                                  return (
+                                    <input
+                                      type="text"
+                                      placeholder={
+                                        slotPlatform === 'Instagram'
+                                          ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
+                                          : slotPlatform === 'Telegram' 
+                                          ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
+                                          : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
                                       }
-                                    }
-                                    return null;
-                                  })()}
-                                </div>
-                              )}
+                                      value={slotVal}
+                                      onChange={(e) => handleLinkChange(slotKey, e.target.value)}
+                                      onBlur={(e) => {
+                                        let v = e.target.value.trim();
+                                        if (v && !v.match(/^https?:\/\//i) && !v.startsWith('data:') && !v.startsWith('mock')) {
+                                          handleLinkChange(slotKey, `https://${v}`);
+                                        }
+                                      }}
+                                      className={`w-full pl-9 pr-10 py-1.5 border focus:outline-none rounded-md text-xs transition ${
+                                        isInvalid
+                                          ? 'bg-red-50 border-red-500 text-red-900 focus:border-red-600'
+                                          : 'bg-white border-neutral-200 text-black font-medium focus:border-black'
+                                      }`}
+                                    />
+                                  );
+                                })()}
+                              </div>
+                              {(() => {
+                                if (slotVal.trim() !== '') {
+                                  const v = validateSlotUrl(slotVal, slotPlatform, slotFormat);
+                                  if (!v.valid) {
+                                    return (
+                                      <p className="text-[10px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                                        <AlertCircle className="w-3 h-3 text-red-600 shrink-0" />
+                                        <span>
+                                          {v.errorKey === 'cabinetUrlForbidden'
+                                            ? t.cabinetUrlForbidden
+                                            : t.invalidPlatformUrl.replace('{platform}', slotPlatform)}
+                                        </span>
+                                      </p>
+                                    );
+                                  }
+                                }
+                                return null;
+                              })()}
                             </div>
-
                           )}
                         </div>
                       );

@@ -7,6 +7,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Integration, Project, KanbanColumn, INITIAL_KANBAN_COLUMNS, DealComment } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
+import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses, formatTelegramLink, formatTelegramHandle } from '../utils/platform';
 import { 
   Search, 
@@ -34,9 +35,12 @@ import {
   EyeOff,
   Lock,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  QrCode
 } from 'lucide-react';
 import BloggerAudienceCard from './BloggerAudienceCard';
+import BloggerTelegramChat from './BloggerTelegramChat';
+import TelegramGatewayModal from './TelegramGatewayModal';
 
 interface KanbanViewProps {
   projects: Project[];
@@ -221,6 +225,9 @@ export default function KanbanView({
 
   // Selected Deal Detail/Edit Modal State
   const [selectedDeal, setSelectedDeal] = useState<Integration | null>(null);
+  const [activeChatDeal, setActiveChatDeal] = useState<Integration | null>(null);
+  const [modalActiveTab, setModalActiveTab] = useState<'details' | 'chat'>('details');
+  const [isGatewayModalOpen, setIsGatewayModalOpen] = useState(false);
   const [editBloggerName, setEditBloggerName] = useState('');
   const [editBloggerLink, setEditBloggerLink] = useState('');
   const [editTelegramUsername, setEditTelegramUsername] = useState('');
@@ -367,6 +374,7 @@ export default function KanbanView({
   const handleOpenCreateDealModal = (stageId?: string) => {
     setIsCreateMode(true);
     setSelectedDeal(null);
+    setModalActiveTab('details');
     setEditBloggerName('');
     setEditBloggerLink('');
     setEditTelegramUsername('');
@@ -391,6 +399,7 @@ export default function KanbanView({
   const handleOpenDealModal = (deal: Integration) => {
     setIsCreateMode(false);
     setSelectedDeal(deal);
+    setModalActiveTab('details');
     setEditBloggerName(deal.bloggerName || '');
     setEditBloggerLink(deal.bloggerPageLink || '');
     setEditTelegramUsername(deal.telegramUsername || '');
@@ -416,6 +425,7 @@ export default function KanbanView({
     setSelectedDeal(null);
     setIsCreateMode(false);
     setSaveSuccess(false);
+    setModalActiveTab('details');
   };
 
   // Save Deal Changes (Create or Edit)
@@ -510,9 +520,9 @@ export default function KanbanView({
   };
 
   // Copy Magic Link for Requisites
-  const handleCopyRequisitesLink = (integration: Integration) => {
+  const handleCopyRequisitesLink = async (integration: Integration) => {
     const url = `${window.location.origin}${window.location.pathname}?view=requisites&token=${integration.id}`;
-    navigator.clipboard.writeText(url);
+    await copyToClipboard(url);
     setCopiedId(integration.id);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -738,6 +748,16 @@ export default function KanbanView({
             >
               <Settings2 className="w-3.5 h-3.5 text-slate-500" />
               <span>{t.kanbanConfigureColumnsBtn || 'Настройка столбцов'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsGatewayModalOpen(true)}
+              className="flex items-center gap-1.5 h-8 px-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold text-xs rounded-lg border border-sky-200 transition cursor-pointer shadow-2xs"
+              title="Подключить личный рабочий Telegram по QR-коду"
+            >
+              <QrCode className="w-3.5 h-3.5 text-sky-600" />
+              <span>{lang === 'uz' ? 'Shaxsiy TG (QR)' : lang === 'en' ? 'Personal TG (QR)' : 'Личный Telegram (QR)'}</span>
             </button>
 
             <button
@@ -988,18 +1008,36 @@ export default function KanbanView({
                               </a>
                             )}
                             {deal.telegramUsername && (
-                              <a
-                                href={formatTelegramLink(deal.telegramUsername)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-500 hover:text-white px-1.5 py-0.2 rounded border border-sky-200/60 transition group/tg"
-                                title={t.kanbanTgChatTooltip || 'Перейти в личный Telegram (открыть чат)'}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveChatDeal(deal);
+                                }}
+                                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-500 hover:text-white px-1.5 py-0.2 rounded border border-sky-200/60 transition group/tg cursor-pointer"
+                                title={lang === 'uz' ? 'Karta chatini ochish' : lang === 'en' ? 'Open card chat' : 'Открыть чат на доске'}
                               >
                                 <Send className="w-2.5 h-2.5 text-sky-500 group-hover/tg:text-white transition-colors" />
                                 <span>{formatTelegramHandle(deal.telegramUsername)}</span>
-                              </a>
+                              </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveChatDeal(deal);
+                              }}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-sky-500 hover:text-white px-1.5 py-0.2 rounded border border-slate-200/80 transition group/chat cursor-pointer"
+                              title={lang === 'uz' ? 'Telegram chat (CRM)' : lang === 'en' ? 'Telegram Chat (CRM)' : 'Онлайн-диалог в Telegram'}
+                            >
+                              <MessageSquare className="w-2.5 h-2.5 text-sky-500 group-hover/chat:text-white" />
+                              <span>{lang === 'uz' ? 'Chat' : lang === 'en' ? 'Chat' : 'Чат'}</span>
+                              {deal.telegramChatId ? (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Подключен" />
+                              ) : (
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Ожидает подключения" />
+                              )}
+                            </button>
                             {deal.createdBy && (
                               <span className="text-[9px] text-slate-400 truncate max-w-[90px]" title={`${t.kanbanCreatedByLabel || 'Создал:'} ${deal.createdBy}`}>
                                 • {deal.createdBy}
@@ -1417,9 +1455,9 @@ export default function KanbanView({
                 {selectedDeal.bloggerCabinetToken && (
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const url = getCabinetUrl(selectedDeal.bloggerCabinetToken);
-                      navigator.clipboard.writeText(url);
+                      await copyToClipboard(url);
                       setCopiedCabinet(true);
                       setTimeout(() => setCopiedCabinet(false), 2000);
                     }}
@@ -1451,23 +1489,42 @@ export default function KanbanView({
                   </a>
                 )}
 
-                {editTelegramUsername && (
-                  <a
-                    href={formatTelegramLink(editTelegramUsername)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-xl border border-sky-200 transition shadow-2xs"
-                    title={t.kanbanTgChatTooltip || 'Открыть диалог в Telegram'}
-                  >
-                    <Send className="w-3.5 h-3.5 text-sky-600" />
-                    <span>{lang === 'uz' ? 'Chat' : lang === 'en' ? 'Chat' : 'Чат'}: {formatTelegramHandle(editTelegramUsername)}</span>
-                    <ExternalLink className="w-3 h-3 text-sky-500" />
-                  </a>
-                )}
+
+                <button
+                  type="button"
+                  onClick={() => setModalActiveTab(modalActiveTab === 'chat' ? 'details' : 'chat')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition cursor-pointer ${
+                    modalActiveTab === 'chat'
+                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
+                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-200/80'
+                  }`}
+                  title="Открыть онлайн Telegram-чат прямо в карточке"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>{lang === 'uz' ? 'Telegram Chat' : lang === 'en' ? 'Telegram Chat' : 'Telegram Чат'}</span>
+                  {(selectedDeal.telegramChatId || selectedDeal.telegramUsername) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  )}
+                </button>
               </div>
             )}
 
-            {/* Scrollable Form Body */}
+            {/* Modal Body: Switch between Chat and Details Form */}
+            {modalActiveTab === 'chat' && !isCreateMode && selectedDeal ? (
+              <div className="flex-1 min-h-[460px] flex flex-col overflow-hidden">
+                <BloggerTelegramChat
+                  integration={selectedDeal}
+                  lang={lang}
+                  currentUserName={currentUserName || currentUserEmail}
+                  isInline={true}
+                  onIntegrationUpdated={(updated) => {
+                    setSelectedDeal(updated);
+                    if (onEditIntegration) onEditIntegration(updated.id, updated);
+                  }}
+                />
+              </div>
+            ) : (
+            /* Scrollable Form Body */
             <form id="deal-edit-form" onSubmit={handleSaveDealEdit} className="space-y-5 overflow-y-auto pr-1 flex-1">
               {/* Creator Info (when viewing/editing) */}
               {!isCreateMode && selectedDeal && (
@@ -1518,19 +1575,6 @@ export default function KanbanView({
                     <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                       {t.kanbanBloggerTgLabel || 'Личный Telegram блогера (для связи)'}
                     </label>
-                    {editTelegramUsername && (
-                      <a
-                        href={formatTelegramLink(editTelegramUsername)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 hover:text-sky-800 hover:underline transition"
-                        title={t.kanbanTgChatTooltip || 'Нажмите, чтобы открыть чат с блогером в Telegram'}
-                      >
-                        <Send className="w-3 h-3" />
-                        <span>{lang === 'uz' ? 'Chatni ochish' : lang === 'en' ? 'Open chat' : 'Открыть чат'} {formatTelegramHandle(editTelegramUsername)}</span>
-                        <ExternalLink className="w-2.5 h-2.5 opacity-70" />
-                      </a>
-                    )}
                   </div>
                   <div className="relative">
                     <input
@@ -1538,26 +1582,14 @@ export default function KanbanView({
                       value={editTelegramUsername}
                       onChange={(e) => setEditTelegramUsername(e.target.value)}
                       placeholder={t.kanbanBloggerTgPlaceholder || 'например, @username, username или https://t.me/username'}
-                      className="w-full pl-9 pr-24 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
+                      className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
                     />
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
                       <Send className="w-3.5 h-3.5 text-sky-500" />
                     </div>
-                    {editTelegramUsername && (
-                      <a
-                        href={formatTelegramLink(editTelegramUsername)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] font-black inline-flex items-center gap-1 shadow-xs transition cursor-pointer"
-                        title={t.kanbanTgChatTooltip || 'Открыть чат в Telegram'}
-                      >
-                        <span>{lang === 'uz' ? 'Chat' : lang === 'en' ? 'Chat' : 'Чат'}</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
-                    )}
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    {t.kanbanBloggerTgHint || 'Поддерживает любой формат (@юзернейм, ссылку t.me или ник без @) — клик сразу перенаправит в личный чат в Telegram'}
+                    {t.kanbanBloggerTgHint || 'Укажите @юзернейм, ник или номер блогера для общения прямо в карточке на доске'}
                   </p>
                 </div>
 
@@ -1928,6 +1960,7 @@ export default function KanbanView({
                 </div>
               )}
             </form>
+            )}
 
             {/* Modal Footer */}
             <div className="flex items-center justify-between border-t border-slate-100 pt-4 shrink-0">
@@ -1955,28 +1988,32 @@ export default function KanbanView({
                   onClick={handleCloseDealModal}
                   className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
                 >
-                  {t.kanbanCancelBtn || 'Отмена'}
+                  {modalActiveTab === 'chat'
+                    ? (lang === 'uz' ? 'Yopish' : lang === 'en' ? 'Close' : 'Закрыть')
+                    : (t.kanbanCancelBtn || 'Отмена')}
                 </button>
-                <button
-                  type="submit"
-                  form="deal-edit-form"
-                  disabled={isSavingEdit}
-                  className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-black hover:bg-neutral-800 disabled:opacity-50 rounded-xl shadow-xs transition cursor-pointer"
-                >
-                  {saveSuccess ? (
-                    <>
-                      <Check className="w-4 h-4 text-emerald-400" />
-                      <span>{isCreateMode ? (t.kanbanCreatedBtn || 'Создано!') : (t.kanbanSavedBtn || 'Сохранено!')}</span>
-                    </>
-                  ) : isSavingEdit ? (
-                    <span>{isCreateMode ? (t.kanbanCreatingBtn || 'Создание...') : (t.kanbanSavingBtn || 'Сохранение...')}</span>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>{isCreateMode ? (t.kanbanCreateDealBtn || 'Создать сделку') : (t.kanbanSaveDealBtn || 'Сохранить изменения')}</span>
-                    </>
-                  )}
-                </button>
+                {modalActiveTab === 'details' && (
+                  <button
+                    type="submit"
+                    form="deal-edit-form"
+                    disabled={isSavingEdit}
+                    className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-black hover:bg-neutral-800 disabled:opacity-50 rounded-xl shadow-xs transition cursor-pointer"
+                  >
+                    {saveSuccess ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        <span>{isCreateMode ? (t.kanbanCreatedBtn || 'Создано!') : (t.kanbanSavedBtn || 'Сохранено!')}</span>
+                      </>
+                    ) : isSavingEdit ? (
+                      <span>{isCreateMode ? (t.kanbanCreatingBtn || 'Создание...') : (t.kanbanSavingBtn || 'Сохранение...')}</span>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>{isCreateMode ? (t.kanbanCreateDealBtn || 'Создать сделку') : (t.kanbanSaveDealBtn || 'Сохранить изменения')}</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2038,6 +2075,37 @@ export default function KanbanView({
           </button>
         </div>
       )}
+
+      {/* Slide-over Drawer for Quick Telegram Chat directly from Kanban board */}
+      {activeChatDeal && (
+        <div 
+          className="fixed inset-0 z-60 flex justify-end bg-black/40 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setActiveChatDeal(null)}
+        >
+          <div 
+            className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col p-3 sm:p-4 animate-in slide-in-from-right duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <BloggerTelegramChat
+              integration={activeChatDeal}
+              lang={lang}
+              currentUserName={currentUserName || currentUserEmail}
+              onClose={() => setActiveChatDeal(null)}
+              onIntegrationUpdated={(updated) => {
+                setActiveChatDeal(updated);
+                if (onEditIntegration) onEditIntegration(updated.id, updated);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Telegram Gateway Modal for Personal Account QR Code Login */}
+      <TelegramGatewayModal
+        isOpen={isGatewayModalOpen}
+        onClose={() => setIsGatewayModalOpen(false)}
+        lang={lang}
+      />
     </div>
   );
 }

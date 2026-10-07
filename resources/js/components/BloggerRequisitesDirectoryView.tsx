@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { BloggerRequisites, Integration, Project } from '../data/mockData';
 import { Language, translations } from '../translations';
+import { copyToClipboard } from '../utils/clipboard';
 import { 
   FileText, 
   Search, 
@@ -143,26 +144,26 @@ export default function BloggerRequisitesDirectoryView({
     });
   }, [pendingIntegrations, searchQuery]);
 
-  const handleCopyCard = (req: BloggerRequisites) => {
-    navigator.clipboard.writeText((req.cardNumberOrIban || '').replace(/\s+/g, ''));
+  const handleCopyCard = async (req: BloggerRequisites) => {
+    await copyToClipboard((req.cardNumberOrIban || '').replace(/\s+/g, ''));
     setCopiedId(`card-${req.id}`);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleCopyValue = (text: string, identifier: string) => {
-    navigator.clipboard.writeText(text.trim());
+  const handleCopyValue = async (text: string, identifier: string) => {
+    await copyToClipboard(text.trim());
     setCopiedId(identifier);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleCopyLink = (integrationId?: string, identifier = 'general') => {
+  const handleCopyLink = async (integrationId?: string, identifier = 'general') => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tezi.uz';
     const path = typeof window !== 'undefined' ? window.location.pathname : '/';
     const url = integrationId 
       ? `${origin}${path}?view=requisites&token=${integrationId}`
       : `${origin}${path}?view=requisites`;
 
-    navigator.clipboard.writeText(url);
+    await copyToClipboard(url);
     setCopiedId(identifier);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -812,8 +813,8 @@ export default function BloggerRequisitesDirectoryView({
                         {/* Copy Link */}
                         <button
                           type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(personalUrl);
+                          onClick={async () => {
+                            await copyToClipboard(personalUrl);
                             setCopiedModalLink(true);
                             setTimeout(() => setCopiedModalLink(false), 2000);
                           }}
@@ -874,10 +875,10 @@ export default function BloggerRequisitesDirectoryView({
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tezi.uz';
                       const path = typeof window !== 'undefined' ? window.location.pathname : '/';
-                      navigator.clipboard.writeText(`${origin}${path}?view=requisites`);
+                      await copyToClipboard(`${origin}${path}?view=requisites`);
                       setCopiedGeneralLink(true);
                       setTimeout(() => setCopiedGeneralLink(false), 2000);
                     }}

@@ -20,6 +20,7 @@ class IntegrationController extends Controller
             'bloggerName' => $integration->blogger_name,
             'bloggerPageLink' => $integration->blogger_page_link ?? '',
             'telegramUsername' => $integration->telegram_username ?? '',
+            'telegramChatId' => $integration->telegram_chat_id ? (string) $integration->telegram_chat_id : null,
             'startDate' => $integration->start_date ? $integration->start_date->format('Y-m-d') : '',
             'platform' => $integration->platform,
             'referralLink' => $integration->referral_link ?? '',
@@ -101,6 +102,7 @@ class IntegrationController extends Controller
             'blogger_name' => $request->bloggerName,
             'blogger_page_link' => $request->bloggerPageLink,
             'telegram_username' => $request->input('telegramUsername'),
+            'telegram_chat_id' => $request->input('telegramChatId') ?? $request->input('telegram_chat_id'),
             'start_date' => $request->startDate ?? now()->format('Y-m-d'),
             'platform' => $request->platform,
             'referral_link' => $request->referralLink,
@@ -154,6 +156,8 @@ class IntegrationController extends Controller
         if ($request->has('bloggerName')) $updateData['blogger_name'] = $request->bloggerName;
         if ($request->has('bloggerPageLink')) $updateData['blogger_page_link'] = $request->bloggerPageLink;
         if ($request->has('telegramUsername')) $updateData['telegram_username'] = $request->input('telegramUsername');
+        if ($request->has('telegramChatId')) $updateData['telegram_chat_id'] = $request->input('telegramChatId');
+        if ($request->has('telegram_chat_id')) $updateData['telegram_chat_id'] = $request->input('telegram_chat_id');
         if ($request->filled('startDate')) $updateData['start_date'] = $request->startDate;
         if ($request->has('platform')) $updateData['platform'] = $request->platform;
         if ($request->has('referralLink')) $updateData['referral_link'] = $request->referralLink;

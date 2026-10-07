@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { Project, Integration, SubscriberHistoryItem } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
+import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses, formatTelegramLink, formatTelegramHandle } from '../utils/platform';
 import BloggerAudienceCard from './BloggerAudienceCard';
 import { 
@@ -299,11 +300,11 @@ export default function BloggersView({
     return set.size;
   }, [safeIntegrations]);
 
-  const handleCopyCabinetLink = (token?: string) => {
+  const handleCopyCabinetLink = async (token?: string) => {
     if (!token) return;
     try {
       const url = getCabinetUrl(token);
-      navigator.clipboard.writeText(url);
+      await copyToClipboard(url);
       setCopiedToken(token);
       setTimeout(() => setCopiedToken(null), 2500);
     } catch (err) {

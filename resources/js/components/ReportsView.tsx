@@ -18,10 +18,12 @@ import {
   X,
   User,
   Check,
+  Copy,
   Sparkles
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
+import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses } from '../utils/platform';
 
 interface StepperInputProps {
@@ -104,7 +106,11 @@ const formatPrice = (val: number | ''): string => {
 const parsePrice = (str: string): number | '' => {
   const clean = str.replace(/\s/g, '').replace(/ /g, ''); // strip regular spaces and non-breaking spaces
   if (clean === '') return '';
-  const num = Number(clean);
+  const digitsOnly = clean.replace(/[^\d]/g, '');
+  if (digitsOnly === '') return '';
+  // Strip leading zeroes before digits (e.g. "0123" -> "123")
+  const sanitized = digitsOnly.replace(/^0+(?=\d)/, '');
+  const num = Number(sanitized);
   return isNaN(num) ? '' : num;
 };
 
@@ -178,7 +184,7 @@ export default function ReportsView({
   const t = translations[lang];
 
   // Form State
-  const [paymentType, setPaymentType] = useState<'prepaid' | 'full' | 'other' | 'remaining'>('prepaid');
+  const [paymentType, setPaymentType] = useState<'prepaid' | 'full' | 'other' | 'remaining' | ''>('');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [projectId, setProjectId] = useState<string>('');
   const [destination, setDestination] = useState<string>('');
@@ -186,16 +192,16 @@ export default function ReportsView({
   const [bloggerPageLink, setBloggerPageLink] = useState<string>('');
   const [bloggerType, setBloggerType] = useState<'existing' | 'new'>('existing');
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
-  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Telegram');
+  const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok' | ''>('');
 
   const [currentIntegrationId, setCurrentIntegrationId] = useState<string | null>(null);
   const [slotsCount, setSlotsCount] = useState<number>(5);
   const [paidSlotsCount, setPaidSlotsCount] = useState<number>(3);
-  const [pricePerSlot, setPricePerSlot] = useState<number | ''>(0);
-  const [otherAmount, setOtherAmount] = useState<number | ''>(0);
+  const [pricePerSlot, setPricePerSlot] = useState<number | ''>('');
+  const [otherAmount, setOtherAmount] = useState<number | ''>('');
   const [comments, setComments] = useState<string>('');
-  const [totalAmount, setTotalAmount] = useState<number | ''>(0);
-  const [paidAmount, setPaidAmount] = useState<number | ''>(0);
+  const [totalAmount, setTotalAmount] = useState<number | ''>('');
+  const [paidAmount, setPaidAmount] = useState<number | ''>('');
   const [slotsConfig, setSlotsConfig] = useState<SlotConfig[]>([]);
 
   // Function to thoroughly populate all known blogger data
@@ -587,14 +593,18 @@ export default function ReportsView({
 
   useEffect(() => {
     if (paymentType === 'remaining') {
-      const p = pricePerSlot === '' ? 0 : pricePerSlot;
-      const amt = paidSlotsCount * p;
-      setTotalAmount(amt);
-      setPaidAmount(amt);
+      if (pricePerSlot === '') {
+        setTotalAmount('');
+        setPaidAmount('');
+      } else {
+        const amt = paidSlotsCount * pricePerSlot;
+        setTotalAmount(amt);
+        setPaidAmount(amt);
+      }
     }
   }, [paymentType, paidSlotsCount, pricePerSlot]);
 
-  const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok') => {
+  const getDefaultFormat = (plat?: string) => {
     if (plat === 'Instagram') return 'Stories';
     if (plat === 'Telegram') return 'Post';
     if (plat === 'YouTube') return 'Shorts';
@@ -611,16 +621,19 @@ export default function ReportsView({
   // Success state for toast
   const [successToast, setSuccessToast] = useState<{ message: string; link?: string | null } | null>(null);
   const [createdReportResult, setCreatedReportResult] = useState<Report | null>(null);
+  const [isCabinetCopied, setIsCabinetCopied] = useState(false);
+  const [isToastCopied, setIsToastCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Sync slotsConfig size and platform/format with slotsCount and platform
   useEffect(() => {
+    const effectivePlat = platform || 'Telegram';
     if (!customizeSlots) {
       const next: SlotConfig[] = [];
       for (let i = 0; i < slotsCount; i++) {
         next.push({
-          platform: platform,
-          format: getDefaultFormat(platform),
+          platform: effectivePlat,
+          format: getDefaultFormat(effectivePlat),
           projectId: isMultiProject ? (slotProjects[i] || null) : (projectId || null),
         });
       }
@@ -631,8 +644,8 @@ export default function ReportsView({
         if (next.length < slotsCount) {
           for (let i = next.length; i < slotsCount; i++) {
             next.push({
-              platform: platform,
-              format: getDefaultFormat(platform),
+              platform: effectivePlat,
+              format: getDefaultFormat(effectivePlat),
               projectId: isMultiProject ? (slotProjects[i] || null) : (projectId || null),
             });
           }
@@ -650,7 +663,12 @@ export default function ReportsView({
   const handlePricePerSlotChange = (newPrice: number | '') => {
     setPricePerSlot(newPrice);
     if (newPrice !== '' && Number(newPrice) > 0) setAmountError(null);
-    const p = newPrice === '' ? 0 : newPrice;
+    if (newPrice === '') {
+      setTotalAmount('');
+      setPaidAmount('');
+      return;
+    }
+    const p = newPrice;
     setTotalAmount(slotsCount * p);
     setPaidAmount(paidSlotsCount * p);
   };
@@ -658,7 +676,12 @@ export default function ReportsView({
   const handleTotalAmountChange = (newTotal: number | '') => {
     setTotalAmount(newTotal);
     if (newTotal !== '' && Number(newTotal) > 0) setAmountError(null);
-    const t = newTotal === '' ? 0 : newTotal;
+    if (newTotal === '') {
+      setPricePerSlot('');
+      setPaidAmount('');
+      return;
+    }
+    const t = newTotal;
     const computedPrice = slotsCount > 0 ? (t / slotsCount) : 0;
     const roundedPrice = Math.round(computedPrice * 100) / 100;
     setPricePerSlot(roundedPrice);
@@ -667,7 +690,12 @@ export default function ReportsView({
 
   const handleSlotsCountChange = (newSlots: number) => {
     setSlotsCount(newSlots);
-    const p = pricePerSlot === '' ? 0 : pricePerSlot;
+    if (pricePerSlot === '') {
+      setTotalAmount('');
+      setPaidAmount('');
+      return;
+    }
+    const p = pricePerSlot;
     setTotalAmount(newSlots * p);
 
     let nextPaidSlots = paidSlotsCount;
@@ -683,20 +711,25 @@ export default function ReportsView({
 
   const handlePaidSlotsCountChange = (newPaidSlots: number) => {
     setPaidSlotsCount(newPaidSlots);
-    const p = pricePerSlot === '' ? 0 : pricePerSlot;
-    setPaidAmount(newPaidSlots * p);
+    if (pricePerSlot === '') {
+      setPaidAmount('');
+      return;
+    }
+    setPaidAmount(newPaidSlots * pricePerSlot);
   };
 
   // Ensure paid slots match when full payment or don't exceed total slots
   useEffect(() => {
     if (paymentType === 'full' && paidSlotsCount !== slotsCount) {
       setPaidSlotsCount(slotsCount);
-      const p = pricePerSlot === '' ? 0 : pricePerSlot;
-      setPaidAmount(slotsCount * p);
+      if (pricePerSlot !== '') {
+        setPaidAmount(slotsCount * pricePerSlot);
+      }
     } else if (paidSlotsCount > slotsCount) {
       setPaidSlotsCount(slotsCount);
-      const p = pricePerSlot === '' ? 0 : pricePerSlot;
-      setPaidAmount(slotsCount * p);
+      if (pricePerSlot !== '') {
+        setPaidAmount(slotsCount * pricePerSlot);
+      }
     }
   }, [paymentType, slotsCount, paidSlotsCount, pricePerSlot]);
 
@@ -704,14 +737,39 @@ export default function ReportsView({
     e.preventDefault();
     if (isSubmitting) return;
 
+    if (!paymentType) {
+      setAmountError(lang === 'ru' ? 'Пожалуйста, выберите тип оплаты' : lang === 'uz' ? 'Iltimos, to‘lov turini tanlang' : 'Please select payment type');
+      return;
+    }
+
     if (paymentType === 'other') {
       if (otherAmount === '' || Number(otherAmount) <= 0) {
         setAmountError(lang === 'ru' ? 'Сумма не должна быть равна нулю' : lang === 'uz' ? 'Summa nolga teng bo‘lmasligi kerak' : 'Sum must not be equal to zero');
         return;
       }
+      if (!destination.trim()) {
+        setAmountError(lang === 'ru' ? 'Пожалуйста, укажите статью расходов' : lang === 'uz' ? 'Iltimos, xarajat moddasini kiriting' : 'Please specify expense destination');
+        return;
+      }
     } else {
+      if (!platform) {
+        setAmountError(lang === 'ru' ? 'Пожалуйста, выберите платформу' : lang === 'uz' ? 'Iltimos, platformani tanlang' : 'Please select platform');
+        return;
+      }
+      if (!isMultiProject && !projectId) {
+        setAmountError(lang === 'ru' ? 'Пожалуйста, выберите целевой проект' : lang === 'uz' ? 'Iltimos, maqsadli loyihani tanlang' : 'Please select target project');
+        return;
+      }
       if (pricePerSlot === '' || Number(pricePerSlot) <= 0) {
         setAmountError(lang === 'ru' ? 'Сумма не должна быть равна нулю' : lang === 'uz' ? 'Summa nolga teng bo‘lmasligi kerak' : 'Sum must not be equal to zero');
+        return;
+      }
+      if (!channelBlogger.trim()) {
+        setAmountError(lang === 'ru' ? 'Пожалуйста, укажите блогера или канал' : lang === 'uz' ? 'Iltimos, blogger yoki kanalni kiriting' : 'Please specify blogger or channel');
+        return;
+      }
+      if (!bloggerPageLink.trim()) {
+        setAmountError(lang === 'ru' ? 'Пожалуйста, укажите ссылку на страницу блогера' : lang === 'uz' ? 'Iltimos, blogger sahifasi havolasini kiriting' : 'Please provide blogger page link');
         return;
       }
     }
@@ -816,12 +874,16 @@ export default function ReportsView({
       setBloggerPageLink('');
       setSlotsCount(5);
       setPaidSlotsCount(3);
-      setPricePerSlot(0);
-      setOtherAmount(0);
+      setPricePerSlot('');
+      setOtherAmount('');
+      setTotalAmount('');
+      setPaidAmount('');
       setComments('');
       setReceipts([]);
       setFileInputKey(prev => prev + 1);
-      setPaymentType('prepaid');
+      setPaymentType('');
+      setProjectId('');
+      setPlatform('');
     } catch (err: any) {
       console.error(err);
       const errorMessage = err?.message || String(err);
@@ -878,23 +940,42 @@ export default function ReportsView({
                             type="text"
                             readOnly
                             value={getCabinetUrl(createdReportResult.bloggerCabinetToken)}
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               const target = e.target as HTMLInputElement;
                               target.select();
-                              navigator.clipboard.writeText(target.value);
+                              const url = getCabinetUrl(createdReportResult.bloggerCabinetToken);
+                              await copyToClipboard(url);
+                              setIsCabinetCopied(true);
+                              setTimeout(() => setIsCabinetCopied(false), 2000);
                             }}
-                            className="flex-1 bg-white border border-neutral-200 rounded px-2 py-0.5 text-[9px] text-neutral-600 font-mono font-bold focus:outline-none select-all"
+                            className="flex-1 bg-white border border-neutral-200 rounded px-2 py-0.5 text-[9px] text-neutral-600 font-mono font-bold focus:outline-none select-all cursor-pointer"
+                            title={lang === 'ru' ? 'Нажмите, чтобы скопировать' : lang === 'uz' ? 'Nusxalash uchun bosing' : 'Click to copy'}
                           />
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={async () => {
                               const url = getCabinetUrl(createdReportResult.bloggerCabinetToken);
-                              navigator.clipboard.writeText(url);
-                              alert(lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!');
+                              await copyToClipboard(url);
+                              setIsCabinetCopied(true);
+                              setTimeout(() => setIsCabinetCopied(false), 2000);
                             }}
-                            className="px-2.5 py-0.5 bg-black hover:bg-neutral-900 text-white rounded text-[9px] font-bold shrink-0 transition"
+                            className={`px-2.5 py-0.5 rounded text-[9px] font-bold shrink-0 transition-all duration-150 flex items-center gap-1 cursor-pointer ${
+                              isCabinetCopied
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                                : 'bg-black hover:bg-neutral-900 text-white'
+                            }`}
                           >
-                            {lang === 'ru' ? 'Копия' : lang === 'uz' ? 'Nusxa' : 'Copy'}
+                            {isCabinetCopied ? (
+                              <>
+                                <Check className="w-3 h-3 text-white" />
+                                <span>{lang === 'ru' ? 'Скопировано!' : lang === 'uz' ? 'Nusxalandi!' : 'Copied!'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3 text-white" />
+                                <span>{lang === 'ru' ? 'Копия' : lang === 'uz' ? 'Nusxa' : 'Copy'}</span>
+                              </>
+                            )}
                           </button>
                         </div>
                         <p className="text-[8px] text-neutral-400">
@@ -907,7 +988,24 @@ export default function ReportsView({
 
                     <button
                       type="button"
-                      onClick={() => setCreatedReportResult(null)}
+                      onClick={() => {
+                        setCreatedReportResult(null);
+                        setCurrentIntegrationId(null);
+                        setDestination('');
+                        setChannelBlogger('');
+                        setBloggerPageLink('');
+                        setSlotsCount(5);
+                        setPaidSlotsCount(3);
+                        setPricePerSlot('');
+                        setOtherAmount('');
+                        setTotalAmount('');
+                        setPaidAmount('');
+                        setComments('');
+                        setReceipts([]);
+                        setPaymentType('');
+                        setProjectId('');
+                        setPlatform('');
+                      }}
                       className="w-full py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150 shadow-xs"
                     >
                       {lang === 'ru' ? 'Создать новый отчет' : lang === 'uz' ? 'Yangi hisobot yaratish' : 'Create New Report'}
@@ -1042,7 +1140,7 @@ export default function ReportsView({
                             onChange={(e) => handleProjectChange(e.target.value)}
                             className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
                           >
-                            <option value="" disabled={paymentType !== 'other'}>
+                            <option value="">
                               {paymentType === 'other'
                                 ? (lang === 'ru' ? '(Необязательно) Выберите проект' : lang === 'uz' ? '(Ixtiyoriy) Loyihani tanlang' : '(Optional) Select Project')
                                 : (lang === 'ru' ? 'Выберите проект *' : lang === 'uz' ? 'Loyihani tanlang *' : 'Select Project *')
@@ -1167,6 +1265,10 @@ export default function ReportsView({
                               inputMode="numeric"
                               required
                               value={formatPrice(otherAmount)}
+                              placeholder="0"
+                              onFocus={(e) => {
+                                if (e.target.value === '0') e.target.select();
+                              }}
                               onChange={(e) => {
                                 const val = parsePrice(e.target.value);
                                 setOtherAmount(val);
@@ -1320,10 +1422,14 @@ export default function ReportsView({
                             </label>
                             <select
                               value={platform}
+                              required
                               disabled={paymentType === 'remaining'}
                               onChange={(e) => setPlatform(e.target.value as any)}
                               className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-not-allowed"
                             >
+                              <option value="">
+                                {lang === 'ru' ? 'Выберите платформу *' : lang === 'uz' ? 'Platformani tanlang *' : 'Select Platform *'}
+                              </option>
                               {(['Telegram', 'Instagram', 'YouTube', 'MAX', 'TikTok'] as const).map((plat) => (
                                 <option
                                   key={plat}
@@ -1563,6 +1669,10 @@ export default function ReportsView({
                               required
                               disabled={paymentType === 'remaining'}
                               value={formatPrice(pricePerSlot)}
+                              placeholder="0"
+                              onFocus={(e) => {
+                                if (e.target.value === '0') e.target.select();
+                              }}
                               onChange={(e) => {
                                 const val = parsePrice(e.target.value);
                                 handlePricePerSlotChange(val);
@@ -1585,7 +1695,8 @@ export default function ReportsView({
                               <input
                                 type="text"
                                 disabled
-                                value={(paidSlotsCount * (pricePerSlot === '' ? 0 : pricePerSlot)).toLocaleString('ru-RU')}
+                                value={pricePerSlot === '' ? '' : (paidSlotsCount * pricePerSlot).toLocaleString('ru-RU')}
+                                placeholder="0"
                                 className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
                               />
                             </div>
@@ -1599,7 +1710,8 @@ export default function ReportsView({
                                 <input
                                   type="text"
                                   disabled
-                                  value={paidAmount === '' ? '0' : paidAmount.toLocaleString('ru-RU')}
+                                  value={paidAmount === '' ? '' : paidAmount.toLocaleString('ru-RU')}
+                                  placeholder="0"
                                   className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
                                 />
                               </div>
@@ -1612,6 +1724,10 @@ export default function ReportsView({
                                   inputMode="numeric"
                                   required
                                   value={formatPrice(totalAmount)}
+                                  placeholder="0"
+                                  onFocus={(e) => {
+                                    if (e.target.value === '0') e.target.select();
+                                  }}
                                   onChange={(e) => {
                                     const val = parsePrice(e.target.value);
                                     handleTotalAmountChange(val);
@@ -1868,17 +1984,39 @@ export default function ReportsView({
                   type="text"
                   readOnly
                   value={successToast.link}
-                  className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] text-neutral-600 focus:outline-none w-full select-all font-mono"
+                  onClick={async (e) => {
+                    const target = e.target as HTMLInputElement;
+                    target.select();
+                    await copyToClipboard(successToast.link!);
+                    setIsToastCopied(true);
+                    setTimeout(() => setIsToastCopied(false), 2000);
+                  }}
+                  className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 text-[9px] text-neutral-600 focus:outline-none w-full select-all font-mono cursor-pointer"
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(successToast.link!);
-                    alert(t.copiedAlert || 'Copied to clipboard!');
+                  onClick={async () => {
+                    await copyToClipboard(successToast.link!);
+                    setIsToastCopied(true);
+                    setTimeout(() => setIsToastCopied(false), 2000);
                   }}
-                  className="px-2 py-0.5 bg-black hover:bg-neutral-900 text-white rounded text-[8px] font-bold shrink-0 transition"
+                  className={`px-2 py-0.5 rounded text-[8px] font-bold shrink-0 transition-all duration-150 flex items-center gap-1 cursor-pointer ${
+                    isToastCopied
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-black hover:bg-neutral-900 text-white'
+                  }`}
                 >
-                  Copy
+                  {isToastCopied ? (
+                    <>
+                      <Check className="w-2.5 h-2.5 text-white" />
+                      <span>{lang === 'ru' ? 'Скопировано!' : lang === 'uz' ? 'Nusxalandi!' : 'Copied!'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-2.5 h-2.5 text-white" />
+                      <span>Copy</span>
+                    </>
+                  )}
                 </button>
               </div>
             )}

@@ -53,6 +53,7 @@ import {
   addIntegrationSubscriberHistory,
   submitBloggerRequisites,
   fetchBloggerRequisites,
+  fetchBootstrapData,
 } from './services/api';
 
 import {
@@ -220,22 +221,33 @@ export default function App() {
 
   const handleRefreshAllData = async () => {
     try {
-      const [projs, ints, reps, bulks, cols, reqs] = await Promise.all([
-        fetchProjects(),
-        fetchIntegrations(),
-        fetchReports(),
-        fetchBulkPurchases(),
-        fetchKanbanColumns(),
-        fetchBloggerRequisites(),
-      ]);
-      setProjects(projs);
-      setIntegrations(ints);
-      setReports(reps);
-      setBulkPurchases(bulks);
-      if (cols && cols.length > 0) setKanbanColumns(cols);
-      if (reqs) setBloggerRequisitesList(reqs);
+      const data = await fetchBootstrapData();
+      if (data.projects) setProjects(data.projects);
+      if (data.integrations) setIntegrations(data.integrations);
+      if (data.reports) setReports(data.reports);
+      if (data.bulkPurchases) setBulkPurchases(data.bulkPurchases);
+      if (data.kanbanColumns && data.kanbanColumns.length > 0) setKanbanColumns(data.kanbanColumns);
+      if (data.bloggerRequisites) setBloggerRequisitesList(data.bloggerRequisites);
     } catch (err) {
-      console.error("Failed to refresh data", err);
+      console.warn("Bootstrap refresh failed, falling back to parallel fetch:", err);
+      try {
+        const [projs, ints, reps, bulks, cols, reqs] = await Promise.all([
+          fetchProjects(),
+          fetchIntegrations(),
+          fetchReports(),
+          fetchBulkPurchases(),
+          fetchKanbanColumns(),
+          fetchBloggerRequisites(),
+        ]);
+        setProjects(projs);
+        setIntegrations(ints);
+        setReports(reps);
+        setBulkPurchases(bulks);
+        if (cols && cols.length > 0) setKanbanColumns(cols);
+        if (reqs) setBloggerRequisitesList(reqs);
+      } catch (fallbackErr) {
+        console.error("Failed to refresh data", fallbackErr);
+      }
     }
   };
 
@@ -245,29 +257,46 @@ export default function App() {
 
     async function loadData() {
       try {
-        const [users, projs, ints, reps, subs, bulks, cols, reqs] = await Promise.all([
-          fetchAllowedUsers(),
-          fetchProjects(),
-          fetchIntegrations(),
-          fetchReports(),
-          fetchSubmissions(),
-          fetchBulkPurchases(),
-          fetchKanbanColumns(),
-          fetchBloggerRequisites(),
-        ]);
+        // Fast path: Load all core data in a single unified HTTP request
+        const data = await fetchBootstrapData();
 
         if (!cancelled) {
-          setAllowedUsers(users);
-          setProjects(projs);
-          setIntegrations(ints);
-          setReports(reps);
-          setSubmissions(subs);
-          setBulkPurchases(bulks);
-          if (cols && cols.length > 0) setKanbanColumns(cols);
-          if (reqs) setBloggerRequisitesList(reqs);
+          if (data.users) setAllowedUsers(data.users);
+          if (data.projects) setProjects(data.projects);
+          if (data.integrations) setIntegrations(data.integrations);
+          if (data.reports) setReports(data.reports);
+          if (data.submissions) setSubmissions(data.submissions);
+          if (data.bulkPurchases) setBulkPurchases(data.bulkPurchases);
+          if (data.kanbanColumns && data.kanbanColumns.length > 0) setKanbanColumns(data.kanbanColumns);
+          if (data.bloggerRequisites) setBloggerRequisitesList(data.bloggerRequisites);
         }
-      } catch (err) {
-        console.error("Failed to load backend data", err);
+      } catch (bootstrapErr) {
+        console.warn("Bootstrap endpoint failed, falling back to parallel fetch:", bootstrapErr);
+        try {
+          const [users, projs, ints, reps, subs, bulks, cols, reqs] = await Promise.all([
+            fetchAllowedUsers(),
+            fetchProjects(),
+            fetchIntegrations(),
+            fetchReports(),
+            fetchSubmissions(),
+            fetchBulkPurchases(),
+            fetchKanbanColumns(),
+            fetchBloggerRequisites(),
+          ]);
+
+          if (!cancelled) {
+            setAllowedUsers(users);
+            setProjects(projs);
+            setIntegrations(ints);
+            setReports(reps);
+            setSubmissions(subs);
+            setBulkPurchases(bulks);
+            if (cols && cols.length > 0) setKanbanColumns(cols);
+            if (reqs) setBloggerRequisitesList(reqs);
+          }
+        } catch (err) {
+          console.error("Failed to load backend data", err);
+        }
       } finally {
         if (!cancelled) {
           setAllowedUsersLoading(false);
@@ -442,7 +471,7 @@ export default function App() {
     setReportsInitialState({
       projectId: deal.projectId,
       bloggerName: deal.bloggerName,
-      paymentType: 'prepaid',
+      paymentType: undefined,
       platform: deal.platform,
       pricePerSlot: deal.pricePerSlot,
       slotsCount: deal.slotsCount || 5,
@@ -804,6 +833,8 @@ export default function App() {
       <main className={`flex-1 ${
         activeTab === 'kanban' 
           ? 'h-screen overflow-hidden flex flex-col p-2 md:p-3 pt-16 md:pt-2.5 pb-20 md:pb-2' 
+          : activeTab === 'projects'
+          ? 'overflow-y-auto h-screen relative pt-16 p-3 sm:p-4 md:p-5 lg:px-6 lg:py-4 pb-28 md:pt-4'
           : 'overflow-y-auto h-screen relative pt-16 p-4 pb-28 md:p-8 lg:p-12 md:pt-8'
       }`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
@@ -929,7 +960,7 @@ export default function App() {
                         setReportsInitialState({
                           projectId: dealOrProjId,
                           bloggerName: maybeBloggerName,
-                          paymentType: maybePaymentType || 'remaining'
+                          paymentType: maybePaymentType || undefined
                         });
                         setActiveTab('reports');
                       }

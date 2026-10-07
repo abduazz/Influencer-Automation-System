@@ -17,6 +17,7 @@ class Integration extends Model
         'blogger_name',
         'blogger_page_link',
         'telegram_username',
+        'telegram_chat_id',
         'start_date',
         'platform',
         'referral_link',
@@ -225,5 +226,10 @@ class Integration extends Model
     public function bloggerRequisite(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(BloggerRequisite::class);
+    }
+
+    public function chatMessages(): HasMany
+    {
+        return $this->hasMany(ChatMessage::class)->orderBy('created_at', 'asc');
     }
 }

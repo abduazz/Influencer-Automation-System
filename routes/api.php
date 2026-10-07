@@ -1,14 +1,18 @@
 <?php
 
 use App\Http\Controllers\Api\BloggerSubmissionController;
+use App\Http\Controllers\Api\BootstrapController;
 use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\KanbanColumnController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\TelegramChatController;
+use App\Http\Controllers\Api\TelegramGatewayController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
 
+Route::get('/bootstrap', [BootstrapController::class, 'index']);
 Route::post('/login', [UserController::class, 'login']);
 Route::get('/allowed-users', [UserController::class, 'index']);
 Route::post('/allowed-users', [UserController::class, 'store']);
@@ -28,6 +32,20 @@ Route::delete('/integrations/{integration}', [IntegrationController::class, 'des
 Route::post('/integrations/{integration}/refresh-subscribers', [IntegrationController::class, 'refreshSubscribers']);
 Route::post('/integrations/{integration}/subscribers-history', [IntegrationController::class, 'addSubscriberHistory']);
 Route::post('/integrations/{integration}/sync-reports', [IntegrationController::class, 'syncReports']);
+Route::get('/integrations/{integration}/messages', [TelegramChatController::class, 'getMessages']);
+Route::post('/integrations/{integration}/messages', [TelegramChatController::class, 'sendMessage']);
+Route::put('/integrations/{integration}/chat-settings', [TelegramChatController::class, 'updateChatSettings']);
+Route::get('/integrations/{integration}/chat-redirect', [TelegramChatController::class, 'redirectToTelegram']);
+
+Route::post('/telegram/webhook', [TelegramChatController::class, 'handleWebhook']);
+Route::get('/telegram/webhook-status', [TelegramChatController::class, 'getWebhookStatus']);
+Route::post('/telegram/setup-webhook', [TelegramChatController::class, 'setupWebhook']);
+
+Route::get('/telegram-gateway/status', [TelegramGatewayController::class, 'getStatus']);
+Route::post('/telegram-gateway/qr', [TelegramGatewayController::class, 'startQr']);
+Route::post('/telegram-gateway/logout', [TelegramGatewayController::class, 'logout']);
+Route::post('/telegram-gateway/send/{integration}', [TelegramGatewayController::class, 'send']);
+Route::post('/telegram-gateway/webhook', [TelegramGatewayController::class, 'webhook']);
 
 Route::get('/kanban-columns', [KanbanColumnController::class, 'index']);
 Route::post('/kanban-columns', [KanbanColumnController::class, 'sync']);

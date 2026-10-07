@@ -118,87 +118,43 @@ class TelegramChatController extends Controller
         $gatewayController = app(TelegramGatewayController::class);
         $gatewayStatus = $gatewayController->getStatus()->getData(true);
 
-        if ($hasPersonalSession || !empty($gatewayStatus['isAuthorized'])) {
-            if (empty($gatewayStatus['isRunning'])) {
-                $gatewayController->ensureGatewayRunning();
-                $gatewayStatus = $gatewayController->getStatus()->getData(true);
-            }
-
-            if (!empty($gatewayStatus['isAuthorized'])) {
-                if (empty($integration->telegram_username) && empty($integration->telegram_chat_id)) {
-                    return response()->json([
-                        'error' => 'У блогера не указан Telegram логин. Укажите @username блогера в чате для отправки из личного Telegram.',
-                    ], 422);
-                }
-
-                $gatewayRes = $gatewayController->send($request, $integrationId);
-                $gData = $gatewayRes->getData(true);
-
-                if ($gatewayRes->getStatusCode() === 200) {
-                    return response()->json([
-                        'message' => $gData['message'],
-                        'delivered' => true,
-                        'hasChatId' => true,
-                        'sentViaGateway' => true,
-                        'chatUrl' => TelegramService::getBloggerChatUrl($integration->id, $integration->blogger_cabinet_token),
-                    ]);
-                }
-
-                return response()->json([
-                    'error' => $gData['error'] ?? 'Не удалось отправить через личный Telegram',
-                    'details' => $gData['details'] ?? null,
-                ], $gatewayRes->getStatusCode() ?: 500);
-            }
+        if (empty($integration->telegram_username) && empty($integration->telegram_chat_id)) {
+            return response()->json([
+                'error' => 'У блогера не указан Telegram логин. Укажите @username блогера в карточке для отправки сообщения.',
+            ], 422);
         }
 
-        $chatMessage = ChatMessage::create([
-            'integration_id' => $integration->id,
-            'sender_type' => 'manager',
-            'sender_name' => $senderName,
-            'text' => $text,
-            'status' => 'pending',
-        ]);
+        // Send exclusively via Personal MTProto Gateway
+        $gatewayController = app(TelegramGatewayController::class);
+        $gatewayStatus = $gatewayController->getStatus()->getData(true);
 
-        $delivered = false;
-        $telegramError = null;
+        if (empty($gatewayStatus['isRunning'])) {
+            $gatewayController->ensureGatewayRunning();
+            $gatewayStatus = $gatewayController->getStatus()->getData(true);
+        }
 
-        if ($integration->telegram_chat_id) {
-            $formattedText = "💬 <b>Менеджер ({$senderName}):</b>\n\n" . htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
-            $res = TelegramService::sendMessage($integration->telegram_chat_id, $formattedText);
+        if (empty($gatewayStatus['isAuthorized'])) {
+            return response()->json([
+                'error' => 'Личный Telegram-шлюз не авторизован. Откройте «Личный Telegram шлюз» в шапке доски и отсканируйте QR-код для синхронизации со своим профилем.',
+            ], 422);
+        }
 
-            if ($res && isset($res['result']['message_id'])) {
-                $chatMessage->update([
-                    'status' => 'delivered',
-                    'telegram_message_id' => $res['result']['message_id'],
-                ]);
-                $delivered = true;
-            } else {
-                $chatMessage->update(['status' => 'failed']);
-                $telegramError = 'Не удалось отправить через Telegram API';
-            }
-        } else {
-            // No telegram_chat_id linked yet
-            $chatMessage->update(['status' => 'pending']);
+        $gatewayRes = $gatewayController->send($request, $integrationId);
+        $gData = $gatewayRes->getData(true);
+
+        if ($gatewayRes->getStatusCode() === 200) {
+            return response()->json([
+                'message' => $gData['message'],
+                'delivered' => true,
+                'hasChatId' => true,
+                'sentViaGateway' => true,
+            ]);
         }
 
         return response()->json([
-            'message' => [
-                'id' => (string) $chatMessage->id,
-                'integrationId' => (string) $chatMessage->integration_id,
-                'senderType' => $chatMessage->sender_type,
-                'senderName' => $chatMessage->sender_name,
-                'text' => $chatMessage->text,
-                'telegramMessageId' => $chatMessage->telegram_message_id,
-                'mediaUrl' => $chatMessage->media_url,
-                'mediaType' => $chatMessage->media_type,
-                'status' => $chatMessage->status,
-                'createdAt' => $chatMessage->created_at->toISOString(),
-            ],
-            'delivered' => $delivered,
-            'hasChatId' => !empty($integration->telegram_chat_id),
-            'telegramError' => $telegramError,
-            'chatUrl' => TelegramService::getBloggerChatUrl($integration->id, $integration->blogger_cabinet_token),
-        ]);
+            'error' => $gData['error'] ?? 'Не удалось отправить сообщение через Telegram',
+            'details' => $gData['details'] ?? null,
+        ], $gatewayRes->getStatusCode() ?: 500);
     }
 
     /**

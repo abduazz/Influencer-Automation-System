@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Integration, ChatMessage, SiblingBlogger } from '../data/mockData';
 import { Language } from '../translations';
-import { copyToClipboard } from '../utils/clipboard';
 import { 
   Send, 
   Check, 
@@ -14,11 +13,9 @@ import {
   Clock, 
   AlertCircle, 
   ExternalLink, 
-  Copy, 
   X, 
   RefreshCw, 
   Settings, 
-  Bot, 
   MessageSquare,
   Sparkles,
   ChevronDown,
@@ -48,12 +45,9 @@ export default function BloggerTelegramChat({
   const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
-  const [chatUrl, setChatUrl] = useState('');
-  const [botUsername, setBotUsername] = useState<string | null>(null);
   const [telegramChatId, setTelegramChatId] = useState<string | null>(integration.telegramChatId || null);
   const [telegramUsername, setTelegramUsername] = useState<string>(integration.telegramUsername || '');
   const [manualUsername, setManualUsername] = useState<string>(integration.telegramUsername || '');
-  const [copiedLink, setCopiedLink] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [manualChatId, setManualChatId] = useState(integration.telegramChatId || '');
   const [savingSettings, setSavingSettings] = useState(false);
@@ -73,8 +67,6 @@ export default function BloggerTelegramChat({
     try {
       const res = await fetchChatMessages(integration.id);
       setMessages(res.messages || []);
-      if (res.botUsername) setBotUsername(res.botUsername);
-      if (res.integration?.chatUrl) setChatUrl(res.integration.chatUrl);
       if (res.siblingBloggers) setSiblingBloggers(res.siblingBloggers);
       if (res.integration?.telegramUsername !== undefined) {
         setTelegramUsername(res.integration.telegramUsername || '');
@@ -136,16 +128,6 @@ export default function BloggerTelegramChat({
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? res.message : m))
       );
-      if (res.chatUrl) setChatUrl(res.chatUrl);
-      if (!res.hasChatId) {
-        setSendError(
-          lang === 'uz'
-            ? 'Xabar saqlandi, lekin blogger hali Telegram botga ulanmagan.'
-            : lang === 'en'
-            ? 'Message saved, but the blogger has not connected to the Telegram bot yet.'
-            : 'Сообщение сохранено, но блогер ещё не перешел по ссылке в Telegram бота.'
-        );
-      }
     } catch (err: any) {
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
@@ -162,13 +144,6 @@ export default function BloggerTelegramChat({
       e.preventDefault();
       handleSend();
     }
-  };
-
-  const handleCopyLink = async () => {
-    const url = chatUrl || `https://t.me/${botUsername || 'bot'}?start=deal_${integration.id}`;
-    await copyToClipboard(url);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
   };
 
   const handleSaveManualSettings = async () => {

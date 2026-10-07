@@ -33,11 +33,11 @@ class TelegramGatewayController extends Controller
         } catch (\Throwable $e) {}
 
         // Auto-launch the gateway microservice if it stopped
-        $scriptPath = base_path('telegram-gateway/server.js');
-        $logPath = storage_path('logs/telegram-gateway.log');
+        $scriptPath = escapeshellarg(base_path('telegram-gateway/server.js'));
+        $logPath = escapeshellarg(storage_path('logs/telegram-gateway.log'));
         $nodePath = file_exists('/usr/local/bin/node') ? '/usr/local/bin/node' : 'node';
 
-        $cmd = "nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 &";
+        $cmd = "nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
         @exec($cmd);
 
         // Wait up to 2.5 seconds for it to bind

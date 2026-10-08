@@ -35,29 +35,58 @@ class TelegramGatewayController extends Controller
             }
         } catch (\Throwable $e) {}
 
-        // Auto-launch the gateway microservice if it stopped
-        $scriptPath = escapeshellarg(base_path('telegram-gateway/server.js'));
-        $logPath = escapeshellarg(storage_path('logs/telegram-gateway.log'));
-        
-        $nodePath = 'node';
-        $home = getenv('HOME') ?: '/root';
-        $nvmNodes = glob("{$home}/.nvm/versions/node/*/bin/node");
-        if (!empty($nvmNodes)) {
-            $nodePath = end($nvmNodes);
-        } elseif (file_exists('/usr/bin/node')) {
-            $nodePath = '/usr/bin/node';
-        } elseif (file_exists('/usr/local/bin/node')) {
-            $nodePath = '/usr/local/bin/node';
-        } elseif (file_exists('/opt/homebrew/bin/node')) {
-            $nodePath = '/opt/homebrew/bin/node';
+        // Locate node or auto-install portable node runtime
+        $portableNode = base_path('storage/node-runtime/bin/node');
+        $nodePath = null;
+
+        if (file_exists($portableNode) && is_executable($portableNode)) {
+            $nodePath = $portableNode;
         } else {
-            $which = @shell_exec('which node');
-            if ($which && trim($which)) {
-                $nodePath = trim($which);
+            $home = getenv('HOME') ?: '/root';
+            $nvmNodes = glob("{$home}/.nvm/versions/node/*/bin/node");
+            if (!empty($nvmNodes)) {
+                $nodePath = end($nvmNodes);
+            } elseif (file_exists('/usr/bin/node')) {
+                $nodePath = '/usr/bin/node';
+            } elseif (file_exists('/usr/local/bin/node')) {
+                $nodePath = '/usr/local/bin/node';
+            } elseif (file_exists('/opt/homebrew/bin/node')) {
+                $nodePath = '/opt/homebrew/bin/node';
+            } else {
+                $which = @shell_exec('which node');
+                if ($which && trim($which)) {
+                    $nodePath = trim($which);
+                }
             }
         }
 
-        $cmd = "nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
+        // If node still not found, execute ensure-node.sh installer
+        if (!$nodePath) {
+            $ensureScript = base_path('telegram-gateway/ensure-node.sh');
+            if (file_exists($ensureScript)) {
+                @shell_exec("bash " . escapeshellarg($ensureScript));
+                if (file_exists($portableNode) && is_executable($portableNode)) {
+                    $nodePath = $portableNode;
+                }
+            }
+        }
+
+        $nodePath = $nodePath ?: 'node';
+
+        // Auto-launch the gateway microservice if it stopped
+        $scriptPath = escapeshellarg(base_path('telegram-gateway/server.js'));
+        $logPath = escapeshellarg(storage_path('logs/telegram-gateway.log'));
+        $cwd = escapeshellarg(base_path());
+
+        // Check if node_modules exist, if not run npm install
+        if (!file_exists(base_path('node_modules/telegram'))) {
+            $npmPath = dirname($nodePath) . '/npm';
+            if (file_exists($npmPath)) {
+                @shell_exec("cd {$cwd} && " . escapeshellarg($npmPath) . " install --no-audit");
+            }
+        }
+
+        $cmd = "cd {$cwd} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
         @exec($cmd);
 
         // Wait up to 2.5 seconds for it to bind

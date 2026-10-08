@@ -54,6 +54,10 @@ import {
   submitBloggerRequisites,
   fetchBloggerRequisites,
   fetchBootstrapData,
+  getInitialBootstrapData,
+  saveBootstrapCache,
+  clearBootstrapCache,
+  BootstrapData,
 } from './services/api';
 
 import {
@@ -69,6 +73,9 @@ import {
 import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt } from 'lucide-react';
 
 export default function App() {
+  // Synchronous instant bootstrap cache (HTML preload or localStorage)
+  const initialBootstrap = useMemo(() => getInitialBootstrapData(), []);
+
   // Language state (Uzbek by default)
   const [lang, setLang] = useState<Language>(() => {
     const cached = localStorage.getItem('ff_lang');
@@ -81,9 +88,9 @@ export default function App() {
   };
 
   // Whitelisted Users & Role State (shared server-side list)
-  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>(INITIAL_ALLOWED_USERS);
-  const [allowedUsersLoading, setAllowedUsersLoading] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>(() => initialBootstrap?.users || INITIAL_ALLOWED_USERS);
+  const [allowedUsersLoading, setAllowedUsersLoading] = useState(() => !initialBootstrap?.users);
+  const [loading, setLoading] = useState(() => !initialBootstrap);
 
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(() => {
     return localStorage.getItem('ff_user_email');
@@ -197,6 +204,7 @@ export default function App() {
     setCurrentUserRole(null);
     localStorage.removeItem('ff_user_email');
     localStorage.removeItem('ff_user_role');
+    clearBootstrapCache();
   };
 
   // Mapped URL simulated routing parameters state
@@ -211,13 +219,17 @@ export default function App() {
                                  window.location.pathname.startsWith('/c/')) && 
                                  !currentUserRole;
 
-  // Core Persistent State Hook (Persisting data to server database)
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [submissions, setSubmissions] = useState<BloggerSubmission[]>([]);
-  const [bulkPurchases, setBulkPurchases] = useState<BulkPurchase[]>([]);
-  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>(INITIAL_KANBAN_COLUMNS);
+  // Core Persistent State Hook (Hydrated synchronously from instant cache / preload)
+  const [projects, setProjects] = useState<Project[]>(() => initialBootstrap?.projects || []);
+  const [integrations, setIntegrations] = useState<Integration[]>(() => initialBootstrap?.integrations || []);
+  const [reports, setReports] = useState<Report[]>(() => initialBootstrap?.reports || []);
+  const [submissions, setSubmissions] = useState<BloggerSubmission[]>(() => initialBootstrap?.submissions || []);
+  const [bulkPurchases, setBulkPurchases] = useState<BulkPurchase[]>(() => initialBootstrap?.bulkPurchases || []);
+  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>(() => 
+    initialBootstrap?.kanbanColumns && initialBootstrap.kanbanColumns.length > 0 
+      ? initialBootstrap.kanbanColumns 
+      : INITIAL_KANBAN_COLUMNS
+  );
 
   const handleRefreshAllData = async () => {
     try {
@@ -228,6 +240,7 @@ export default function App() {
       if (data.bulkPurchases) setBulkPurchases(data.bulkPurchases);
       if (data.kanbanColumns && data.kanbanColumns.length > 0) setKanbanColumns(data.kanbanColumns);
       if (data.bloggerRequisites) setBloggerRequisitesList(data.bloggerRequisites);
+      saveBootstrapCache(data);
     } catch (err) {
       console.warn("Bootstrap refresh failed, falling back to parallel fetch:", err);
       try {
@@ -269,6 +282,7 @@ export default function App() {
           if (data.bulkPurchases) setBulkPurchases(data.bulkPurchases);
           if (data.kanbanColumns && data.kanbanColumns.length > 0) setKanbanColumns(data.kanbanColumns);
           if (data.bloggerRequisites) setBloggerRequisitesList(data.bloggerRequisites);
+          saveBootstrapCache(data);
         }
       } catch (bootstrapErr) {
         console.warn("Bootstrap endpoint failed, falling back to parallel fetch:", bootstrapErr);
@@ -311,6 +325,22 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  // Synchronize state mutations and real-time updates to localStorage cache
+  useEffect(() => {
+    if (projects.length > 0 || integrations.length > 0) {
+      saveBootstrapCache({
+        users: allowedUsers,
+        projects,
+        integrations,
+        reports,
+        submissions,
+        bulkPurchases,
+        kanbanColumns,
+        bloggerRequisites: bloggerRequisitesList,
+      });
+    }
+  }, [projects, integrations, reports, submissions, bulkPurchases, kanbanColumns, bloggerRequisitesList, allowedUsers]);
 
   // Validate active session against the shared whitelist
   useEffect(() => {
@@ -906,6 +936,7 @@ export default function App() {
                 onRefreshSubscribers={handleRefreshIntegrationSubscribers}
                 onAddManualSnapshot={handleAddIntegrationSubscriberHistory}
                 onNavigateToReports={handleNavigateFromKanbanToReports}
+                loading={loading}
               />
             )}
             {activeTab === 'requisites_directory' && (
@@ -944,6 +975,7 @@ export default function App() {
                   userRole={currentUserRole}
                   currentUserName={currentUserName}
                   currentUserEmail={currentUserEmail}
+                  loading={loading}
                   onNavigateToReports={(dealOrProjId: any, maybeBloggerName?: string, maybePaymentType?: any) => {
                     if (dealOrProjId && typeof dealOrProjId === 'object' && dealOrProjId.bloggerName) {
                       handleNavigateFromKanbanToReports(dealOrProjId);

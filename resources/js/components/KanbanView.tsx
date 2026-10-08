@@ -60,6 +60,7 @@ interface KanbanViewProps {
   onRefreshSubscribers?: (integrationId: string) => Promise<void>;
   onAddManualSnapshot?: (integrationId: string, date: string, count: number, note?: string) => Promise<void>;
   onNavigateToReports?: (deal: Integration) => void;
+  loading?: boolean;
 }
 
 // Column titles should remain as named and not react to language switching
@@ -84,7 +85,8 @@ export default function KanbanView({
   onClearStage,
   onRefreshSubscribers,
   onAddManualSnapshot,
-  onNavigateToReports
+  onNavigateToReports,
+  loading = false
 }: KanbanViewProps) {
   const t = translations[lang] || translations['ru'];
 
@@ -641,7 +643,11 @@ export default function KanbanView({
                     : 'bg-slate-200/80 text-slate-600 group-hover:bg-slate-300/80'
                 }`}
               >
-                {totalKanbanCards}
+                {loading && integrations.length === 0 ? (
+                  <span className="inline-block w-4 h-3 bg-slate-300 animate-pulse rounded" />
+                ) : (
+                  totalKanbanCards
+                )}
               </span>
             </button>
 
@@ -920,12 +926,19 @@ export default function KanbanView({
               {/* Cards List Drop Target with Internal Scrollable Area */}
               <div className="p-2 space-y-1.5 overflow-y-auto flex-1 min-h-0">
                 {columnDeals.length === 0 ? (
-                  <div className={`flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-lg p-2 text-center transition ${
-                    isOver ? 'border-indigo-400 bg-indigo-50/40 text-indigo-600' : 'border-slate-200 text-slate-400'
-                  }`}>
-                    <Clock className="w-4 h-4 mb-1 opacity-40" />
-                    <span className="text-[11px] font-semibold">{t.kanbanDragHere || 'Перетащите сюда'}</span>
-                  </div>
+                  loading && integrations.length === 0 ? (
+                    <div className="space-y-2 p-1">
+                      <div className="h-16 bg-slate-100/90 animate-pulse rounded-lg" />
+                      <div className="h-14 bg-slate-100/70 animate-pulse rounded-lg" />
+                    </div>
+                  ) : (
+                    <div className={`flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-lg p-2 text-center transition ${
+                      isOver ? 'border-indigo-400 bg-indigo-50/40 text-indigo-600' : 'border-slate-200 text-slate-400'
+                    }`}>
+                      <Clock className="w-4 h-4 mb-1 opacity-40" />
+                      <span className="text-[11px] font-semibold">{t.kanbanDragHere || 'Перетащите сюда'}</span>
+                    </div>
+                  )
                 ) : (
                   columnDeals.map((deal) => {
                     const project = projects.find(p => p.id === deal.projectId);

@@ -51,8 +51,14 @@
     "file": "assets/instrument-sans-600-normal-DMks36a2.woff",
     "src": "_instrument-sans-600-normal-DMks36a2.woff"
   },
+  "node_modules/xlsx/xlsx.mjs": {
+    "file": "assets/xlsx-C8WN43MN.js",
+    "name": "xlsx",
+    "src": "node_modules/xlsx/xlsx.mjs",
+    "isDynamicEntry": true
+  },
   "resources/css/app.css": {
-    "file": "assets/app-CUUhoepK.css",
+    "file": "assets/app-iPef1HMB.css",
     "name": "app",
     "names": [
       "app.css"
@@ -73,10 +79,13 @@
     "src": "resources/images/id_card_sample_full.png"
   },
   "resources/js/main.tsx": {
-    "file": "assets/main-DWoFT-oK.js",
+    "file": "assets/main-COqHs84L.js",
     "name": "main",
     "src": "resources/js/main.tsx",
     "isEntry": true,
+    "dynamicImports": [
+      "node_modules/xlsx/xlsx.mjs"
+    ],
     "assets": [
       "assets/id_card_sample_front-DPZj7yiF.png",
       "assets/id_card_sample_back-DuFROFNl.png",

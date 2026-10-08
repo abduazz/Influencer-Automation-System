@@ -52,6 +52,7 @@ interface DashboardViewProps {
   currentUserName?: string | null;
   currentUserEmail?: string | null;
   onNavigateToReports?: (projectId: string, bloggerName: string, paymentType: 'remaining') => void;
+  loading?: boolean;
 }
 
 export default function DashboardView({
@@ -69,7 +70,8 @@ export default function DashboardView({
   userRole,
   currentUserName,
   currentUserEmail,
-  onNavigateToReports
+  onNavigateToReports,
+  loading = false
 }: DashboardViewProps) {
   // Current active project selection
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
@@ -446,11 +448,19 @@ export default function DashboardView({
           );
         })}
         {projects.length === 0 && (
-          <div className="w-full p-8 text-center bg-white border border-dashed border-neutral-200 rounded-xl">
-            <AlertCircle className="w-6 h-6 text-neutral-300 mx-auto mb-2" />
-            <p className="text-xs font-bold text-neutral-600">{t.noProjectsFound}</p>
-            <p className="text-[11px] text-neutral-400 mt-1">{t.createProjectPrompt}</p>
-          </div>
+          loading ? (
+            <div className="flex items-center gap-2 py-1">
+              <div className="h-8 w-24 bg-neutral-200/80 animate-pulse rounded-lg" />
+              <div className="h-8 w-28 bg-neutral-200/80 animate-pulse rounded-lg" />
+              <div className="h-8 w-20 bg-neutral-200/80 animate-pulse rounded-lg" />
+            </div>
+          ) : (
+            <div className="w-full p-8 text-center bg-white border border-dashed border-neutral-200 rounded-xl">
+              <AlertCircle className="w-6 h-6 text-neutral-300 mx-auto mb-2" />
+              <p className="text-xs font-bold text-neutral-600">{t.noProjectsFound}</p>
+              <p className="text-[11px] text-neutral-400 mt-1">{t.createProjectPrompt}</p>
+            </div>
+          )
         )}
       </div>
 
@@ -638,7 +648,11 @@ export default function DashboardView({
               {t.bloggerDeals}
             </span>
             <span className="text-xl font-black text-black mt-1">
-              {filteredIntegrations.length}
+              {loading && filteredIntegrations.length === 0 ? (
+                <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+              ) : (
+                filteredIntegrations.length
+              )}
             </span>
           </div>
         )}
@@ -648,7 +662,11 @@ export default function DashboardView({
               {t.allocatedSpend}
             </span>
             <span className="text-xl font-black text-black mt-1">
-              {totalSpend.toLocaleString()}
+              {loading && filteredIntegrations.length === 0 ? (
+                <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+              ) : (
+                totalSpend.toLocaleString()
+              )}
             </span>
           </div>
         )}
@@ -658,7 +676,11 @@ export default function DashboardView({
               {t.monthlySpend}
             </span>
             <span className="text-xl font-black text-black mt-1">
-              {selectedProjectMonthlySpend.toLocaleString()}
+              {loading && filteredIntegrations.length === 0 ? (
+                <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+              ) : (
+                selectedProjectMonthlySpend.toLocaleString()
+              )}
             </span>
           </div>
         )}
@@ -668,7 +690,11 @@ export default function DashboardView({
               {t.metricRemainingToPay}
             </span>
             <span className="text-xl font-black text-rose-600 mt-1">
-              {totalRemainingToPay.toLocaleString()}
+              {loading && filteredIntegrations.length === 0 ? (
+                <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+              ) : (
+                totalRemainingToPay.toLocaleString()
+              )}
             </span>
           </div>
         )}
@@ -678,7 +704,11 @@ export default function DashboardView({
               {t.totalSlotsLabel}
             </span>
             <span className="text-xl font-black text-black mt-1">
-              {totalSlotsCount}
+              {loading && filteredIntegrations.length === 0 ? (
+                <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+              ) : (
+                totalSlotsCount
+              )}
             </span>
           </div>
         )}
@@ -688,7 +718,11 @@ export default function DashboardView({
               {t.metricSlotsPublished}
             </span>
             <span className="text-xl font-black text-emerald-600 mt-1">
-              {totalPublishedSlots}
+              {loading && filteredIntegrations.length === 0 ? (
+                <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+              ) : (
+                totalPublishedSlots
+              )}
             </span>
           </div>
         )}
@@ -698,7 +732,11 @@ export default function DashboardView({
               {t.metricSlotsRemaining}
             </span>
             <span className="text-xl font-black text-amber-600 mt-1">
-              {totalRemainingSlots}
+              {loading && filteredIntegrations.length === 0 ? (
+                <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+              ) : (
+                totalRemainingSlots
+              )}
             </span>
           </div>
         )}

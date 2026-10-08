@@ -46,6 +46,59 @@ export interface BootstrapData {
   bloggerRequisites: BloggerRequisites[];
 }
 
+const BOOTSTRAP_CACHE_KEY = 'tezi_bootstrap_cache_v1';
+
+export function getInitialBootstrapData(): Partial<BootstrapData> | null {
+  if (typeof window === 'undefined') return null;
+
+  // 1. First priority: Server-inlined script tag (rendered in initial HTML, 0 network latency)
+  try {
+    const serverScript = document.getElementById('server-bootstrap-data');
+    if (serverScript && serverScript.textContent) {
+      const data = JSON.parse(serverScript.textContent);
+      if (data && typeof data === 'object') {
+        try {
+          localStorage.setItem(BOOTSTRAP_CACHE_KEY, JSON.stringify(data));
+        } catch {}
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to parse server bootstrap data', err);
+  }
+
+  // 2. Second priority: LocalStorage cache (instant hydration on subsequent visits/reloads)
+  try {
+    const cached = localStorage.getItem(BOOTSTRAP_CACHE_KEY);
+    if (cached) {
+      const data = JSON.parse(cached);
+      if (data && typeof data === 'object') {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to parse local bootstrap cache', err);
+  }
+
+  return null;
+}
+
+export function saveBootstrapCache(data: BootstrapData): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(BOOTSTRAP_CACHE_KEY, JSON.stringify(data));
+  } catch (err) {
+    console.warn('Failed to write bootstrap cache', err);
+  }
+}
+
+export function clearBootstrapCache(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(BOOTSTRAP_CACHE_KEY);
+  } catch {}
+}
+
 export function fetchBootstrapData(): Promise<BootstrapData> {
   return request<BootstrapData>('/api/bootstrap');
 }

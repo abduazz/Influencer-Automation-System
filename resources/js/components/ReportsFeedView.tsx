@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send, FolderKanban, Edit3, User, Receipt, ArrowRight, Filter, Check } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { Project, Report, Integration, SlotConfig } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
@@ -397,7 +396,7 @@ export default function ReportsFeedView({
     });
   }, [reports, projects, searchQuery, filterStartDate, filterEndDate, selectedProjectId, selectedProject]);
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filteredReports.length === 0) {
       alert(
         lang === 'ru' ? 'Нет записей для экспорта по выбранным фильтрам.' :
@@ -545,6 +544,7 @@ export default function ReportsFeedView({
       ...rows
     ];
 
+    const XLSX = await import('xlsx');
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 

@@ -7,7 +7,7 @@ use Illuminate\Http\JsonResponse;
 
 class BootstrapController extends Controller
 {
-    public function index(): JsonResponse
+    public function getBootstrapData(): array
     {
         $userCtrl = app(UserController::class);
         $projCtrl = app(ProjectController::class);
@@ -17,7 +17,7 @@ class BootstrapController extends Controller
         $bulkCtrl = app(BulkPurchaseController::class);
         $kanbanCtrl = app(KanbanColumnController::class);
 
-        return response()->json([
+        return [
             'users' => $userCtrl->index()->getData(true),
             'projects' => $projCtrl->index()->getData(true),
             'integrations' => $intCtrl->index()->getData(true),
@@ -26,6 +26,11 @@ class BootstrapController extends Controller
             'bulkPurchases' => $bulkCtrl->index()->getData(true),
             'kanbanColumns' => $kanbanCtrl->index()->getData(true),
             'bloggerRequisites' => $intCtrl->getRequisites()->getData(true),
-        ]);
+        ];
+    }
+
+    public function index(): JsonResponse
+    {
+        return response()->json($this->getBootstrapData());
     }
 }

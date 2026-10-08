@@ -14,6 +14,9 @@ class TelegramGatewayController extends Controller
 {
     private function getGatewayUrl(): string
     {
+        if ($envUrl = env('TELEGRAM_GATEWAY_URL')) {
+            return rtrim($envUrl, '/');
+        }
         $port = config('services.telegram.gateway_port', 5005);
         return "http://127.0.0.1:{$port}";
     }
@@ -37,7 +40,11 @@ class TelegramGatewayController extends Controller
         $logPath = escapeshellarg(storage_path('logs/telegram-gateway.log'));
         
         $nodePath = 'node';
-        if (file_exists('/usr/bin/node')) {
+        $home = getenv('HOME') ?: '/root';
+        $nvmNodes = glob("{$home}/.nvm/versions/node/*/bin/node");
+        if (!empty($nvmNodes)) {
+            $nodePath = end($nvmNodes);
+        } elseif (file_exists('/usr/bin/node')) {
             $nodePath = '/usr/bin/node';
         } elseif (file_exists('/usr/local/bin/node')) {
             $nodePath = '/usr/local/bin/node';

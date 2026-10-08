@@ -19,21 +19,30 @@ php artisan reports:sync
 echo "📊 Syncing integrations with actual reports..."
 php artisan integrations:sync-reports
 
+# Load NVM / Node if installed
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
 echo "⚡ Optimizing application caches..."
 php artisan optimize:clear
 php artisan optimize
 
-echo "📦 Installing npm dependencies & building assets..."
-npm install --no-audit
-npm run build
-
-echo "🤖 Starting Telegram Gateway microservice..."
-if command -v pm2 &> /dev/null; then
-    pm2 restart telegram-gateway 2>/dev/null || pm2 start telegram-gateway/server.js --name "telegram-gateway"
-    pm2 save
+if ! command -v npm &> /dev/null; then
+    echo "⚠️ ВНИМАНИЕ: На сервере не найден 'npm' / Node.js!"
+    echo "Для работы личного Telegram-шлюза установите Node.js (команды указаны в инструкции)."
 else
-    pkill -f "telegram-gateway/server.js" || true
-    nohup node telegram-gateway/server.js > storage/logs/telegram-gateway.log 2>&1 < /dev/null &
+    echo "📦 Installing npm dependencies & building assets..."
+    npm install --no-audit
+    npm run build
+
+    echo "🤖 Starting Telegram Gateway microservice..."
+    if command -v pm2 &> /dev/null; then
+        pm2 restart telegram-gateway 2>/dev/null || pm2 start telegram-gateway/server.js --name "telegram-gateway"
+        pm2 save
+    else
+        pkill -f "telegram-gateway/server.js" || true
+        nohup node telegram-gateway/server.js > storage/logs/telegram-gateway.log 2>&1 < /dev/null &
+    fi
 fi
 
 echo "🎉 Deployment completed successfully!"

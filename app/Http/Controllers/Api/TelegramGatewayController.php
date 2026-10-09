@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class TelegramGatewayController extends Controller
 {
-    private function getGatewayUrl(): string
+    public function getGatewayUrl(): string
     {
         if ($envUrl = env('TELEGRAM_GATEWAY_URL')) {
             return rtrim($envUrl, '/');

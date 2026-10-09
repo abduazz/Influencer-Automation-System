@@ -8,7 +8,7 @@ import { Integration, Project, KanbanColumn, INITIAL_KANBAN_COLUMNS, DealComment
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
-import { getPlatformBadgeClasses, formatTelegramLink, formatTelegramHandle } from '../utils/platform';
+import { getPlatformBadgeClasses, formatTelegramLink } from '../utils/platform';
 import { 
   Search, 
   Plus, 
@@ -36,7 +36,8 @@ import {
   Lock,
   ChevronUp,
   ChevronDown,
-  QrCode
+  QrCode,
+  AlertCircle
 } from 'lucide-react';
 import BloggerAudienceCard from './BloggerAudienceCard';
 import BloggerTelegramChat from './BloggerTelegramChat';
@@ -57,7 +58,8 @@ interface KanbanViewProps {
   currentUserName?: string | null;
   onOpenRequisitesDirectory?: () => void;
   onClearStage?: (stageId: string) => void | Promise<void>;
-  onRefreshSubscribers?: (integrationId: string) => Promise<void>;
+  onRefreshSubscribers?: (integrationId: string, overrides?: any) => Promise<any>;
+  onResetSubscribersHistory?: (integrationId: string) => Promise<any>;
   onAddManualSnapshot?: (integrationId: string, date: string, count: number, note?: string) => Promise<void>;
   onNavigateToReports?: (deal: Integration) => void;
   loading?: boolean;
@@ -84,6 +86,7 @@ export default function KanbanView({
   onOpenRequisitesDirectory,
   onClearStage,
   onRefreshSubscribers,
+  onResetSubscribersHistory,
   onAddManualSnapshot,
   onNavigateToReports,
   loading = false
@@ -233,6 +236,57 @@ export default function KanbanView({
   const [editBloggerName, setEditBloggerName] = useState('');
   const [editBloggerLink, setEditBloggerLink] = useState('');
   const [editTelegramUsername, setEditTelegramUsername] = useState('');
+  const [telegramContacts, setTelegramContacts] = useState<string[]>(['']);
+  const [isTgFocused, setIsTgFocused] = useState(false);
+
+  // Split multiple telegram contacts or return empty single contact
+  const parseTelegramContacts = (val: string | null | undefined): string[] => {
+    if (!val) return [''];
+    const parts = val.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+    return parts.length > 0 ? parts : [''];
+  };
+
+  const getTelegramAppUrl = (contact: string): string => {
+    const clean = contact.trim();
+    if (!clean) return '#';
+    const cleanDigits = clean.replace(/\D/g, '');
+    if (/^\+?\d{9,15}$/.test(clean)) {
+      return `https://t.me/+${cleanDigits}`;
+    }
+    return formatTelegramLink(clean);
+  };
+
+  const updateTelegramContact = (index: number, val: string) => {
+    if (val.includes(',') || val.includes('\n')) {
+      const pastedParts = val.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+      if (pastedParts.length > 1) {
+        const updated = [...telegramContacts];
+        updated.splice(index, 1, ...pastedParts);
+        setTelegramContacts(updated);
+        setEditTelegramUsername(updated.join(', '));
+        return;
+      }
+    }
+    const updated = [...telegramContacts];
+    updated[index] = val;
+    setTelegramContacts(updated);
+    const combined = updated.map(s => s.trim()).filter(Boolean).join(', ');
+    setEditTelegramUsername(combined);
+  };
+
+  const handleAddTgContact = () => {
+    setTelegramContacts(prev => [...prev, '']);
+  };
+
+  const handleRemoveTgContact = (index: number) => {
+    setTelegramContacts(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      const finalList = updated.length > 0 ? updated : [''];
+      const combined = finalList.map(s => s.trim()).filter(Boolean).join(', ');
+      setEditTelegramUsername(combined);
+      return finalList;
+    });
+  };
   const [editPlatform, setEditPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Instagram');
   const [editProjectId, setEditProjectId] = useState('');
   const [editKanbanStage, setEditKanbanStage] = useState('');
@@ -257,6 +311,99 @@ export default function KanbanView({
   const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
   const [columnTitleInput, setColumnTitleInput] = useState('');
   const [activePassportScanZoom, setActivePassportScanZoom] = useState<{ src: string; title: string } | null>(null);
+
+  // Detect whether blogger channel, handle, link, or platform was modified inside modal
+  const isChannelChangedInModal = useMemo(() => {
+    if (!selectedDeal || isCreateMode) return false;
+    const oldName = (selectedDeal.bloggerName || '').trim().toLowerCase().replace(/^[@#]/, '');
+    const newName = editBloggerName.trim().toLowerCase().replace(/^[@#]/, '');
+    const oldLink = (selectedDeal.bloggerPageLink || '').trim();
+    const newLink = editBloggerLink.trim();
+    const oldPlat = selectedDeal.platform || 'Instagram';
+    const newPlat = editPlatform;
+    return oldName !== newName || oldLink !== newLink || oldPlat !== newPlat;
+  }, [selectedDeal, isCreateMode, editBloggerName, editBloggerLink, editPlatform]);
+
+  // Construct effective deal for audience widget: when channel changed, wipe old history for display!
+  const effectiveDealForAudience: Integration = useMemo(() => {
+    if (!selectedDeal) return {} as Integration;
+    if (isChannelChangedInModal) {
+      return {
+        ...selectedDeal,
+        bloggerName: editBloggerName.trim() || selectedDeal.bloggerName,
+        bloggerPageLink: editBloggerLink.trim(),
+        platform: editPlatform,
+        subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : null,
+        subscribersHistory: [],
+        subscribersUpdatedAt: null,
+      };
+    }
+    return {
+      ...selectedDeal,
+      bloggerName: editBloggerName.trim() || selectedDeal.bloggerName,
+      bloggerPageLink: editBloggerLink.trim(),
+      platform: editPlatform,
+      subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : selectedDeal.subscribersCount,
+    };
+  }, [selectedDeal, isChannelChangedInModal, editBloggerName, editBloggerLink, editPlatform, editSubscribersCount]);
+
+  // Keep selectedDeal in sync with integrations prop
+  useEffect(() => {
+    if (selectedDeal) {
+      const fresh = integrations.find(i => i.id === selectedDeal.id);
+      if (fresh) {
+        setSelectedDeal(prev => {
+          if (!prev) return null;
+          if (
+            prev.subscribersCount !== fresh.subscribersCount ||
+            prev.subscribersUpdatedAt !== fresh.subscribersUpdatedAt ||
+            JSON.stringify(prev.subscribersHistory) !== JSON.stringify(fresh.subscribersHistory)
+          ) {
+            return {
+              ...prev,
+              subscribersCount: fresh.subscribersCount,
+              subscribersUpdatedAt: fresh.subscribersUpdatedAt,
+              subscribersHistory: fresh.subscribersHistory
+            };
+          }
+          return prev;
+        });
+      }
+    }
+  }, [integrations]);
+
+  // Handle refresh subscribers right inside the modal with current input values
+  const handleRefreshSubscribersInModal = async (integrationId: string) => {
+    if (!onRefreshSubscribers) return;
+    const updated = await onRefreshSubscribers(integrationId, {
+      platform: editPlatform,
+      bloggerName: editBloggerName.trim(),
+      bloggerPageLink: editBloggerLink.trim(),
+      telegramUsername: editTelegramUsername.trim()
+    });
+    if (updated) {
+      setSelectedDeal(updated);
+      setEditSubscribersCount(updated.subscribersCount ?? '');
+      if (updated.bloggerName) setEditBloggerName(updated.bloggerName);
+      if (updated.bloggerPageLink !== undefined) setEditBloggerLink(updated.bloggerPageLink || '');
+      if (updated.telegramUsername !== undefined) {
+        setEditTelegramUsername(updated.telegramUsername || '');
+        setTelegramContacts(parseTelegramContacts(updated.telegramUsername));
+      }
+      if (updated.platform) setEditPlatform(updated.platform);
+    }
+  };
+
+  // Handle reset subscribers history in modal
+  const handleResetHistoryInModal = async (integrationId: string) => {
+    if (onResetSubscribersHistory) {
+      const updated = await onResetSubscribersHistory(integrationId);
+      if (updated) {
+        setSelectedDeal(updated);
+        setEditSubscribersCount('');
+      }
+    }
+  };
 
   // Comment Handlers
   const handleAddComment = () => {
@@ -380,6 +527,8 @@ export default function KanbanView({
     setEditBloggerName('');
     setEditBloggerLink('');
     setEditTelegramUsername('');
+    setTelegramContacts(['']);
+    setIsTgFocused(false);
     setEditPlatform('Instagram');
     setEditProjectId(selectedProjectId !== 'all' ? selectedProjectId : (projects[0]?.id || ''));
     setEditKanbanStage(stageId || columns[0]?.id || 'wishlist');
@@ -405,6 +554,8 @@ export default function KanbanView({
     setEditBloggerName(deal.bloggerName || '');
     setEditBloggerLink(deal.bloggerPageLink || '');
     setEditTelegramUsername(deal.telegramUsername || '');
+    setTelegramContacts(parseTelegramContacts(deal.telegramUsername));
+    setIsTgFocused(false);
     setEditPlatform(deal.platform || 'Instagram');
     setEditProjectId(deal.projectId || (projects[0] ? projects[0].id : ''));
     setEditKanbanStage(deal.kanbanStage || columns[0]?.id || 'wishlist');
@@ -500,6 +651,14 @@ export default function KanbanView({
           kanbanStage: editKanbanStage,
           subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
         };
+
+        if (isChannelChangedInModal) {
+          updatedFields.subscribersHistory = [];
+          updatedFields.subscribersUpdatedAt = undefined;
+          if (editSubscribersCount === '') {
+            updatedFields.subscribersCount = undefined;
+          }
+        }
 
         if (onEditIntegration) {
           await onEditIntegration(selectedDeal.id, updatedFields);
@@ -1014,25 +1173,11 @@ export default function KanbanView({
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="text-[10px] text-slate-400 hover:text-black hover:underline inline-flex items-center gap-0.5"
+                                className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-600 hover:text-black bg-slate-50 hover:bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/80 transition"
                               >
-                                <ExternalLink className="w-2.5 h-2.5" />
-                                <span>{t.kanbanChannelLink || 'Канал'}</span>
+                                <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
+                                <span>{t.kanbanChannelLink || 'Канал / Страница'}</span>
                               </a>
-                            )}
-                            {deal.telegramUsername && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveChatDeal(deal);
-                                }}
-                                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-500 hover:text-white px-1.5 py-0.2 rounded border border-sky-200/60 transition group/tg cursor-pointer"
-                                title={lang === 'uz' ? 'Karta chatini ochish' : lang === 'en' ? 'Open card chat' : 'Открыть чат на доске'}
-                              >
-                                <Send className="w-2.5 h-2.5 text-sky-500 group-hover/tg:text-white transition-colors" />
-                                <span>{formatTelegramHandle(deal.telegramUsername)}</span>
-                              </button>
                             )}
                             <button
                               type="button"
@@ -1040,7 +1185,7 @@ export default function KanbanView({
                                 e.stopPropagation();
                                 setActiveChatDeal(deal);
                               }}
-                              className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-sky-500 hover:text-white px-1.5 py-0.2 rounded border border-slate-200/80 transition group/chat cursor-pointer"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-sky-500 hover:text-white px-1.5 py-0.5 rounded border border-slate-200/80 transition group/chat cursor-pointer"
                               title={lang === 'uz' ? 'Telegram chat (CRM)' : lang === 'en' ? 'Telegram Chat (CRM)' : 'Онлайн-диалог в Telegram'}
                             >
                               <MessageSquare className="w-2.5 h-2.5 text-sky-500 group-hover/chat:text-white" />
@@ -1051,12 +1196,15 @@ export default function KanbanView({
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Ожидает подключения" />
                               )}
                             </button>
-                            {deal.createdBy && (
-                              <span className="text-[9px] text-slate-400 truncate max-w-[90px]" title={`${t.kanbanCreatedByLabel || 'Создал:'} ${deal.createdBy}`}>
+                          </div>
+
+                          {deal.createdBy && (
+                            <div className="mt-1">
+                              <span className="text-[9px] text-slate-400 truncate block" title={`${t.kanbanCreatedByLabel || 'Создал:'} ${deal.createdBy}`}>
                                 • {deal.createdBy}
                               </span>
-                            )}
-                          </div>
+                            </div>
+                          )}
 
                           {/* Compact Comment Preview */}
                           {(() => {
@@ -1490,17 +1638,7 @@ export default function KanbanView({
                   </button>
                 )}
 
-                {editBloggerLink && (
-                  <a
-                    href={editBloggerLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl border border-slate-200 transition"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{t.kanbanOpenChannelBtn || 'Открыть канал'}</span>
-                  </a>
-                )}
+
 
 
                 <button
@@ -1528,6 +1666,8 @@ export default function KanbanView({
                 <BloggerTelegramChat
                   integration={selectedDeal}
                   lang={lang}
+                  userRole={userRole}
+                  currentUserEmail={currentUserEmail}
                   currentUserName={currentUserName || currentUserEmail}
                   isInline={true}
                   onIntegrationUpdated={(updated) => {
@@ -1574,13 +1714,39 @@ export default function KanbanView({
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
                     {t.kanbanBloggerLinkLabel || 'Ссылка на страницу / канал'}
                   </label>
-                  <input
-                    type="text"
-                    value={editBloggerLink}
-                    onChange={(e) => setEditBloggerLink(e.target.value)}
-                    placeholder="https://instagram.com/..."
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={editBloggerLink}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditBloggerLink(val);
+                        const trimmed = val.trim().toLowerCase();
+                        if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) {
+                          if (editPlatform !== 'YouTube') setEditPlatform('YouTube');
+                        } else if (trimmed.includes('t.me') || trimmed.includes('telegram.me')) {
+                          if (editPlatform !== 'Telegram') setEditPlatform('Telegram');
+                        } else if (trimmed.includes('instagram.com') || trimmed.includes('instagr.am')) {
+                          if (editPlatform !== 'Instagram') setEditPlatform('Instagram');
+                        } else if (trimmed.includes('tiktok.com')) {
+                          if (editPlatform !== 'TikTok') setEditPlatform('TikTok');
+                        }
+                      }}
+                      placeholder="https://instagram.com/..."
+                      className="flex-1 min-w-0 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
+                    />
+                    {editBloggerLink.trim() && (
+                      <a
+                        href={editBloggerLink.trim().startsWith('http://') || editBloggerLink.trim().startsWith('https://') ? editBloggerLink.trim() : `https://${editBloggerLink.trim()}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-center px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-black rounded-xl border border-slate-200 transition shrink-0"
+                        title={t.kanbanOpenChannelBtn || 'Открыть канал'}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
+                  </div>
                 </div>
 
                 <div className="sm:col-span-2">
@@ -1589,18 +1755,108 @@ export default function KanbanView({
                       {t.kanbanBloggerTgLabel || 'Личный Telegram блогера (для связи)'}
                     </label>
                   </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={editTelegramUsername}
-                      onChange={(e) => setEditTelegramUsername(e.target.value)}
-                      placeholder={t.kanbanBloggerTgPlaceholder || 'например, @username, username или https://t.me/username'}
-                      className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
-                    />
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <Send className="w-3.5 h-3.5 text-sky-500" />
-                    </div>
+
+                  <div className="space-y-2">
+                    {telegramContacts.map((contact, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="relative flex-1 min-w-0">
+                          <input
+                            type="text"
+                            value={contact}
+                            onChange={(e) => updateTelegramContact(idx, e.target.value)}
+                            onFocus={() => setIsTgFocused(true)}
+                            onBlur={() => {
+                              setTimeout(() => setIsTgFocused(false), 200);
+                            }}
+                            placeholder={idx === 0 
+                              ? (t.kanbanBloggerTgPlaceholder || 'например, @username, username или +998901234567') 
+                              : (lang === 'uz' ? "Qo'shimcha @username yoki raqam" : lang === 'en' ? 'Additional @username or number' : 'Дополнительный @username или номер')}
+                            className="w-full pl-9 pr-38 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
+                          />
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                            <Send className="w-3.5 h-3.5 text-sky-500" />
+                          </div>
+
+                          {/* Button inside input: open Telegram chat inside platform */}
+                          <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isCreateMode && selectedDeal) {
+                                  setModalActiveTab('chat');
+                                }
+                              }}
+                              disabled={isCreateMode || !selectedDeal}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition shadow-xs cursor-pointer ${
+                                isCreateMode || !selectedDeal
+                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                                  : 'bg-neutral-900 hover:bg-black text-white hover:text-sky-300'
+                              }`}
+                              title={
+                                isCreateMode || !selectedDeal
+                                  ? (lang === 'uz' ? 'Platformada chat kartochka yaratilgandan so‘ng ochiladi' : lang === 'en' ? 'Chat available after creating deal' : 'Чат в платформе доступен после сохранения карточки')
+                                  : (lang === 'uz' ? 'Platformada Telegram chatni ochish' : lang === 'en' ? 'Open Telegram chat in platform' : 'Открыть онлайн Telegram-чат прямо в платформе')
+                              }
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>{t.kanbanChatInPlatform || 'Чат в платформе'}</span>
+                              {selectedDeal && (selectedDeal.telegramChatId || selectedDeal.telegramUsername) && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Button next to input: redirect to blogger's account in Telegram application */}
+                        {contact.trim() && (
+                          <a
+                            href={getTelegramAppUrl(contact)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-center px-2.5 py-2 bg-slate-100 hover:bg-sky-50 text-sky-600 hover:text-sky-700 rounded-xl border border-slate-200 hover:border-sky-300 transition shrink-0"
+                            title={t.kanbanOpenInTelegramApp || 'Открыть в приложении Telegram'}
+                          >
+                            <Send className="w-4 h-4 text-sky-500" />
+                          </a>
+                        )}
+
+                        {/* Remove additional contact button */}
+                        {telegramContacts.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTgContact(idx)}
+                            className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl border border-slate-200/60 hover:border-rose-200 transition shrink-0 cursor-pointer"
+                            title={lang === 'uz' ? "Ushbu kontaktni o'chirish" : lang === 'en' ? 'Remove this contact' : 'Удалить этот контакт'}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </div>
+
+                  {/* Add another number or username action (shown when focused, or when has value / multiple contacts) */}
+                  {(isTgFocused || telegramContacts.length > 1 || telegramContacts.some(c => c.trim().length > 0)) && (
+                    <div className="flex items-center justify-between mt-2">
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleAddTgContact();
+                        }}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-sky-600 hover:text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-lg border border-sky-200/80 transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{t.kanbanAddAnotherTg || 'Добавить ещё один номер или юзернейм'}</span>
+                      </button>
+                      {telegramContacts.length > 1 && (
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {lang === 'uz' ? `Kontaktlar: ${telegramContacts.length}` : lang === 'en' ? `Contacts: ${telegramContacts.length}` : `Контактов: ${telegramContacts.length}`}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   <p className="text-[10px] text-slate-400 mt-1">
                     {t.kanbanBloggerTgHint || 'Укажите @юзернейм, ник или номер блогера для общения прямо в карточке на доске'}
                   </p>
@@ -1865,12 +2121,26 @@ export default function KanbanView({
 
                 {/* If existing deal, show the interactive flip card directly inside modal */}
                 {!isCreateMode && selectedDeal && (
-                  <div className="mt-2">
+                  <div className="mt-2 space-y-2">
+                    {isChannelChangedInModal && (
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2 text-xs text-amber-800">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                        <div>
+                          <span className="font-bold block">
+                            {t.audChannelChangedNotice || 'Канал блогера изменен. Старые записи замеров очищены для нового канала.'}
+                          </span>
+                          <span className="text-[11px] text-amber-700">
+                            {t.audRunFirstCheck || 'Запустите замер через кнопку обновления для получения актуальных данных нового канала.'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                     <BloggerAudienceCard
-                      integration={selectedDeal}
+                      integration={effectiveDealForAudience}
                       lang={lang}
-                      onRefreshSubscribers={onRefreshSubscribers}
+                      onRefreshSubscribers={handleRefreshSubscribersInModal}
                       onAddManualSnapshot={onAddManualSnapshot}
+                      onResetHistory={handleResetHistoryInModal}
                       isCollapsible={false}
                     />
                   </div>
@@ -2102,6 +2372,8 @@ export default function KanbanView({
             <BloggerTelegramChat
               integration={activeChatDeal}
               lang={lang}
+              userRole={userRole}
+              currentUserEmail={currentUserEmail}
               currentUserName={currentUserName || currentUserEmail}
               onClose={() => setActiveChatDeal(null)}
               onIntegrationUpdated={(updated) => {

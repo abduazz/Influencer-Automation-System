@@ -19,14 +19,18 @@ import {
   MessageSquare,
   Sparkles,
   ChevronDown,
-  Users
+  Users,
+  Pencil,
+  Trash2
 } from 'lucide-react';
-import { fetchChatMessages, sendChatMessage, updateIntegrationChatSettings } from '../services/api';
+import { fetchChatMessages, sendChatMessage, updateIntegrationChatSettings, editChatMessage, deleteChatMessage } from '../services/api';
 import { formatTelegramLink, formatTelegramHandle } from '../utils/platform';
 
 interface BloggerTelegramChatProps {
   integration: Integration;
   lang?: Language;
+  userRole?: string | null;
+  currentUserEmail?: string | null;
   currentUserName?: string | null;
   onClose?: () => void;
   onIntegrationUpdated?: (updated: Integration) => void;
@@ -36,11 +40,19 @@ interface BloggerTelegramChatProps {
 export default function BloggerTelegramChat({
   integration,
   lang = 'ru',
+  userRole,
+  currentUserEmail,
   currentUserName,
   onClose,
   onIntegrationUpdated,
   isInline = false,
 }: BloggerTelegramChatProps) {
+  const isSuperAdmin = 
+    userRole === 'super_admin' || 
+    currentUserName === 'Super Admin' || 
+    (!userRole && !currentUserEmail) ||
+    (currentUserEmail && (currentUserEmail.includes('admin') || currentUserEmail === 'chief1' || currentUserEmail === 'abduazz'));
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState('');
@@ -54,6 +66,13 @@ export default function BloggerTelegramChat({
   const [sendError, setSendError] = useState<string | null>(null);
   const [siblingBloggers, setSiblingBloggers] = useState<SiblingBlogger[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Message edit and delete state (Super Admin only)
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingMessage, setDeletingMessage] = useState<ChatMessage | null>(null);
+  const [deleteRevoke, setDeleteRevoke] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -72,11 +91,9 @@ export default function BloggerTelegramChat({
       if (res.siblingBloggers) setSiblingBloggers(res.siblingBloggers);
       if (res.integration?.telegramUsername !== undefined) {
         setTelegramUsername(res.integration.telegramUsername || '');
-        setManualUsername(res.integration.telegramUsername || '');
       }
       if (res.integration?.telegramChatId !== undefined) {
         setTelegramChatId(res.integration.telegramChatId);
-        setManualChatId(res.integration.telegramChatId || '');
       }
     } catch (err) {
       console.error('Failed to load chat messages:', err);
@@ -87,6 +104,10 @@ export default function BloggerTelegramChat({
   };
 
   useEffect(() => {
+    setTelegramUsername(integration.telegramUsername || '');
+    setManualUsername(integration.telegramUsername || '');
+    setTelegramChatId(integration.telegramChatId || null);
+    setManualChatId(integration.telegramChatId || '');
     loadMessages();
 
     // Start smart polling every 3.5 seconds
@@ -143,30 +164,105 @@ export default function BloggerTelegramChat({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Escape') {
+      if (editingMessage) {
+        e.preventDefault();
+        handleCancelEdit();
+      }
+    } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (editingMessage) {
+        handleSaveEdit();
+      } else {
+        handleSend();
+      }
+    }
+  };
+
+  const handleStartEdit = (msg: ChatMessage) => {
+    setEditingMessage(msg);
+    setInputText(msg.text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setInputText('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMessage) return;
+    const newText = inputText.trim();
+    if (!newText || savingEdit) return;
+
+    setSavingEdit(true);
+    setSendError(null);
+    try {
+      await editChatMessage(
+        integration.id, 
+        editingMessage.id, 
+        newText,
+        userRole,
+        currentUserEmail
+      );
+      setMessages(prev => prev.map(m => m.id === editingMessage.id ? { ...m, text: newText, isEdited: true } : m));
+      setEditingMessage(null);
+      setInputText('');
+    } catch (err: any) {
+      setSendError(err.message || 'Ошибка редактирования сообщения');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleStartDelete = (msg: ChatMessage) => {
+    setDeletingMessage(msg);
+    setDeleteRevoke(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingMessage) return;
+    setIsDeleting(true);
+    setSendError(null);
+    try {
+      await deleteChatMessage(
+        integration.id,
+        deletingMessage.id,
+        deleteRevoke,
+        userRole,
+        currentUserEmail
+      );
+      setMessages(prev => prev.filter(m => m.id !== deletingMessage.id));
+      if (editingMessage?.id === deletingMessage.id) {
+        setEditingMessage(null);
+        setInputText('');
+      }
+      setDeletingMessage(null);
+    } catch (err: any) {
+      setSendError(err.message || 'Ошибка при удалении сообщения');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const handleSaveManualSettings = async () => {
+    const trimmed = manualUsername.trim();
     setSavingSettings(true);
     try {
       const res = await updateIntegrationChatSettings(
         integration.id, 
         telegramChatId || manualChatId || null,
-        manualUsername.trim() || null
+        trimmed || null
       );
       setTelegramChatId(res.telegramChatId);
-      if (res.telegramUsername !== undefined) {
-        setTelegramUsername(res.telegramUsername || '');
-      }
+      const savedUser = res.telegramUsername !== undefined ? (res.telegramUsername || '') : trimmed;
+      setTelegramUsername(savedUser);
+      setManualUsername(savedUser);
       setShowSettings(false);
       if (onIntegrationUpdated) {
         onIntegrationUpdated({
           ...integration,
           telegramChatId: res.telegramChatId,
-          telegramUsername: res.telegramUsername || undefined,
+          telegramUsername: savedUser || undefined,
         });
       }
     } catch (err: any) {
@@ -237,7 +333,10 @@ export default function BloggerTelegramChat({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setShowSettings(true)}
+                  onClick={() => {
+                    setManualUsername(telegramUsername || '');
+                    setShowSettings(true);
+                  }}
                   className="text-neutral-500 hover:text-neutral-900 underline font-medium cursor-pointer"
                   title="Указать Telegram логин блогера"
                 >
@@ -262,7 +361,12 @@ export default function BloggerTelegramChat({
 
           <button
             type="button"
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={() => {
+              if (!showSettings) {
+                setManualUsername(telegramUsername || '');
+              }
+              setShowSettings(!showSettings);
+            }}
             className="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition cursor-pointer"
             title="Настройки контакта"
           >
@@ -475,35 +579,67 @@ export default function BloggerTelegramChat({
                       : (currentUserName || 'Super Admin')}
                   </span>
                 )}
-                <div
-                  className={`max-w-[85%] sm:max-w-[75%] px-3.5 py-2 rounded-2xl text-xs shadow-2xs relative break-words ${
-                    isManager
-                      ? 'bg-neutral-900 text-white rounded-br-xs'
-                      : 'bg-white text-neutral-900 border border-neutral-200/90 rounded-bl-xs'
-                  }`}
-                >
-                  <div className="whitespace-pre-wrap leading-relaxed select-text">
-                    {msg.text}
-                  </div>
+                <div className={`group relative flex items-center gap-1.5 max-w-[85%] sm:max-w-[75%] ${isManager ? 'flex-row' : 'flex-row-reverse'}`}>
+                  {/* Super Admin Hover Actions */}
+                  {isSuperAdmin && (
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0 bg-white/95 backdrop-blur-xs px-1 py-0.5 rounded-lg border border-neutral-200/90 shadow-2xs">
+                      {isManager && (
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(msg)}
+                          className="p-1 rounded text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition cursor-pointer"
+                          title={lang === 'uz' ? 'Tahrirlash' : 'Редактировать'}
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleStartDelete(msg)}
+                        className="p-1 rounded text-neutral-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                        title={lang === 'uz' ? 'O‘chirish' : 'Удалить'}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Message Bubble */}
                   <div
-                    className={`flex items-center justify-end gap-1 mt-1 text-[9px] ${
-                      isManager ? 'text-neutral-400' : 'text-neutral-400'
+                    className={`w-full px-3.5 py-2 rounded-2xl text-xs shadow-2xs relative break-words ${
+                      isManager
+                        ? 'bg-neutral-900 text-white rounded-br-xs'
+                        : 'bg-white text-neutral-900 border border-neutral-200/90 rounded-bl-xs'
                     }`}
                   >
-                    <span>{formatMessageTime(msg.createdAt)}</span>
-                    {isManager && (
-                      <span>
-                        {msg.status === 'pending' ? (
-                          <Clock className="w-2.5 h-2.5 text-neutral-400" />
-                        ) : msg.status === 'delivered' || msg.status === 'read' ? (
-                          <CheckCheck className="w-3 h-3 text-neutral-400" />
-                        ) : msg.status === 'sent' ? (
-                          <Check className="w-3 h-3 text-neutral-400" />
-                        ) : (
-                          <AlertCircle className="w-2.5 h-2.5 text-rose-400" title="Не доставлено в Telegram" />
-                        )}
-                      </span>
-                    )}
+                    <div className="whitespace-pre-wrap leading-relaxed select-text">
+                      {msg.text}
+                    </div>
+                    <div
+                      className={`flex items-center justify-end gap-1.5 mt-1 text-[9px] ${
+                        isManager ? 'text-neutral-400' : 'text-neutral-400'
+                      }`}
+                    >
+                      {msg.isEdited && (
+                        <span className="italic text-[9px] opacity-75">
+                          {lang === 'uz' ? 'tahrirlangan' : 'изм.'}
+                        </span>
+                      )}
+                      <span>{formatMessageTime(msg.createdAt)}</span>
+                      {isManager && (
+                        <span>
+                          {msg.status === 'pending' ? (
+                            <Clock className="w-2.5 h-2.5 text-neutral-400" />
+                          ) : msg.status === 'delivered' || msg.status === 'read' ? (
+                            <CheckCheck className="w-3 h-3 text-neutral-400" />
+                          ) : msg.status === 'sent' ? (
+                            <Check className="w-3 h-3 text-neutral-400" />
+                          ) : (
+                            <AlertCircle className="w-2.5 h-2.5 text-rose-400" title="Не доставлено в Telegram" />
+                          )}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -523,40 +659,182 @@ export default function BloggerTelegramChat({
         </div>
       )}
 
+      {/* Editing Message Header */}
+      {editingMessage && (
+        <div className="px-3.5 py-2 bg-neutral-100 border-t border-neutral-200 text-xs flex items-center justify-between shrink-0 animate-in fade-in duration-100">
+          <div className="flex items-center gap-2 min-w-0">
+            <Pencil className="w-3.5 h-3.5 text-neutral-600 shrink-0" />
+            <div className="min-w-0">
+              <span className="font-semibold text-neutral-800 text-[11px] block">
+                {lang === 'uz' ? 'Xabarni tahrirlash' : 'Редактирование сообщения'}
+              </span>
+              <span className="text-neutral-500 text-[11px] truncate block max-w-sm">
+                {editingMessage.text}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelEdit}
+            className="p-1 text-neutral-400 hover:text-neutral-700 rounded-md hover:bg-neutral-200/60 cursor-pointer"
+            title="Отмена (Esc)"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Footer / Input Area */}
-      <form onSubmit={handleSend} className="p-2.5 sm:p-3 bg-white border-t border-neutral-200 shrink-0">
+      <form onSubmit={editingMessage ? (e) => { e.preventDefault(); handleSaveEdit(); } : handleSend} className="p-2.5 sm:p-3 bg-white border-t border-neutral-200 shrink-0">
         <div className="flex items-end gap-2">
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              lang === 'uz'
-                ? 'Xabar yozing (Enter - jo‘natish)...'
-                : lang === 'en'
-                ? 'Type a message (Enter to send)...'
-                : 'Напишите сообщение (Enter для отправки)...'
+              editingMessage
+                ? (lang === 'uz' ? 'O‘zgartirilgan xabarni kiriting (Enter - saqlash)...' : 'Введите измененный текст (Enter для сохранения)...')
+                : (lang === 'uz' ? 'Xabar yozing (Enter - jo‘natish)...' : 'Напишите сообщение (Enter для отправки)...')
             }
             rows={1}
             className="flex-1 max-h-28 min-h-[38px] px-3.5 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-normal text-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:bg-white transition resize-none leading-relaxed"
+            autoFocus={!!editingMessage}
           />
 
           <button
             type="submit"
-            disabled={!inputText.trim() || sending}
-            className="h-[38px] px-4 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs shrink-0 cursor-pointer"
+            disabled={!inputText.trim() || sending || savingEdit}
+            className={`h-[38px] px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs shrink-0 cursor-pointer ${
+              editingMessage
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                : 'bg-neutral-900 hover:bg-neutral-800 text-white'
+            }`}
           >
-            {sending ? (
+            {sending || savingEdit ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : editingMessage ? (
+              <Check className="w-3.5 h-3.5" />
             ) : (
               <Send className="w-3.5 h-3.5" />
             )}
             <span className="hidden sm:inline">
-              {lang === 'uz' ? 'Jo‘natish' : lang === 'en' ? 'Send' : 'Отправить'}
+              {editingMessage
+                ? (lang === 'uz' ? 'Saqlash' : 'Сохранить')
+                : (lang === 'uz' ? 'Jo‘natish' : 'Отправить')}
             </span>
           </button>
         </div>
       </form>
+
+      {/* Delete Confirmation Modal (Telegram-style) */}
+      {deletingMessage && (
+        <div 
+          className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 backdrop-blur-2xs p-4 animate-in fade-in duration-150"
+          onClick={() => !isDeleting && setDeletingMessage(null)}
+        >
+          <div 
+            className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-neutral-200 p-5 flex flex-col gap-4 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-100">
+                <Trash2 className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-neutral-900 text-sm">
+                  {lang === 'uz' ? 'Xabarni o‘chirish' : 'Удалить сообщение?'}
+                </h3>
+                <p className="text-neutral-500 text-[11px] truncate mt-0.5">
+                  "{deletingMessage.text.slice(0, 60)}{deletingMessage.text.length > 60 ? '...' : ''}"
+                </p>
+              </div>
+            </div>
+
+            {/* Deletion mode choices */}
+            <div className="space-y-2 pt-1">
+              <label 
+                className={`flex items-start gap-3 p-3 rounded-xl border text-xs cursor-pointer transition ${
+                  !deleteRevoke 
+                    ? 'border-neutral-900 bg-neutral-50/80 text-neutral-900' 
+                    : 'border-neutral-200 hover:border-neutral-300 text-neutral-700'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="deleteMode"
+                  checked={!deleteRevoke}
+                  onChange={() => setDeleteRevoke(false)}
+                  className="mt-0.5 text-neutral-900 focus:ring-neutral-900 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <span className="font-semibold block text-xs">
+                    {lang === 'uz' ? 'Faqat o‘zim uchun o‘chirish' : 'Удалить только у себя'}
+                  </span>
+                  <span className="text-[11px] text-neutral-500 leading-tight block mt-0.5">
+                    {lang === 'uz' 
+                      ? 'Xabar CRM va profilingizdan o‘chiriladi, lekin suhbatdoshda qoladi'
+                      : 'Сообщение исчезнет из CRM и вашего Telegram, но останется у собеседника'}
+                  </span>
+                </div>
+              </label>
+
+              <label 
+                className={`flex items-start gap-3 p-3 rounded-xl border text-xs cursor-pointer transition ${
+                  deleteRevoke 
+                    ? 'border-rose-600 bg-rose-50/50 text-neutral-900' 
+                    : 'border-neutral-200 hover:border-neutral-300 text-neutral-700'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="deleteMode"
+                  checked={deleteRevoke}
+                  onChange={() => setDeleteRevoke(true)}
+                  className="mt-0.5 text-rose-600 focus:ring-rose-600 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <span className="font-semibold block text-xs text-rose-950">
+                    {lang === 'uz' 
+                      ? `Men va ${integration.bloggerName} uchun ham o‘chirish`
+                      : `Удалить у меня и у ${integration.bloggerName}`}
+                  </span>
+                  <span className="text-[11px] text-neutral-500 leading-tight block mt-0.5">
+                    {lang === 'uz'
+                      ? 'Xabar Telegramda ikkala tomon uchun ham butunlay qaytarib olinadi'
+                      : 'Сообщение будет отозвано и удалено для обоих участников в Telegram'}
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setDeletingMessage(null)}
+                disabled={isDeleting}
+                className="px-3.5 py-1.5 text-neutral-600 hover:text-neutral-900 text-xs font-semibold rounded-lg cursor-pointer"
+              >
+                {lang === 'uz' ? 'Bekor qilish' : 'Отмена'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg transition shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>{lang === 'uz' ? 'O‘chirish' : 'Удалить'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

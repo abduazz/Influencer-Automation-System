@@ -338,7 +338,7 @@ export const translations = {
     kanbanTotalLabel: 'Total:',
     kanbanDragHere: 'Drag here',
     kanbanEditDealTooltip: 'Edit deal',
-    kanbanChannelLink: 'Channel',
+    kanbanChannelLink: 'Channel / Page',
     kanbanTgChatTooltip: 'Open personal Telegram chat',
     kanbanCreatedByLabel: 'Created by:',
     creatingAsUser: 'Created by:',
@@ -361,6 +361,9 @@ export const translations = {
     kanbanBloggerTgLabel: 'Blogger Personal Telegram (for contact)',
     kanbanBloggerTgPlaceholder: 'e.g. @username, username or https://t.me/username',
     kanbanBloggerTgHint: 'Supports any format (@username, t.me link or handle) — click opens direct Telegram chat',
+    kanbanAddAnotherTg: 'Add another number or username',
+    kanbanChatInPlatform: 'Chat in platform',
+    kanbanOpenInTelegramApp: 'Open in Telegram app',
     kanbanStageLabel: 'Kanban Column / Stage',
     kanbanDealStatusLabel: 'Deal Status',
     kanbanStatusActive: 'Active',
@@ -455,7 +458,13 @@ export const translations = {
     audTierNew: 'New',
     audSourceManual: 'Manual',
     audSourceTest: 'Test',
-    audSourceHistory: 'History'
+    audSourceHistory: 'History',
+    audChannelChangedNotice: 'Blogger channel changed. Old snapshot history cleared for the new channel.',
+    audResetHistoryTooltip: 'Clear snapshot history',
+    audResetHistoryConfirm: 'Are you sure you want to clear subscriber snapshot history for this blogger?',
+    audRefreshSuccess: 'Subscribers successfully updated',
+    audRefreshError: 'Failed to retrieve subscriber count via API',
+    audResetHistorySuccess: 'Subscriber history cleared successfully'
   },
   ru: {
     // Sidebar
@@ -794,7 +803,7 @@ export const translations = {
     kanbanTotalLabel: 'Итого:',
     kanbanDragHere: 'Перетащите сюда',
     kanbanEditDealTooltip: 'Редактировать сделку',
-    kanbanChannelLink: 'Канал',
+    kanbanChannelLink: 'Канал / Страница',
     kanbanTgChatTooltip: 'Перейти в личный Telegram (открыть чат)',
     kanbanCreatedByLabel: 'Создал:',
     creatingAsUser: 'Создает:',
@@ -817,6 +826,9 @@ export const translations = {
     kanbanBloggerTgLabel: 'Личный Telegram блогера (для связи)',
     kanbanBloggerTgPlaceholder: 'например, @username, username или https://t.me/username',
     kanbanBloggerTgHint: 'Поддерживает любой формат (@юзернейм, ссылку t.me или ник без @) — клик сразу перенаправит в личный чат в Telegram',
+    kanbanAddAnotherTg: 'Добавить ещё один номер или юзернейм',
+    kanbanChatInPlatform: 'Чат в платформе',
+    kanbanOpenInTelegramApp: 'Открыть в приложении Telegram',
     kanbanStageLabel: 'Колонка / Этап Канбана',
     kanbanDealStatusLabel: 'Статус сделки',
     kanbanStatusActive: 'Активна',
@@ -911,7 +923,13 @@ export const translations = {
     audTierNew: 'Новый',
     audSourceManual: 'Ручной',
     audSourceTest: 'Тест',
-    audSourceHistory: 'История'
+    audSourceHistory: 'История',
+    audChannelChangedNotice: 'Канал блогера изменен. Старые записи замеров очищены для нового канала.',
+    audResetHistoryTooltip: 'Очистить историю замеров',
+    audResetHistoryConfirm: 'Вы уверены, что хотите удалить историю замеров подписчиков для этого блогера?',
+    audRefreshSuccess: 'Количество подписчиков успешно обновлено',
+    audRefreshError: 'Не удалось получить данные подписчиков через API',
+    audResetHistorySuccess: 'История замеров успешно очищена'
   },
   uz: {
     // Sidebar
@@ -1250,7 +1268,7 @@ export const translations = {
     kanbanTotalLabel: 'Jami:',
     kanbanDragHere: 'Bu yerga torting',
     kanbanEditDealTooltip: 'Bitimni tahrirlash',
-    kanbanChannelLink: 'Kanal',
+    kanbanChannelLink: 'Kanal / Sahifa',
     kanbanTgChatTooltip: 'Shaxsiy Telegram chatiga o‘tish',
     kanbanCreatedByLabel: 'Yaratdi:',
     creatingAsUser: 'Yaratuvchi:',
@@ -1273,6 +1291,9 @@ export const translations = {
     kanbanBloggerTgLabel: 'Bloggerning shaxsiy Telegrami (aloqa uchun)',
     kanbanBloggerTgPlaceholder: 'masalan, @username, username yoki https://t.me/username',
     kanbanBloggerTgHint: 'Istalgan formatni qo‘llab-quvvatlaydi (@foydalanuvchi, t.me havolasi) — bosish to‘g‘ridan-to‘g‘ri shaxsiy chatni ochadi',
+    kanbanAddAnotherTg: "Yana bir raqam yoki username qo'shish",
+    kanbanChatInPlatform: 'Platformada chat',
+    kanbanOpenInTelegramApp: 'Telegram ilovasida ochish',
     kanbanStageLabel: 'Kanban ustuni / bosqichi',
     kanbanDealStatusLabel: 'Bitim holati',
     kanbanStatusActive: 'Faol',
@@ -1367,6 +1388,12 @@ export const translations = {
     audTierNew: 'Yangi',
     audSourceManual: "Qo'lda",
     audSourceTest: 'Test',
-    audSourceHistory: 'Tarix'
+    audSourceHistory: 'Tarix',
+    audChannelChangedNotice: "Blogger kanali o'zgardi. Yangi kanal uchun eski o'lchovlar tarixi tozalandi.",
+    audResetHistoryTooltip: "O'lchovlar tarixini tozalash",
+    audResetHistoryConfirm: "Ushbu blogger uchun obunachilar o'lchov tarixini o'chirmoqchimisiz?",
+    audRefreshSuccess: "Obunachilar soni muvaffaqiyatli yangilandi",
+    audRefreshError: "API orqali obunachilar ma'lumotlarini olib bo'lmadi",
+    audResetHistorySuccess: "O'lchovlar tarixi muvaffaqiyatli tozalandi"
   }
 };

@@ -33,11 +33,25 @@ class InstagramApiService
         $clean = preg_replace('/[?#].*$/', '', $clean);
         $clean = rtrim($clean, '/');
 
-        if (preg_match('/(?:t\.me|telegram\.me)\/([a-zA-Z0-9_]+)/i', $clean, $matches)) {
-            return strtolower(trim($matches[1]));
+        if (preg_match('#(?:t\.me|telegram\.me|telegram\.dog)/(?:s/)?([a-zA-Z0-9_]+)#i', $clean, $matches)) {
+            $extracted = strtolower(trim($matches[1]));
+            if ($extracted !== 's' && $extracted !== 'joinchat') {
+                return $extracted;
+            }
         }
 
-        return strtolower(trim(ltrim($clean, '@#')));
+        // If it starts with http/https but was not a recognized telegram url, it is not a telegram handle
+        if (preg_match('#^https?://#i', $clean)) {
+            return '';
+        }
+
+        $cleanedHandle = strtolower(trim(ltrim($clean, '@#')));
+        // Only return if it conforms to a valid telegram handle (letters, numbers, underscores)
+        if (preg_match('/^[a-zA-Z0-9_]{3,32}$/', $cleanedHandle)) {
+            return $cleanedHandle;
+        }
+
+        return '';
     }
 
     /**
@@ -49,14 +63,63 @@ class InstagramApiService
         $clean = preg_replace('/[?#].*$/', '', $clean);
         $clean = rtrim($clean, '/');
 
+        // Check if protocol is missing, e.g. "youtube.com/@handle" or "www.youtube.com/@handle"
+        if (preg_match('#^(?:www\.)?youtube\.com/#i', $clean)) {
+            $clean = 'https://' . $clean;
+        }
+
         // If it's already a full YouTube channel URL
-        if (preg_match('#^https?://(?:www\.)?youtube\.com/(?:@[a-zA-Z0-9._-]+|channel/[a-zA-Z0-9_-]+|c/[a-zA-Z0-9_-]+)#i', $clean)) {
+        if (preg_match('#^https?://(?:www\.)?youtube\.com/(?:@[a-zA-Z0-9._-]+|channel/[a-zA-Z0-9_-]+|c/[a-zA-Z0-9_-]+|user/[a-zA-Z0-9_-]+)#i', $clean)) {
             return $clean;
+        }
+
+        // If it's a YouTube video URL, keep it so fetchFromYouTube can extract the channel from video page
+        if (preg_match('#^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/|youtube\.com/shorts/)#i', $clean)) {
+            return $clean;
+        }
+
+        // If it starts with http/https from another domain (e.g. instagram.com, t.me), it is not a youtube handle
+        if (preg_match('#^https?://#i', $clean)) {
+            return '';
         }
 
         // If it's just @handle or handle
         $handle = ltrim($clean, '@#');
         return 'https://www.youtube.com/@' . $handle;
+    }
+
+    /**
+     * Auto-detect social platform from URL or handle.
+     */
+    public static function detectPlatform(?string $input): ?string
+    {
+        if (empty($input)) {
+            return null;
+        }
+
+        $clean = trim($input);
+
+        // YouTube
+        if (preg_match('#(?:youtube\.com|youtu\.be)#i', $clean)) {
+            return 'YouTube';
+        }
+
+        // Telegram
+        if (preg_match('#(?:t\.me|telegram\.me)#i', $clean)) {
+            return 'Telegram';
+        }
+
+        // Instagram
+        if (preg_match('#(?:instagram\.com|instagr\.am)#i', $clean)) {
+            return 'Instagram';
+        }
+
+        // TikTok
+        if (preg_match('#(?:tiktok\.com)#i', $clean)) {
+            return 'TikTok';
+        }
+
+        return null;
     }
 
     /**
@@ -99,7 +162,10 @@ class InstagramApiService
      */
     public function fetchSubscriberCount(string $platform, string $handleOrUrl, ?int $previousCount = null): array
     {
-        $platformNorm = strtolower(trim($platform));
+        // Auto-detect platform from handle or URL if specified
+        $detected = self::detectPlatform($handleOrUrl);
+        $effectivePlatform = $detected ?: $platform;
+        $platformNorm = strtolower(trim($effectivePlatform));
 
         // 1. Telegram (Method B - public preview parsing, no keys needed)
         if ($platformNorm === 'telegram') {
@@ -117,7 +183,7 @@ class InstagramApiService
                 'success' => false,
                 'count' => 0,
                 'source' => 'manual',
-                'error' => 'Для TikTok количество подписчиков вносится вручную через кнопку "+ Замер"'
+                'error' => 'Для TikTok количество подписчиков вносится вручную через кнопку "+ Добавить замер"'
             ];
         }
 
@@ -137,23 +203,19 @@ class InstagramApiService
                 'success' => false,
                 'count' => 0,
                 'source' => 'telegram_public',
-                'error' => 'Не удалось распознать юзернейм Telegram-канала'
+                'error' => 'Не удалось распознать юзернейм Telegram-канала. Укажите @канал или ссылку https://t.me/канал'
             ];
         }
 
         try {
-            $context = stream_context_create([
-                'http' => [
-                    'method' => 'GET',
-                    'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\r\n" .
-                                "Accept-Language: en-US,en;q=0.9,ru;q=0.8\r\n",
-                    'timeout' => 7,
-                    'ignore_errors' => true
-                ]
-            ]);
+            $headers = [
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept-Language' => 'en-US,en;q=0.9,ru;q=0.8',
+            ];
 
             // Attempt 1: Direct channel preview page (https://t.me/username)
-            $html = @file_get_contents("https://t.me/{$username}", false, $context);
+            $response = Http::withHeaders($headers)->timeout(8)->get("https://t.me/{$username}");
+            $html = $response->successful() ? $response->body() : null;
 
             if ($html && preg_match('/class="tgme_page_extra"[^>]*>([^<]+)<\/div>/i', $html, $m)) {
                 $count = self::parseSubscriberCountString($m[1]);
@@ -168,7 +230,8 @@ class InstagramApiService
             }
 
             // Attempt 2: Public channel web preview feed (https://t.me/s/username)
-            $sHtml = @file_get_contents("https://t.me/s/{$username}", false, $context);
+            $sResponse = Http::withHeaders($headers)->timeout(8)->get("https://t.me/s/{$username}");
+            $sHtml = $sResponse->successful() ? $sResponse->body() : null;
 
             if ($sHtml) {
                 // Check header counter (e.g. <div class="tgme_header_counter">10.8M subscribers</div>)
@@ -198,11 +261,21 @@ class InstagramApiService
                 }
             }
 
+            // Check if page indicates it is a user profile, not a channel
+            if ($html && (strpos($html, 'tgme_action_button_new') !== false || strpos($html, 'Send Message') !== false)) {
+                return [
+                    'success' => false,
+                    'count' => 0,
+                    'source' => 'telegram_public',
+                    'error' => "«@{$username}» является личным профилем Telegram, а не публичным каналом. Замер доступен только для открытых Telegram-каналов."
+                ];
+            }
+
             return [
                 'success' => false,
                 'count' => 0,
                 'source' => 'telegram_public',
-                'error' => "Telegram-канал @{$username} не найден или является приватным (требуется открытый публичный канал)"
+                'error' => "Telegram-канал @{$username} не найден или является закрытым/приватным."
             ];
         } catch (\Throwable $e) {
             Log::warning("Telegram public fetch failed for @{$username}: " . $e->getMessage());
@@ -222,79 +295,29 @@ class InstagramApiService
     {
         $channelUrl = self::extractYouTubeUrl($handleOrUrl);
 
+        if (empty($channelUrl)) {
+            return [
+                'success' => false,
+                'count' => 0,
+                'source' => 'youtube_public',
+                'error' => "Не удалось распознать ссылку или тег YouTube-канала"
+            ];
+        }
+
         try {
-            $context = stream_context_create([
-                'http' => [
-                    'method' => 'GET',
-                    'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\r\n" .
-                                "Accept-Language: en-US,en;q=0.9\r\n" .
-                                "Cookie: CONSENT=YES+cb; SOCS=CAESEwgDEgk2NDU4MzkwMTQaAmVuIAEaBgiA_LyuBg\r\n",
-                    'timeout' => 8,
-                    'ignore_errors' => true
-                ]
-            ]);
+            $headers = [
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept-Language' => 'en-US,en;q=0.9,ru;q=0.8',
+                'Cookie' => 'CONSENT=YES+cb; SOCS=CAESEwgDEgk2NDU4MzkwMTQaAmVuIAEaBgiA_LyuBg'
+            ];
 
-            $html = @file_get_contents($channelUrl, false, $context);
+            $response = Http::withHeaders($headers)->timeout(9)->get($channelUrl);
+            $html = $response->successful() ? $response->body() : null;
 
-            if (!$html) {
-                return [
-                    'success' => false,
-                    'count' => 0,
-                    'source' => 'youtube_public',
-                    'error' => "Не удалось открыть страницу YouTube канала: {$channelUrl}"
-                ];
-            }
-
-            // Strategy 1: FollowAction Schema.org metadata (Most accurate integer number)
-            if (preg_match('/"interactionType":\s*\{\s*"type":\s*"FollowAction"\s*\},\s*"userInteractionCount":\s*"(\d+)"/i', $html, $m)) {
-                $count = (int) $m[1];
-                return [
-                    'success' => true,
-                    'count' => $count,
-                    'source' => 'youtube_public',
-                    'error' => null
-                ];
-            }
-
-            // Strategy 2: Extract from ytInitialData JSON in HTML
-            $pos = strpos($html, 'var ytInitialData = ');
-            if ($pos !== false) {
-                $sub = substr($html, $pos + strlen('var ytInitialData = '));
-                $end = strpos($sub, ';</script>');
-                if ($end !== false) {
-                    $json = json_decode(substr($sub, 0, $end), true);
-                    $header = $json['header'] ?? [];
-                    $foundStrings = [];
-
-                    $search = function($arr) use (&$search, &$foundStrings) {
-                        foreach ($arr as $k => $v) {
-                            if (is_string($v) && stripos($v, 'subscriber') !== false) {
-                                $foundStrings[] = $v;
-                            } elseif (is_array($v)) {
-                                $search($v);
-                            }
-                        }
-                    };
-                    $search($header);
-
-                    foreach ($foundStrings as $str) {
-                        $parsed = self::parseSubscriberCountString($str);
-                        if ($parsed !== null && $parsed >= 0) {
-                            return [
-                                'success' => true,
-                                'count' => $parsed,
-                                'source' => 'youtube_public',
-                                'error' => null
-                            ];
-                        }
-                    }
-                }
-            }
-
-            // Strategy 3: Regex fallback on subscriberCountText
-            if (preg_match('/"subscriberCountText":\s*\{[^}]*"(?:simpleText|label)":\s*"([^"]+)"/i', $html, $m)) {
-                $count = self::parseSubscriberCountString($m[1]);
-                if ($count !== null && $count >= 0) {
+            if ($html) {
+                // Strategy 1: FollowAction Schema.org metadata (Most accurate integer number)
+                if (preg_match('/"interactionType":\s*\{\s*"type":\s*"FollowAction"\s*\},\s*"userInteractionCount":\s*"(\d+)"/i', $html, $m)) {
+                    $count = (int) $m[1];
                     return [
                         'success' => true,
                         'count' => $count,
@@ -302,13 +325,81 @@ class InstagramApiService
                         'error' => null
                     ];
                 }
+
+                // Strategy 2: Extract from ytInitialData JSON in HTML
+                $pos = strpos($html, 'var ytInitialData = ');
+                if ($pos !== false) {
+                    $sub = substr($html, $pos + strlen('var ytInitialData = '));
+                    $end = strpos($sub, ';</script>');
+                    if ($end !== false) {
+                        $json = json_decode(substr($sub, 0, $end), true);
+                        $header = $json['header'] ?? [];
+                        $foundStrings = [];
+
+                        $search = function($arr) use (&$search, &$foundStrings) {
+                            foreach ($arr as $k => $v) {
+                                if (is_string($v) && stripos($v, 'subscriber') !== false) {
+                                    $foundStrings[] = $v;
+                                } elseif (is_array($v)) {
+                                    $search($v);
+                                }
+                            }
+                        };
+                        $search($header);
+
+                        foreach ($foundStrings as $str) {
+                            $parsed = self::parseSubscriberCountString($str);
+                            if ($parsed !== null && $parsed >= 0) {
+                                return [
+                                    'success' => true,
+                                    'count' => $parsed,
+                                    'source' => 'youtube_public',
+                                    'error' => null
+                                ];
+                            }
+                        }
+                    }
+                }
+
+                // Strategy 3: Regex fallback on subscriberCountText
+                if (preg_match('/"subscriberCountText":\s*\{[^}]*"(?:simpleText|label)":\s*"([^"]+)"/i', $html, $m)) {
+                    $count = self::parseSubscriberCountString($m[1]);
+                    if ($count !== null && $count >= 0) {
+                        return [
+                            'success' => true,
+                            'count' => $count,
+                            'source' => 'youtube_public',
+                            'error' => null
+                        ];
+                    }
+                }
+            }
+
+            // Strategy 4: Fallback search if direct channel was 404 and input was not a full URL with channel ID
+            $cleanInput = trim(ltrim($handleOrUrl, '@#'));
+            if (!preg_match('#^https?://#i', $handleOrUrl) && !empty($cleanInput)) {
+                $searchRes = Http::withHeaders($headers)
+                    ->timeout(8)
+                    ->get("https://www.youtube.com/results?search_query=" . urlencode($cleanInput));
+                if ($searchRes->successful()) {
+                    $sBody = $searchRes->body();
+                    // Find first matched channel handle, e.g. "@channel"
+                    if (preg_match('/"subscriberCountText":\s*\{[^\}]*"simpleText":\s*"(@[a-zA-Z0-9._-]+)"/i', $sBody, $sm)) {
+                        $foundHandle = $sm[1];
+                        return $this->fetchFromYouTube("https://www.youtube.com/{$foundHandle}");
+                    }
+                    if (preg_match('/"channelRenderer":\s*\{[^\}]*"channelId":\s*"([^"]+)"/i', $sBody, $cm)) {
+                        $channelId = $cm[1];
+                        return $this->fetchFromYouTube("https://www.youtube.com/channel/{$channelId}");
+                    }
+                }
             }
 
             return [
                 'success' => false,
                 'count' => 0,
                 'source' => 'youtube_public',
-                'error' => "YouTube-канал не найден или число подписчиков скрыто автором"
+                'error' => "YouTube-канал не найден или число подписчиков скрыто автором. Укажите точную ссылку, например: https://www.youtube.com/@channel"
             ];
         } catch (\Throwable $e) {
             Log::warning("YouTube public fetch failed for {$channelUrl}: " . $e->getMessage());
@@ -338,14 +429,22 @@ class InstagramApiService
             ];
         }
 
-        // If Meta API is configured and driver is 'meta'
-        if ($driver === 'meta') {
-            return $this->fetchFromMetaGraphApi($username);
+        // If Meta API credentials are configured, try Meta Graph API
+        $metaToken = config('services.instagram.meta_access_token', env('INSTAGRAM_META_ACCESS_TOKEN'));
+        if ($driver === 'meta' || (!empty($metaToken) && $driver === 'mock')) {
+            $metaRes = $this->fetchFromMetaGraphApi($username);
+            if ($metaRes['success'] || $driver === 'meta') {
+                return $metaRes;
+            }
         }
 
-        // If RapidAPI is configured and driver is 'rapidapi'
-        if ($driver === 'rapidapi') {
-            return $this->fetchFromRapidApi($username);
+        // If RapidAPI credentials are configured, try RapidAPI
+        $rapidApiKey = config('services.instagram.rapidapi_key', env('INSTAGRAM_RAPIDAPI_KEY'));
+        if ($driver === 'rapidapi' || (!empty($rapidApiKey) && $driver === 'mock')) {
+            $rapidRes = $this->fetchFromRapidApi($username);
+            if ($rapidRes['success'] || $driver === 'rapidapi') {
+                return $rapidRes;
+            }
         }
 
         // Mock / Simulation Driver ("Глушилка" для тестирования UI/UX)
@@ -466,26 +565,23 @@ class InstagramApiService
 
     /**
      * Mock / Stub Driver ("Глушилка"):
-     * Generates a realistic follower count and increments on refresh so team can test the UI/UX immediately.
+     * Generates a realistic follower count for testing.
+     * If a count is already set, it keeps it stable without random fake jumps.
      */
     protected function fetchFromMockDriver(string $username, string $platform, ?int $previousCount = null): array
     {
-        // If there was already a follower count, simulate realistic organic growth (+0.8% to +3.5%)
+        // If there was already a follower count, DO NOT artificially increment! Keep it stable.
         if ($previousCount && $previousCount > 0) {
-            $growthFactor = mt_rand(8, 35) / 1000.0;
-            $increment = max(120, (int) round($previousCount * $growthFactor));
-            $newCount = $previousCount + $increment;
-
             return [
                 'success' => true,
-                'count' => $newCount,
+                'count' => $previousCount,
                 'source' => 'mock_api',
                 'error' => null
             ];
         }
 
         // If starting from scratch, generate deterministic realistic follower count based on username hash
-        $hash = crc32($username);
+        $hash = crc32(strtolower($username));
         $tiers = [
             [15000, 45000],   // Micro
             [55000, 140000],  // Mid

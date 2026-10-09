@@ -157,8 +157,24 @@ export function deleteIntegration(id: string): Promise<void> {
   return request<void>(`/api/integrations/${id}`, { method: 'DELETE' });
 }
 
-export function refreshIntegrationSubscribers(id: string): Promise<{ success: boolean; message: string; integration: Integration }> {
+export function refreshIntegrationSubscribers(
+  id: string,
+  overrides?: {
+    handle?: string;
+    platform?: string;
+    bloggerName?: string;
+    bloggerPageLink?: string;
+    telegramUsername?: string;
+  }
+): Promise<{ success: boolean; message: string; integration: Integration }> {
   return request<{ success: boolean; message: string; integration: Integration }>(`/api/integrations/${id}/refresh-subscribers`, {
+    method: 'POST',
+    body: overrides ? JSON.stringify(overrides) : undefined,
+  });
+}
+
+export function resetIntegrationSubscribersHistory(id: string): Promise<{ success: boolean; message: string; integration: Integration }> {
+  return request<{ success: boolean; message: string; integration: Integration }>(`/api/integrations/${id}/reset-subscribers-history`, {
     method: 'POST',
   });
 }
@@ -361,6 +377,46 @@ export function sendChatMessage(integrationId: string, text: string, senderName?
     method: 'POST',
     body: JSON.stringify({ text, senderName }),
   });
+}
+
+export function editChatMessage(
+  integrationId: string, 
+  messageId: string, 
+  text: string,
+  userRole?: string | null,
+  userEmail?: string | null
+): Promise<{ success: boolean; message: ChatMessage }> {
+  return request<{ success: boolean; message: ChatMessage }>(
+    `/api/integrations/${integrationId}/messages/${messageId}`,
+    {
+      method: 'PUT',
+      headers: {
+        ...(userRole ? { 'X-User-Role': userRole } : {}),
+        ...(userEmail ? { 'X-User-Email': userEmail } : {}),
+      },
+      body: JSON.stringify({ text, userRole, userEmail }),
+    }
+  );
+}
+
+export function deleteChatMessage(
+  integrationId: string, 
+  messageId: string, 
+  revoke: boolean = false,
+  userRole?: string | null,
+  userEmail?: string | null
+): Promise<{ success: boolean; messageId: string; revoke: boolean }> {
+  return request<{ success: boolean; messageId: string; revoke: boolean }>(
+    `/api/integrations/${integrationId}/messages/${messageId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        ...(userRole ? { 'X-User-Role': userRole } : {}),
+        ...(userEmail ? { 'X-User-Email': userEmail } : {}),
+      },
+      body: JSON.stringify({ revoke, userRole, userEmail }),
+    }
+  );
 }
 
 export function updateIntegrationChatSettings(

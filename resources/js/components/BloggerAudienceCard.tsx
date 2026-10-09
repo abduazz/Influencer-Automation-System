@@ -15,7 +15,9 @@ import {
   LineChart, 
   X, 
   Check, 
-  Coins
+  Coins,
+  Trash2,
+  AlertCircle
 } from 'lucide-react';
 
 interface BloggerAudienceCardProps {
@@ -23,6 +25,7 @@ interface BloggerAudienceCardProps {
   lang?: Language;
   onRefreshSubscribers?: (integrationId: string) => Promise<void>;
   onAddManualSnapshot?: (integrationId: string, date: string, count: number, note?: string) => Promise<void>;
+  onResetHistory?: (integrationId: string) => Promise<void>;
   isCollapsible?: boolean;
   defaultExpanded?: boolean;
 }
@@ -32,6 +35,7 @@ export default function BloggerAudienceCard({
   lang = 'ru',
   onRefreshSubscribers,
   onAddManualSnapshot,
+  onResetHistory,
   isCollapsible = false,
   defaultExpanded = true,
 }: BloggerAudienceCardProps) {
@@ -39,6 +43,8 @@ export default function BloggerAudienceCard({
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [isResettingHistory, setIsResettingHistory] = useState<boolean>(false);
   const [showManualForm, setShowManualForm] = useState<boolean>(false);
   const [manualDate, setManualDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [manualCount, setManualCount] = useState<string>('');
@@ -148,10 +154,29 @@ export default function BloggerAudienceCard({
     e.stopPropagation();
     if (isRefreshing || !onRefreshSubscribers) return;
     setIsRefreshing(true);
+    setRefreshError(null);
     try {
       await onRefreshSubscribers(integration.id);
+    } catch (err: any) {
+      setRefreshError(err?.message || (t.audRefreshError || 'Не удалось получить данные подписчиков через API'));
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleResetHistoryClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isResettingHistory || !onResetHistory) return;
+    const ok = window.confirm(t.audResetHistoryConfirm || 'Вы уверены, что хотите удалить историю замеров подписчиков для этого блогера?');
+    if (!ok) return;
+    setIsResettingHistory(true);
+    setRefreshError(null);
+    try {
+      await onResetHistory(integration.id);
+    } catch (err: any) {
+      setRefreshError(err?.message || 'Ошибка при очистке истории');
+    } finally {
+      setIsResettingHistory(false);
     }
   };
 
@@ -290,6 +315,19 @@ export default function BloggerAudienceCard({
                 </button>
               )}
 
+              {/* Reset History Button */}
+              {onResetHistory && history.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetHistoryClick}
+                  disabled={isResettingHistory}
+                  title={t.audResetHistoryTooltip || 'Очистить историю замеров'}
+                  className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+
               {/* Segmented Flip Switch */}
               <div className="flex items-center bg-neutral-200/70 p-0.5 rounded-lg">
                 <button
@@ -313,6 +351,23 @@ export default function BloggerAudienceCard({
               </div>
             </div>
           </div>
+
+          {/* Refresh Error Banner */}
+          {refreshError && (
+            <div className="mx-3.5 mt-2.5 p-2 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-between text-xs text-rose-700">
+              <div className="flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                <span>{refreshError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRefreshError(null)}
+                className="text-rose-500 hover:text-rose-700 p-0.5 rounded cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
 
           {/* Content Area */}
           <div className="p-3.5">

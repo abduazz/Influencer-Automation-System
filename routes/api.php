@@ -30,10 +30,13 @@ Route::post('/integrations', [IntegrationController::class, 'store']);
 Route::put('/integrations/{integration}', [IntegrationController::class, 'update']);
 Route::delete('/integrations/{integration}', [IntegrationController::class, 'destroy']);
 Route::post('/integrations/{integration}/refresh-subscribers', [IntegrationController::class, 'refreshSubscribers']);
+Route::post('/integrations/{integration}/reset-subscribers-history', [IntegrationController::class, 'resetSubscribersHistory']);
 Route::post('/integrations/{integration}/subscribers-history', [IntegrationController::class, 'addSubscriberHistory']);
 Route::post('/integrations/{integration}/sync-reports', [IntegrationController::class, 'syncReports']);
 Route::get('/integrations/{integration}/messages', [TelegramChatController::class, 'getMessages']);
 Route::post('/integrations/{integration}/messages', [TelegramChatController::class, 'sendMessage']);
+Route::put('/integrations/{integration}/messages/{message}', [TelegramChatController::class, 'updateMessage']);
+Route::delete('/integrations/{integration}/messages/{message}', [TelegramChatController::class, 'deleteMessage']);
 Route::put('/integrations/{integration}/chat-settings', [TelegramChatController::class, 'updateChatSettings']);
 Route::get('/integrations/{integration}/chat-redirect', [TelegramChatController::class, 'redirectToTelegram']);
 

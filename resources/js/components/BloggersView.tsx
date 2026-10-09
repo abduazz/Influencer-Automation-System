@@ -39,6 +39,7 @@ interface BloggersViewProps {
   lang?: Language;
   userRole?: string | null;
   onRefreshSubscribers?: (integrationId: string) => Promise<void>;
+  onResetHistory?: (integrationId: string) => Promise<any>;
   onAddManualSnapshot?: (integrationId: string, date: string, count: number, note?: string) => Promise<void>;
 }
 
@@ -82,6 +83,7 @@ export default function BloggersView({
   lang = 'ru',
   userRole,
   onRefreshSubscribers,
+  onResetHistory,
   onAddManualSnapshot
 }: BloggersViewProps) {
   const currentLang = lang || 'ru';
@@ -600,6 +602,7 @@ export default function BloggersView({
                           integration={blogger.representativeIntegration}
                           lang={currentLang}
                           onRefreshSubscribers={onRefreshSubscribers}
+                          onResetHistory={onResetHistory}
                           onAddManualSnapshot={onAddManualSnapshot}
                           isCollapsible={false}
                         />

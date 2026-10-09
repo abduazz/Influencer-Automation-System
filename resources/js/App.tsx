@@ -50,6 +50,7 @@ import {
   saveKanbanColumns,
   clearKanbanStageApi,
   refreshIntegrationSubscribers,
+  resetIntegrationSubscribersHistory,
   addIntegrationSubscriberHistory,
   submitBloggerRequisites,
   fetchBloggerRequisites,
@@ -70,7 +71,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt, CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export default function App() {
   // Synchronous instant bootstrap cache (HTML preload or localStorage)
@@ -81,6 +82,8 @@ export default function App() {
     const cached = localStorage.getItem('ff_lang');
     return (cached as Language) || 'uz';
   });
+
+  const t = translations[lang] || translations['ru'];
 
   const handleSetLang = (newLang: Language) => {
     setLang(newLang);
@@ -110,6 +113,19 @@ export default function App() {
   const currentUserName = useMemo(() => {
     return activeUser?.name || (currentUserEmail ? (currentUserEmail.includes('@') ? currentUserEmail.split('@')[0] : currentUserEmail) : 'Super Admin');
   }, [activeUser, currentUserEmail]);
+
+  // Global Toast Notification State
+  const [toastNotification, setToastNotification] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToastNotification({ type, message });
+    setTimeout(() => {
+      setToastNotification((prev) => (prev?.message === message ? null : prev));
+    }, 4500);
+  };
 
   // Navigation Tabs State & Types
   type AppTab = 'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs' | 'requisites';
@@ -588,26 +604,69 @@ export default function App() {
     }
   };
 
-  const handleRefreshIntegrationSubscribers = async (integrationId: string) => {
+  const handleRefreshIntegrationSubscribers = async (
+    integrationId: string,
+    overrides?: {
+      handle?: string;
+      platform?: string;
+      bloggerName?: string;
+      bloggerPageLink?: string;
+      telegramUsername?: string;
+    }
+  ): Promise<Integration | null> => {
     try {
-      const res = await refreshIntegrationSubscribers(integrationId);
+      const res = await refreshIntegrationSubscribers(integrationId, overrides);
       if (res.success && res.integration) {
-        const targetClean = (res.integration.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
+        const fresh = res.integration;
+        const targetClean = (fresh.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
+        const targetPlat = (fresh.platform || '').toLowerCase();
         setIntegrations((prev) => prev.map((item) => {
           const itemClean = (item.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
-          if (item.id === integrationId || (targetClean && itemClean === targetClean)) {
+          const itemPlat = (item.platform || '').toLowerCase();
+          if (item.id === integrationId || (targetClean && itemClean === targetClean && itemPlat === targetPlat)) {
             return { 
               ...item, 
-              subscribersCount: res.integration.subscribersCount,
-              subscribersUpdatedAt: res.integration.subscribersUpdatedAt,
-              subscribersHistory: res.integration.subscribersHistory
+              bloggerName: fresh.bloggerName,
+              bloggerPageLink: fresh.bloggerPageLink,
+              platform: fresh.platform,
+              subscribersCount: fresh.subscribersCount,
+              subscribersUpdatedAt: fresh.subscribersUpdatedAt,
+              subscribersHistory: fresh.subscribersHistory
             };
           }
           return item;
         }));
+
+        const countStr = fresh.subscribersCount !== null && fresh.subscribersCount !== undefined 
+          ? fresh.subscribersCount.toLocaleString() 
+          : '0';
+        showToast(`${t.audRefreshSuccess || 'Замер выполнен'}: ${fresh.bloggerName || ''} (${countStr} ${t.audSubscribersUnit || 'подписчиков'})`, 'success');
+
+        return fresh;
       }
-    } catch (err) {
+      return null;
+    } catch (err: any) {
       console.error('Failed to refresh subscribers:', err);
+      const errMsg = err?.message || (t.audRefreshError || 'Не удалось получить данные подписчиков через API');
+      showToast(errMsg, 'error');
+      throw err;
+    }
+  };
+
+  const handleResetIntegrationSubscribersHistory = async (integrationId: string): Promise<Integration | null> => {
+    try {
+      const res = await resetIntegrationSubscribersHistory(integrationId);
+      if (res.success && res.integration) {
+        const fresh = res.integration;
+        setIntegrations((prev) => prev.map((item) => item.id === integrationId ? { ...item, ...fresh } : item));
+        showToast(t.audResetHistorySuccess || 'История замеров успешно очищена', 'info');
+        return fresh;
+      }
+      return null;
+    } catch (err: any) {
+      console.error('Failed to reset subscriber history:', err);
+      showToast(err?.message || 'Ошибка при очистке истории замеров', 'error');
+      throw err;
     }
   };
 
@@ -616,9 +675,11 @@ export default function App() {
       const res = await addIntegrationSubscriberHistory(integrationId, { date, count, note });
       if (res.success && res.integration) {
         const targetClean = (res.integration.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
+        const targetPlat = (res.integration.platform || '').toLowerCase();
         setIntegrations((prev) => prev.map((item) => {
           const itemClean = (item.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
-          if (item.id === integrationId || (targetClean && itemClean === targetClean)) {
+          const itemPlat = (item.platform || '').toLowerCase();
+          if (item.id === integrationId || (targetClean && itemClean === targetClean && itemPlat === targetPlat)) {
             return { 
               ...item, 
               subscribersCount: res.integration.subscribersCount,
@@ -934,6 +995,7 @@ export default function App() {
                 onOpenRequisitesDirectory={() => setActiveTab('requisites_directory')}
                 onClearStage={handleClearKanbanStage}
                 onRefreshSubscribers={handleRefreshIntegrationSubscribers}
+                onResetSubscribersHistory={handleResetIntegrationSubscribersHistory}
                 onAddManualSnapshot={handleAddIntegrationSubscriberHistory}
                 onNavigateToReports={handleNavigateFromKanbanToReports}
                 loading={loading}
@@ -1009,6 +1071,7 @@ export default function App() {
                 lang={lang}
                 userRole={currentUserRole}
                 onRefreshSubscribers={handleRefreshIntegrationSubscribers}
+                onResetHistory={handleResetIntegrationSubscribersHistory}
                 onAddManualSnapshot={handleAddIntegrationSubscriberHistory}
               />
             )}
@@ -1268,6 +1331,37 @@ export default function App() {
             )}
           </div>
         </nav>
+      )}
+
+      {/* Global Toast Notification */}
+      {toastNotification && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className={`flex items-start gap-3 p-3.5 rounded-2xl shadow-xl border backdrop-blur-md ${
+            toastNotification.type === 'error'
+              ? 'bg-rose-900/95 text-white border-rose-700 shadow-rose-900/20'
+              : toastNotification.type === 'info'
+              ? 'bg-slate-900/95 text-white border-slate-700 shadow-slate-900/20'
+              : 'bg-emerald-950/95 text-white border-emerald-700 shadow-emerald-900/20'
+          }`}>
+            {toastNotification.type === 'error' ? (
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            ) : toastNotification.type === 'info' ? (
+              <Info className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1 text-xs font-semibold leading-relaxed">
+              {toastNotification.message}
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastNotification(null)}
+              className="text-white/60 hover:text-white p-1 rounded-lg transition cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

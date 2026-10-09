@@ -405,6 +405,24 @@ export default function DashboardView({
   }, 0);
   const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
 
+  // Helper to format metric values safely without decimals
+  const formatMetricVal = (val: number | string): string => {
+    const num = typeof val === 'number' ? val : Number(val);
+    if (isNaN(num)) return String(val);
+    return Math.round(num).toLocaleString('ru-RU');
+  };
+
+  // Helper for dynamic font size based on number length to prevent overflow on 100% zoom
+  const getMetricValueClasses = (str: string) => {
+    if (str.length >= 13) {
+      return 'text-xs sm:text-sm xl:text-[13px] 2xl:text-base';
+    }
+    if (str.length >= 9) {
+      return 'text-sm sm:text-base xl:text-[15px] 2xl:text-lg';
+    }
+    return 'text-lg xl:text-xl';
+  };
+
   return (
     <div className="space-y-4 w-full text-neutral-900">
       {/* Project Directory Header */}
@@ -586,7 +604,7 @@ export default function DashboardView({
                   title={t.setMonthlyLimit}
                 >
                   <Coins className="w-3.5 h-3.5 text-amber-600" />
-                  <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
+                  <span>{t.monthlyLimit}: {Math.round(selectedProject.monthlyLimit).toLocaleString('ru-RU')}</span>
                 </button>
               ) : (
                 <button
@@ -618,7 +636,7 @@ export default function DashboardView({
               selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null && (
                 <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex items-center gap-1">
                   <Coins className="w-3.5 h-3.5 text-amber-600" />
-                  <span>{t.monthlyLimit}: {selectedProject.monthlyLimit.toLocaleString()}</span>
+                  <span>{t.monthlyLimit}: {Math.round(selectedProject.monthlyLimit).toLocaleString('ru-RU')}</span>
                 </span>
               )
             )}
@@ -633,7 +651,7 @@ export default function DashboardView({
                 }`}
                 title={t.remainingLimit}
               >
-                <span>{t.remainingLimit}: {remainingLimit !== null ? remainingLimit.toLocaleString() : t.limitNotSet}</span>
+                <span>{t.remainingLimit}: {remainingLimit !== null ? Math.round(remainingLimit).toLocaleString('ru-RU') : t.limitNotSet}</span>
               </span>
             )}
           </div>
@@ -641,13 +659,16 @@ export default function DashboardView({
       )}
 
       {/* Analytics Metric Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 gap-2">
         {allowedMetrics.includes('deals') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.bloggerDeals}>
               {t.bloggerDeals}
             </span>
-            <span className="text-xl font-black text-black mt-1">
+            <span 
+              className={`${getMetricValueClasses(String(filteredIntegrations.length))} font-black text-black mt-1 tracking-tight truncate w-full`}
+              title={String(filteredIntegrations.length)}
+            >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
@@ -657,53 +678,65 @@ export default function DashboardView({
           </div>
         )}
         {allowedMetrics.includes('spend') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.allocatedSpend}>
               {t.allocatedSpend}
             </span>
-            <span className="text-xl font-black text-black mt-1">
+            <span 
+              className={`${getMetricValueClasses(formatMetricVal(totalSpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
+              title={formatMetricVal(totalSpend)}
+            >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
-                totalSpend.toLocaleString()
+                formatMetricVal(totalSpend)
               )}
             </span>
           </div>
         )}
         {allowedMetrics.includes('spend') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.monthlySpend}>
               {t.monthlySpend}
             </span>
-            <span className="text-xl font-black text-black mt-1">
+            <span 
+              className={`${getMetricValueClasses(formatMetricVal(selectedProjectMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
+              title={formatMetricVal(selectedProjectMonthlySpend)}
+            >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
-                selectedProjectMonthlySpend.toLocaleString()
+                formatMetricVal(selectedProjectMonthlySpend)
               )}
             </span>
           </div>
         )}
         {allowedMetrics.includes('financial_metrics') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricRemainingToPay}>
               {t.metricRemainingToPay}
             </span>
-            <span className="text-xl font-black text-rose-600 mt-1">
+            <span 
+              className={`${getMetricValueClasses(formatMetricVal(totalRemainingToPay))} font-black text-rose-600 mt-1 tracking-tight truncate w-full`}
+              title={formatMetricVal(totalRemainingToPay)}
+            >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
-                totalRemainingToPay.toLocaleString()
+                formatMetricVal(totalRemainingToPay)
               )}
             </span>
           </div>
         )}
         {allowedMetrics.includes('total_slots') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.totalSlotsLabel}>
               {t.totalSlotsLabel}
             </span>
-            <span className="text-xl font-black text-black mt-1">
+            <span 
+              className={`${getMetricValueClasses(String(totalSlotsCount))} font-black text-black mt-1 tracking-tight truncate w-full`}
+              title={String(totalSlotsCount)}
+            >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
@@ -713,11 +746,14 @@ export default function DashboardView({
           </div>
         )}
         {allowedMetrics.includes('slots_published') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricSlotsPublished}>
               {t.metricSlotsPublished}
             </span>
-            <span className="text-xl font-black text-emerald-600 mt-1">
+            <span 
+              className={`${getMetricValueClasses(String(totalPublishedSlots))} font-black text-emerald-600 mt-1 tracking-tight truncate w-full`}
+              title={String(totalPublishedSlots)}
+            >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
@@ -727,11 +763,14 @@ export default function DashboardView({
           </div>
         )}
         {allowedMetrics.includes('slots_remaining') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl p-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricSlotsRemaining}>
               {t.metricSlotsRemaining}
             </span>
-            <span className="text-xl font-black text-amber-600 mt-1">
+            <span 
+              className={`${getMetricValueClasses(String(totalRemainingSlots))} font-black text-amber-600 mt-1 tracking-tight truncate w-full`}
+              title={String(totalRemainingSlots)}
+            >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (

@@ -154,12 +154,18 @@ class IntegrationController extends Controller
         $updateData = [];
         if ($request->has('projectId')) $updateData['project_id'] = $request->projectId;
         if ($request->has('bloggerName')) $updateData['blogger_name'] = $request->bloggerName;
-        if ($request->has('bloggerPageLink')) $updateData['blogger_page_link'] = $request->bloggerPageLink;
+        if ($request->has('bloggerPageLink')) {
+            $updateData['blogger_page_link'] = $request->bloggerPageLink;
+            $detectedPlat = InstagramApiService::detectPlatform($request->bloggerPageLink);
+            if ($detectedPlat && (!$request->has('platform') || $request->input('platform') === 'Instagram')) {
+                $updateData['platform'] = $detectedPlat;
+            }
+        }
         if ($request->has('telegramUsername')) $updateData['telegram_username'] = $request->input('telegramUsername');
         if ($request->has('telegramChatId')) $updateData['telegram_chat_id'] = $request->input('telegramChatId');
         if ($request->has('telegram_chat_id')) $updateData['telegram_chat_id'] = $request->input('telegram_chat_id');
         if ($request->filled('startDate')) $updateData['start_date'] = $request->startDate;
-        if ($request->has('platform')) $updateData['platform'] = $request->platform;
+        if ($request->has('platform') && !isset($updateData['platform'])) $updateData['platform'] = $request->platform;
         if ($request->has('referralLink')) $updateData['referral_link'] = $request->referralLink;
         if ($request->has('pricePerSlot')) $updateData['price_per_slot'] = $request->pricePerSlot;
         if ($request->has('slotsCount')) $updateData['slots_count'] = $request->slotsCount;
@@ -185,6 +191,25 @@ class IntegrationController extends Controller
         $oldBloggerName = $integration->blogger_name;
         $oldPlatform = $integration->platform;
         $oldProjectId = $integration->project_id;
+        $oldBloggerPageLink = $integration->blogger_page_link;
+
+        $cleanOld = strtolower(trim(str_replace(['@', '#'], '', $oldBloggerName ?? '')));
+        $cleanNew = strtolower(trim(str_replace(['@', '#'], '', $request->input('bloggerName', $oldBloggerName) ?? '')));
+        $linkOld = trim($oldBloggerPageLink ?? '');
+        $linkNew = trim($request->input('bloggerPageLink', $oldBloggerPageLink) ?? '');
+        $platOld = strtolower($oldPlatform ?? '');
+        $platNew = strtolower($request->input('platform', $oldPlatform) ?? '');
+
+        $channelChanged = ($cleanOld !== $cleanNew) || ($linkOld !== $linkNew) || ($platOld !== $platNew);
+
+        if ($channelChanged && !$request->has('subscribersHistory')) {
+            // Channel changed: reset old channel's subscriber history and timestamps
+            $updateData['subscribers_history'] = [];
+            $updateData['subscribers_updated_at'] = null;
+            if (!$request->has('subscribersCount') || $request->input('subscribersCount') === null || $request->input('subscribersCount') === '') {
+                $updateData['subscribers_count'] = null;
+            }
+        }
 
         $integration->update($updateData);
 
@@ -269,27 +294,57 @@ class IntegrationController extends Controller
 
     /**
      * Refresh / fetch subscriber count via InstagramApiService.
-     * Updates this integration and syncs to any other integration with the same blogger name.
+     * Updates this integration and syncs to any other integration with the same blogger name on the SAME platform.
      */
-    public function refreshSubscribers(Integration $integration, InstagramApiService $apiService)
+    public function refreshSubscribers(Request $request, Integration $integration, InstagramApiService $apiService)
     {
-        $platform = $integration->platform ?? 'Instagram';
+        $rawPlatform = $request->input('platform') ?: ($integration->platform ?? 'Instagram');
+        $bloggerName = $request->input('bloggerName');
+        $bloggerPageLink = $request->input('bloggerPageLink');
+        $handle = $request->input('handle');
+
+        // Check if channel link or handle explicitly belongs to YouTube, Telegram, etc.
+        $detectedPlatform = InstagramApiService::detectPlatform($bloggerPageLink)
+            ?: InstagramApiService::detectPlatform($integration->blogger_page_link)
+            ?: InstagramApiService::detectPlatform($handle);
+
+        $platform = $detectedPlatform ?: $rawPlatform;
+
+        // Check if channel changed compared to stored integration
+        $cleanOld = strtolower(trim(str_replace(['@', '#'], '', $integration->blogger_name ?? '')));
+        $effectiveNewName = $bloggerName ?: $integration->blogger_name;
+        $cleanNew = strtolower(trim(str_replace(['@', '#'], '', $effectiveNewName ?? '')));
+
+        $linkOld = trim($integration->blogger_page_link ?? '');
+        $effectiveNewLink = $bloggerPageLink !== null ? trim($bloggerPageLink) : $linkOld;
+
+        $platOld = strtolower($integration->platform ?? '');
+        $platNew = strtolower($platform);
+
+        $channelChanged = ($cleanOld !== $cleanNew) || ($linkOld !== $effectiveNewLink) || ($platOld !== $platNew);
 
         // Pick best identifier based on platform
-        if (strtolower($platform) === 'telegram') {
-            $targetHandle = $integration->telegram_username 
-                ?: $integration->blogger_page_link 
-                ?: $integration->blogger_name;
+        // Always prioritize the explicit handle or channel link/name first.
+        // For Telegram: NEVER prioritize telegram_username (which is personal contact) over channel link/name!
+        if (!empty($handle)) {
+            $targetHandle = $handle;
+        } elseif (strtolower($platform) === 'telegram') {
+            $targetHandle = ($bloggerPageLink ?: $integration->blogger_page_link)
+                ?: ($bloggerName ?: $integration->blogger_name)
+                ?: ($request->input('telegramUsername') ?: $integration->telegram_username);
+        } elseif (strtolower($platform) === 'youtube') {
+            $targetHandle = ($bloggerPageLink ?: $integration->blogger_page_link)
+                ?: ($bloggerName ?: $integration->blogger_name);
         } else {
-            $targetHandle = $integration->blogger_page_link 
-                ?: $integration->blogger_name 
-                ?: $integration->telegram_username;
+            $targetHandle = ($bloggerPageLink ?: $integration->blogger_page_link)
+                ?: ($bloggerName ?: $integration->blogger_name)
+                ?: ($request->input('telegramUsername') ?: $integration->telegram_username);
         }
 
         $result = $apiService->fetchSubscriberCount(
             $platform,
             $targetHandle ?? '',
-            $integration->subscribers_count
+            $channelChanged ? null : $integration->subscribers_count
         );
 
         if (!$result['success']) {
@@ -301,10 +356,11 @@ class IntegrationController extends Controller
         }
 
         $newCount = (int) $result['count'];
-        $history = $integration->subscribers_history ?? [];
+        // If channel changed, wipe old history so snapshots from previous channel are removed
+        $history = $channelChanged ? [] : ($integration->subscribers_history ?? []);
 
         if (empty($history)) {
-            // Generate initial realistic ramp if it's the first time
+            // Generate initial realistic ramp if it's the first time or channel changed
             $history = InstagramApiService::generateInitialHistory($newCount, $result['source']);
         } else {
             // Check if today's entry already exists
@@ -339,15 +395,34 @@ class IntegrationController extends Controller
             'subscribers_history' => $history,
         ];
 
+        if ($platform && $platform !== $integration->platform) {
+            $updatePayload['platform'] = $platform;
+        }
+        if ($bloggerName && $bloggerName !== $integration->blogger_name) {
+            $updatePayload['blogger_name'] = $bloggerName;
+        }
+        if ($bloggerPageLink !== null && $bloggerPageLink !== $integration->blogger_page_link) {
+            $updatePayload['blogger_page_link'] = $bloggerPageLink;
+        }
+        if ($request->has('telegramUsername')) {
+            $updatePayload['telegram_username'] = $request->input('telegramUsername');
+        }
+
         $integration->update($updatePayload);
 
-        // Sync with any other deals with the same clean blogger name
+        // Sync ONLY with other deals of the SAME blogger on the SAME platform
         $cleanName = strtolower(trim(ltrim($integration->blogger_name, '@#')));
         if ($cleanName) {
+            $effectivePlat = strtolower($integration->platform ?? '');
             $otherDeals = Integration::where('id', '!=', $integration->id)->get();
             foreach ($otherDeals as $otherDeal) {
-                if (strtolower(trim(ltrim($otherDeal->blogger_name, '@#'))) === $cleanName) {
-                    $otherDeal->update($updatePayload);
+                $otherPlat = strtolower($otherDeal->platform ?? '');
+                if (strtolower(trim(ltrim($otherDeal->blogger_name, '@#'))) === $cleanName && $otherPlat === $effectivePlat) {
+                    $otherDeal->update([
+                        'subscribers_count' => $newCount,
+                        'subscribers_updated_at' => now(),
+                        'subscribers_history' => $history,
+                    ]);
                 }
             }
         }
@@ -355,6 +430,24 @@ class IntegrationController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Количество подписчиков успешно обновлено!',
+            'integration' => $this->formatIntegration($integration->fresh()),
+        ]);
+    }
+
+    /**
+     * Clear / reset subscriber snapshots history.
+     */
+    public function resetSubscribersHistory(Integration $integration)
+    {
+        $integration->update([
+            'subscribers_count' => null,
+            'subscribers_updated_at' => null,
+            'subscribers_history' => [],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'История замеров подписчиков успешно очищена',
             'integration' => $this->formatIntegration($integration->fresh()),
         ]);
     }
@@ -412,12 +505,14 @@ class IntegrationController extends Controller
 
         $integration->update($updateData);
 
-        // Sync to same blogger
+        // Sync to same blogger on the SAME platform
         $cleanName = strtolower(trim(ltrim($integration->blogger_name, '@#')));
         if ($cleanName) {
+            $effectivePlat = strtolower($integration->platform ?? '');
             $otherDeals = Integration::where('id', '!=', $integration->id)->get();
             foreach ($otherDeals as $otherDeal) {
-                if (strtolower(trim(ltrim($otherDeal->blogger_name, '@#'))) === $cleanName) {
+                $otherPlat = strtolower($otherDeal->platform ?? '');
+                if (strtolower(trim(ltrim($otherDeal->blogger_name, '@#'))) === $cleanName && $otherPlat === $effectivePlat) {
                     $otherDeal->update($updateData);
                 }
             }

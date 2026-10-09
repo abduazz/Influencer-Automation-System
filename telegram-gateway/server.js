@@ -455,6 +455,94 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // 7. POST /edit - Edit message in Telegram MTProto
+    if (url.pathname === '/edit' && req.method === 'POST') {
+      if (!isAuthorized) {
+        return sendJson(401, { error: 'Telegram gateway is not authorized.' });
+      }
+
+      const body = await readBody();
+      let rawTarget = body.target || body.username || body.chatId || body.to;
+      const messageId = parseInt(body.messageId, 10);
+      const text = body.text;
+
+      if (!rawTarget || !messageId || !text) {
+        return sendJson(400, { error: 'Target, messageId, and text are required' });
+      }
+
+      let target = rawTarget;
+      if (typeof target === 'string') {
+        target = target.trim().replace(/^(https?:\/\/)?(t\.me\/)/i, '');
+        if (!target.startsWith('@') && !target.startsWith('-') && !target.startsWith('+') && isNaN(Number(target))) {
+          target = `@${target}`;
+        } else if (!isNaN(Number(target))) {
+          target = Number(target);
+        }
+      }
+
+      try {
+        const result = await client.editMessage(target, {
+          message: messageId,
+          text: text,
+        });
+
+        // Update in-memory updates queue if present
+        const cached = recentUpdates.find(u => u.messageId === messageId);
+        if (cached) cached.text = text;
+
+        return sendJson(200, {
+          success: true,
+          messageId: result?.id || messageId,
+          text: text,
+        });
+      } catch (err) {
+        console.error('Edit message error:', err.message);
+        return sendJson(500, { error: err.message || 'Failed to edit message in Telegram' });
+      }
+    }
+
+    // 8. POST /delete - Delete message in Telegram MTProto (revoke: true for everyone, false for me)
+    if (url.pathname === '/delete' && req.method === 'POST') {
+      if (!isAuthorized) {
+        return sendJson(401, { error: 'Telegram gateway is not authorized.' });
+      }
+
+      const body = await readBody();
+      let rawTarget = body.target || body.username || body.chatId || body.to;
+      const messageId = parseInt(body.messageId, 10);
+      const revoke = body.revoke === true || body.revoke === 'true' || body.revoke === 1 || body.revoke === '1';
+
+      if (!messageId) {
+        return sendJson(400, { error: 'messageId is required' });
+      }
+
+      let target = rawTarget;
+      if (typeof target === 'string') {
+        target = target.trim().replace(/^(https?:\/\/)?(t\.me\/)/i, '');
+        if (!target.startsWith('@') && !target.startsWith('-') && !target.startsWith('+') && isNaN(Number(target))) {
+          target = `@${target}`;
+        } else if (!isNaN(Number(target))) {
+          target = Number(target);
+        }
+      }
+
+      try {
+        await client.deleteMessages(target, [messageId], { revoke: revoke });
+
+        // Remove from in-memory updates queue if present
+        recentUpdates = recentUpdates.filter(u => u.messageId !== messageId);
+
+        return sendJson(200, {
+          success: true,
+          messageId: messageId,
+          revoke: revoke,
+        });
+      } catch (err) {
+        console.error('Delete message error:', err.message);
+        return sendJson(500, { error: err.message || 'Failed to delete message in Telegram' });
+      }
+    }
+
     sendJson(404, { error: 'Route not found' });
   } catch (err) {
     console.error('Server error:', err);

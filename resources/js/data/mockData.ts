@@ -87,6 +87,8 @@ export interface ChatMessage {
   mediaType?: string | null;
   status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
   createdAt: string;
+  updatedAt?: string;
+  isEdited?: boolean;
 }
 
 export interface SiblingBlogger {

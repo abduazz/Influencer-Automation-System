@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ChatMessage;
 use App\Models\Integration;
+use App\Enums\UserRole;
 use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class TelegramChatController extends Controller
@@ -37,6 +39,7 @@ class TelegramChatController extends Controller
         }
 
         $messages = $query->get()->map(function ($msg) {
+            $isEdited = $msg->updated_at && $msg->created_at && $msg->updated_at->diffInSeconds($msg->created_at) > 1;
             return [
                 'id' => (string) $msg->id,
                 'integrationId' => (string) $msg->integration_id,
@@ -47,7 +50,9 @@ class TelegramChatController extends Controller
                 'mediaUrl' => $msg->media_url,
                 'mediaType' => $msg->media_type,
                 'status' => $msg->status,
+                'isEdited' => $isEdited,
                 'createdAt' => $msg->created_at ? $msg->created_at->toISOString() : now()->toISOString(),
+                'updatedAt' => $msg->updated_at ? $msg->updated_at->toISOString() : now()->toISOString(),
             ];
         });
 
@@ -195,6 +200,128 @@ class TelegramChatController extends Controller
             'success' => true,
             'telegramChatId' => $integration->telegram_chat_id,
             'telegramUsername' => $integration->telegram_username,
+        ]);
+    }
+
+    /**
+     * Check if current requesting user is Super Admin
+     */
+    private function checkSuperAdmin(Request $request): bool
+    {
+        $user = auth()->user();
+
+        if (!$user) {
+            $email = $request->header('X-User-Email') ?: $request->input('userEmail');
+            if ($email) {
+                $user = \App\Models\User::where('email', strtolower($email))->first();
+            }
+        }
+
+        if ($user && $user->role === UserRole::SuperAdmin) {
+            return true;
+        }
+
+        $headerRole = $request->header('X-User-Role') ?: $request->input('userRole');
+        if ($headerRole === 'super_admin') {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Edit message (Super Admin only)
+     */
+    public function updateMessage(Request $request, $integrationId, $messageId): JsonResponse
+    {
+        if (!$this->checkSuperAdmin($request)) {
+            return response()->json([
+                'error' => 'Доступ запрещён. Только супер-администраторы могут редактировать сообщения.'
+            ], 403);
+        }
+
+        $request->validate([
+            'text' => 'required|string|max:4000',
+        ]);
+
+        $integration = Integration::findOrFail($integrationId);
+        $chatMessage = ChatMessage::where('integration_id', $integration->id)->findOrFail($messageId);
+        $newText = trim($request->input('text'));
+
+        // If message has telegram_message_id and was outgoing, edit in Telegram MTProto
+        $target = $integration->telegram_username ?: $integration->telegram_chat_id;
+        if ($target && $chatMessage->telegram_message_id && $chatMessage->sender_type === 'manager') {
+            try {
+                $gatewayUrl = app(TelegramGatewayController::class)->getGatewayUrl();
+                Http::timeout(5)->post("{$gatewayUrl}/edit", [
+                    'target' => $target,
+                    'messageId' => $chatMessage->telegram_message_id,
+                    'text' => $newText,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Telegram gateway edit message failed: ' . $e->getMessage());
+            }
+        }
+
+        $chatMessage->update(['text' => $newText]);
+
+        return response()->json([
+            'success' => true,
+            'message' => [
+                'id' => (string) $chatMessage->id,
+                'integrationId' => (string) $chatMessage->integration_id,
+                'senderType' => $chatMessage->sender_type,
+                'senderName' => $chatMessage->sender_name,
+                'text' => $chatMessage->text,
+                'telegramMessageId' => $chatMessage->telegram_message_id,
+                'mediaUrl' => $chatMessage->media_url,
+                'mediaType' => $chatMessage->media_type,
+                'status' => $chatMessage->status,
+                'isEdited' => true,
+                'createdAt' => $chatMessage->created_at ? $chatMessage->created_at->toISOString() : now()->toISOString(),
+                'updatedAt' => $chatMessage->updated_at ? $chatMessage->updated_at->toISOString() : now()->toISOString(),
+            ],
+        ]);
+    }
+
+    /**
+     * Delete message (Super Admin only)
+     * Mode 1: revoke = false (Удалить только у себя)
+     * Mode 2: revoke = true  (Удалить и у себя, и у собеседника)
+     */
+    public function deleteMessage(Request $request, $integrationId, $messageId): JsonResponse
+    {
+        if (!$this->checkSuperAdmin($request)) {
+            return response()->json([
+                'error' => 'Доступ запрещён. Только супер-администраторы могут удалять сообщения.'
+            ], 403);
+        }
+
+        $integration = Integration::findOrFail($integrationId);
+        $chatMessage = ChatMessage::where('integration_id', $integration->id)->findOrFail($messageId);
+        $revoke = $request->boolean('revoke', false);
+
+        // Delete in Telegram MTProto if message has telegram_message_id
+        $target = $integration->telegram_username ?: $integration->telegram_chat_id;
+        if ($target && $chatMessage->telegram_message_id) {
+            try {
+                $gatewayUrl = app(TelegramGatewayController::class)->getGatewayUrl();
+                Http::timeout(5)->post("{$gatewayUrl}/delete", [
+                    'target' => $target,
+                    'messageId' => $chatMessage->telegram_message_id,
+                    'revoke' => $revoke,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Telegram gateway delete message failed: ' . $e->getMessage());
+            }
+        }
+
+        $chatMessage->delete();
+
+        return response()->json([
+            'success' => true,
+            'messageId' => (string) $messageId,
+            'revoke' => $revoke,
         ]);
     }
 

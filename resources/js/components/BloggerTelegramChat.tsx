@@ -53,6 +53,7 @@ export default function BloggerTelegramChat({
   const [savingSettings, setSavingSettings] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [siblingBloggers, setSiblingBloggers] = useState<SiblingBlogger[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -62,10 +63,11 @@ export default function BloggerTelegramChat({
   };
 
   // Load initial messages
-  const loadMessages = async (silent = false) => {
+  const loadMessages = async (silent = false, forceSync = false) => {
     if (!silent) setLoading(true);
+    if (forceSync) setRefreshing(true);
     try {
-      const res = await fetchChatMessages(integration.id);
+      const res = await fetchChatMessages(integration.id, undefined, forceSync);
       setMessages(res.messages || []);
       if (res.siblingBloggers) setSiblingBloggers(res.siblingBloggers);
       if (res.integration?.telegramUsername !== undefined) {
@@ -80,6 +82,7 @@ export default function BloggerTelegramChat({
       console.error('Failed to load chat messages:', err);
     } finally {
       if (!silent) setLoading(false);
+      if (forceSync) setRefreshing(false);
     }
   };
 
@@ -247,6 +250,16 @@ export default function BloggerTelegramChat({
 
         {/* Header Actions */}
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => loadMessages(true, true)}
+            disabled={refreshing}
+            className="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition cursor-pointer disabled:opacity-50"
+            title={lang === 'uz' ? 'Telegram bilan yangilash' : lang === 'en' ? 'Sync with Telegram' : 'Синхронизировать с Telegram'}
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-neutral-900' : ''}`} />
+          </button>
+
           <button
             type="button"
             onClick={() => setShowSettings(!showSettings)}

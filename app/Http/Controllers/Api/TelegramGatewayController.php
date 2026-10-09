@@ -7,6 +7,7 @@ use App\Models\ChatMessage;
 use App\Models\Integration;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -229,6 +230,12 @@ class TelegramGatewayController extends Controller
                     'telegram_message_id' => $resData['messageId'] ?? null,
                 ]);
 
+                // Store numeric peerId to ensure bidirectional matching for all future messages
+                if (!empty($resData['peerId']) && empty($integration->telegram_chat_id)) {
+                    $integration->telegram_chat_id = (string) $resData['peerId'];
+                    $integration->save();
+                }
+
                 return response()->json([
                     'success' => true,
                     'message' => [
@@ -259,58 +266,152 @@ class TelegramGatewayController extends Controller
     }
 
     /**
+     * Process a raw message update payload and attach it to the matching integration
+     */
+    public function processMessageUpdate(array $data, ?Integration $preferredIntegration = null, bool $forceIntegration = false): void
+    {
+        $text = trim($data['text'] ?? '');
+        if ($text === '') {
+            return;
+        }
+
+        $senderUsername = $data['senderUsername'] ?? null;
+        $chatUsername = $data['chatUsername'] ?? null;
+        $chatId = $data['chatId'] ?? null;
+        $peerId = $data['peerId'] ?? null;
+        $senderId = $data['senderId'] ?? null;
+        $isOutgoing = (bool) ($data['isOutgoing'] ?? false);
+        $messageId = $data['messageId'] ?? null;
+        $senderFirstName = $data['senderFirstName'] ?? 'Блогер';
+
+        // For outgoing messages: contact partner is chatUsername / peerId / chatId
+        // For incoming messages: contact partner is senderUsername / chatUsername / senderId / peerId
+        $targetUsername = $isOutgoing 
+            ? ($chatUsername ?: null) 
+            : ($senderUsername ?: $chatUsername ?: null);
+
+        $cleanUsername = $targetUsername ? strtolower(trim(preg_replace('/^(https?:\/\/)?(t\.me\/|@)?/', '', $targetUsername))) : '';
+        $cleanUsername = ltrim($cleanUsername, '@');
+
+        $integrations = collect();
+
+        if ($forceIntegration && $preferredIntegration) {
+            $integrations->push($preferredIntegration);
+        } elseif ($preferredIntegration) {
+            $prefClean = strtolower(trim(preg_replace('/^(https?:\/\/)?(t\.me\/|@)?/', '', $preferredIntegration->telegram_username ?: '')));
+            $prefClean = ltrim($prefClean, '@');
+            $numericMatches = array_filter([(string)$chatId, (string)$senderId, (string)$peerId]);
+
+            $isMatch = false;
+            if ($cleanUsername !== '' && $prefClean !== '' && $cleanUsername === $prefClean) {
+                $isMatch = true;
+            } elseif (!empty($preferredIntegration->telegram_chat_id) && in_array((string)$preferredIntegration->telegram_chat_id, $numericMatches, true)) {
+                $isMatch = true;
+            }
+
+            if ($isMatch) {
+                $integrations->push($preferredIntegration);
+            }
+        }
+
+        if ($integrations->isEmpty()) {
+            $integrations = Integration::where(function ($q) use ($cleanUsername, $chatId, $senderId, $peerId) {
+                if ($cleanUsername !== '') {
+                    $q->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(telegram_username, '@', ''), 'https://t.me/', ''), 'http://t.me/', ''), 't.me/', '')) = ?", [$cleanUsername]);
+                }
+                $targetIds = array_values(array_filter(array_unique([
+                    (string)$chatId, 
+                    (string)$senderId, 
+                    (string)$peerId
+                ])));
+                if (!empty($targetIds)) {
+                    $q->orWhereIn('telegram_chat_id', $targetIds);
+                }
+            })->get();
+        }
+
+        if ($integrations->isNotEmpty()) {
+            foreach ($integrations as $integration) {
+                $numericId = ($isOutgoing ? null : $senderId) ?: $peerId ?: $chatId;
+                if ($numericId && empty($integration->telegram_chat_id)) {
+                    $integration->telegram_chat_id = (string) $numericId;
+                    $integration->save();
+                }
+
+                // Avoid creating duplicates if already saved
+                if ($messageId) {
+                    $exists = ChatMessage::where('integration_id', $integration->id)
+                        ->where('telegram_message_id', $messageId)
+                        ->exists();
+                    if ($exists) {
+                        continue;
+                    }
+                }
+
+                $createdAt = !empty($data['date']) 
+                    ? \Illuminate\Support\Carbon::createFromTimestamp($data['date']) 
+                    : now();
+
+                ChatMessage::create([
+                    'integration_id' => $integration->id,
+                    'sender_type' => $isOutgoing ? 'manager' : 'blogger',
+                    'sender_name' => $isOutgoing ? 'Я (Telegram)' : ($senderFirstName ?: 'Блогер'),
+                    'text' => $text,
+                    'telegram_message_id' => $messageId,
+                    'status' => 'delivered',
+                    'created_at' => $createdAt,
+                    'updated_at' => $createdAt,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Synchronize recent in-memory updates and Telegram chat history for a specific integration
+     */
+    public function syncUpdatesForIntegration(Integration $integration, bool $forceHistory = false): void
+    {
+        $gatewayUrl = $this->getGatewayUrl();
+
+        // 1. Process in-memory recent updates queue (instant, no MTProto rate limits)
+        try {
+            $resp = Http::timeout(2)->get("{$gatewayUrl}/updates");
+            if ($resp->successful()) {
+                $updates = $resp->json('updates') ?? [];
+                foreach ($updates as $update) {
+                    $this->processMessageUpdate($update, $integration, false);
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        // 2. Fetch recent message history directly from Telegram MTProto (throttled to avoid flood wait)
+        $cacheKey = 'tg_history_sync_' . $integration->id;
+        if ($forceHistory || !Cache::has($cacheKey)) {
+            Cache::put($cacheKey, true, now()->addSeconds(20));
+
+            $target = $integration->telegram_username ?: $integration->telegram_chat_id;
+            if ($target) {
+                try {
+                    $hResp = Http::timeout(4)->post("{$gatewayUrl}/history", ['target' => $target]);
+                    if ($hResp->successful()) {
+                        $messages = $hResp->json('messages') ?? [];
+                        foreach (array_reverse($messages) as $m) {
+                            $this->processMessageUpdate($m, $integration, true);
+                        }
+                    }
+                } catch (\Throwable $e) {}
+            }
+        }
+    }
+
+    /**
      * Webhook called by the Node.js gateway when an incoming/outgoing message occurs
      */
     public function webhook(Request $request): JsonResponse
     {
         $data = $request->all();
         Log::info('Telegram Gateway incoming update:', $data);
-
-        $text = trim($data['text'] ?? '');
-        if ($text === '') {
-            return response()->json(['ok' => true]);
-        }
-
-        $senderUsername = $data['senderUsername'] ?? null;
-        $chatUsername = $data['chatUsername'] ?? null;
-        $chatId = $data['chatId'] ?? null;
-        $isOutgoing = (bool) ($data['isOutgoing'] ?? false);
-        $messageId = $data['messageId'] ?? null;
-        $senderFirstName = $data['senderFirstName'] ?? 'Блогер';
-
-        // Find all matching integrations (e.g. if one admin represents multiple bloggers)
-        $integrations = collect();
-
-        // 1. Try username match (sender or chat)
-        $cleanUsername = strtolower(ltrim($senderUsername ?: $chatUsername ?: '', '@'));
-        if ($cleanUsername !== '') {
-            $integrations = Integration::whereRaw("LOWER(REPLACE(telegram_username, '@', '')) = ?", [$cleanUsername])->get();
-        }
-
-        // 2. Try chat ID match if username yielded nothing
-        if ($integrations->isEmpty() && $chatId) {
-            $integrations = Integration::where('telegram_chat_id', (string) $chatId)->get();
-        }
-
-        if ($integrations->isNotEmpty()) {
-            foreach ($integrations as $integration) {
-                // Update chat_id if not set
-                if ($chatId && empty($integration->telegram_chat_id)) {
-                    $integration->telegram_chat_id = (string) $chatId;
-                    $integration->save();
-                }
-
-                ChatMessage::create([
-                    'integration_id' => $integration->id,
-                    'sender_type' => $isOutgoing ? 'manager' : 'blogger',
-                    'sender_name' => $isOutgoing ? 'Я (Telegram)' : $senderFirstName,
-                    'text' => $text,
-                    'telegram_message_id' => $messageId,
-                    'status' => 'delivered',
-                ]);
-            }
-        }
-
+        $this->processMessageUpdate($data);
         return response()->json(['ok' => true]);
     }
 }

@@ -15,18 +15,50 @@ import { NewMessage } from 'telegram/events/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load .env from project root if exists
+const ENV_FILE = path.resolve(__dirname, '../.env');
+if (fs.existsSync(ENV_FILE)) {
+  try {
+    const envContent = fs.readFileSync(ENV_FILE, 'utf8');
+    for (const rawLine of envContent.split('\n')) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eqIdx = line.indexOf('=');
+      if (eqIdx > 0) {
+        const key = line.slice(0, eqIdx).trim();
+        let val = line.slice(eqIdx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to parse .env file:', e.message);
+  }
+}
+
 // Configuration
 const API_ID = parseInt(process.env.TELEGRAM_API_ID || '34747233', 10);
 const API_HASH = process.env.TELEGRAM_API_HASH || '22e627a9308edd6aabb1371ad5c0057b';
 const PORT = parseInt(process.env.TELEGRAM_GATEWAY_PORT || '5005', 10);
-const CANDIDATE_WEBHOOK_URLS = [
+
+const appUrlWebhook = process.env.APP_URL 
+  ? `${process.env.APP_URL.replace(/\/+$/, '')}/api/telegram-gateway/webhook` 
+  : null;
+
+const CANDIDATE_WEBHOOK_URLS = Array.from(new Set([
   process.env.LARAVEL_GATEWAY_WEBHOOK_URL,
+  appUrlWebhook,
+  'https://tezi.uz/api/telegram-gateway/webhook',
   'http://127.0.0.1/api/telegram-gateway/webhook',
   'http://localhost/api/telegram-gateway/webhook',
   'http://127.0.0.1:8000/api/telegram-gateway/webhook',
   'http://127.0.0.1:8001/api/telegram-gateway/webhook',
   'http://127.0.0.1:8080/api/telegram-gateway/webhook',
-].filter(Boolean);
+].filter(Boolean)));
 const SESSION_FILE = path.resolve(__dirname, '../storage/app/telegram_user_session.json');
 
 // Ensure directory exists
@@ -55,6 +87,7 @@ let currentUser = null;
 let currentQr = null;
 let qrLoginActive = false;
 let messageListenerRegistered = false;
+let recentUpdates = [];
 
 function formatUser(user) {
   if (!user) return null;
@@ -117,7 +150,14 @@ function setupMessageListener() {
         chatTitle: chat?.title || null,
         text: message.message || message.text || '',
         date: message.date,
+        timestamp: Date.now(),
       };
+
+      // Store in memory queue for direct pull polling
+      recentUpdates.unshift(payload);
+      if (recentUpdates.length > 100) {
+        recentUpdates = recentUpdates.slice(0, 100);
+      }
 
       console.log('Incoming TG message:', payload.senderUsername, payload.text?.slice(0, 50));
 
@@ -125,18 +165,34 @@ function setupMessageListener() {
       (async () => {
         for (const url of CANDIDATE_WEBHOOK_URLS) {
           try {
-            const res = await fetch(url, {
+            let res = await fetch(url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
               body: JSON.stringify(payload),
+              redirect: 'manual',
             });
+
+            // If server returned a redirect (e.g. HTTP -> HTTPS 301/302), follow to location with POST
+            if (res.status === 301 || res.status === 302 || res.status === 307 || res.status === 308) {
+              const redirectUrl = res.headers.get('location');
+              if (redirectUrl) {
+                res = await fetch(redirectUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                  body: JSON.stringify(payload),
+                });
+              }
+            }
+
             const data = await res.json().catch(() => null);
             if (res.ok && data && data.ok) {
               console.log(`Forwarded message to Laravel at ${url}`);
               return;
+            } else {
+              console.log(`Webhook responded with status ${res.status} at ${url}`);
             }
           } catch (e) {
-            // try next candidate
+            console.log(`Webhook error at ${url}: ${e.message}`);
           }
         }
       })();
@@ -305,23 +361,97 @@ const server = http.createServer(async (req, res) => {
         return sendJson(400, { error: 'Target (to) and text are required' });
       }
 
-      // Format username if string without @
-      if (typeof target === 'string' && !target.startsWith('@') && !target.startsWith('-') && isNaN(Number(target))) {
-        target = `@${target}`;
-      } else if (!isNaN(Number(target))) {
-        target = Number(target);
+      // Format username or ID (strip t.me/ links)
+      if (typeof target === 'string') {
+        target = target.trim();
+        target = target.replace(/^(https?:\/\/)?(t\.me\/)/i, '');
+        if (!target.startsWith('@') && !target.startsWith('-') && !target.startsWith('+') && isNaN(Number(target))) {
+          target = `@${target}`;
+        } else if (!isNaN(Number(target))) {
+          target = Number(target);
+        }
       }
 
       try {
         const result = await client.sendMessage(target, { message: text });
+        let peerId = null;
+        if (result.peerId) {
+          peerId = (result.peerId.userId || result.peerId.chatId || result.peerId.channelId || '').toString();
+        }
         return sendJson(200, {
           success: true,
           messageId: result.id,
           date: result.date,
+          peerId: peerId,
         });
       } catch (err) {
         console.error('Send error:', err);
         return sendJson(500, { error: err.message || 'Failed to send message via Telegram' });
+      }
+    }
+
+    // 5. GET /updates - Retrieve recent incoming updates from in-memory queue
+    if (url.pathname === '/updates' && req.method === 'GET') {
+      const since = parseInt(url.searchParams.get('since') || '0', 10);
+      const filtered = since > 0 ? recentUpdates.filter(u => u.timestamp > since) : recentUpdates;
+      return sendJson(200, {
+        success: true,
+        updates: filtered,
+        serverTime: Date.now(),
+      });
+    }
+
+    // 6. POST /history - Fetch recent message history directly from Telegram MTProto
+    if (url.pathname === '/history' && req.method === 'POST') {
+      if (!isAuthorized) {
+        return sendJson(401, { error: 'Telegram gateway is not authorized.' });
+      }
+
+      const body = await readBody();
+      let target = body.target || body.username || body.chatId;
+      if (!target) {
+        return sendJson(400, { error: 'Target is required' });
+      }
+
+      if (typeof target === 'string') {
+        target = target.trim();
+        target = target.replace(/^(https?:\/\/)?(t\.me\/)/i, '');
+        if (!target.startsWith('@') && !target.startsWith('-') && !target.startsWith('+') && isNaN(Number(target))) {
+          target = `@${target}`;
+        } else if (!isNaN(Number(target))) {
+          target = Number(target);
+        }
+      }
+
+      try {
+        const messages = await client.getMessages(target, { limit: 25 });
+        const list = [];
+        for (const m of messages) {
+          if (!m || !m.id) continue;
+          let mSender = null;
+          try { mSender = await m.getSender(); } catch (e) {}
+          let mChat = null;
+          try { mChat = await m.getChat(); } catch (e) {}
+
+          list.push({
+            messageId: m.id,
+            isOutgoing: !!m.out,
+            chatId: m.chatId ? m.chatId.toString() : null,
+            peerId: m.peerId ? (m.peerId.userId || m.peerId.chatId || m.peerId.channelId || '').toString() : null,
+            senderId: mSender?.id ? mSender.id.toString() : null,
+            senderUsername: mSender?.username || null,
+            senderFirstName: mSender?.firstName || null,
+            senderLastName: mSender?.lastName || null,
+            chatUsername: mChat?.username || null,
+            chatTitle: mChat?.title || null,
+            text: m.message || m.text || '',
+            date: m.date,
+          });
+        }
+        return sendJson(200, { success: true, messages: list });
+      } catch (err) {
+        console.error('Fetch history error:', err.message);
+        return sendJson(500, { error: err.message });
       }
     }
 

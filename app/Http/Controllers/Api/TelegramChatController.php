@@ -22,6 +22,14 @@ class TelegramChatController extends Controller
             return response()->json(['message' => 'Integration not found'], 404);
         }
 
+        // Auto-sync pending updates and recent Telegram history
+        try {
+            $forceHistory = $request->boolean('force_sync');
+            app(TelegramGatewayController::class)->syncUpdatesForIntegration($integration, $forceHistory);
+        } catch (\Throwable $e) {
+            Log::debug('Telegram Gateway auto-sync skipped: ' . $e->getMessage());
+        }
+
         $query = ChatMessage::where('integration_id', $integration->id)->orderBy('created_at', 'asc');
 
         if ($request->has('since_id')) {

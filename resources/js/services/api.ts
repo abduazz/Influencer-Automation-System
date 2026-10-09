@@ -335,8 +335,12 @@ export function submitBloggerRequisites(data: {
 }
 
 // Telegram Live Chat API
-export function fetchChatMessages(integrationId: string, sinceId?: string): Promise<ChatResponse> {
-  const url = sinceId ? `/api/integrations/${integrationId}/messages?since_id=${encodeURIComponent(sinceId)}` : `/api/integrations/${integrationId}/messages`;
+export function fetchChatMessages(integrationId: string, sinceId?: string, forceSync?: boolean): Promise<ChatResponse> {
+  const params = new URLSearchParams();
+  if (sinceId) params.append('since_id', sinceId);
+  if (forceSync) params.append('force_sync', '1');
+  const qs = params.toString();
+  const url = `/api/integrations/${integrationId}/messages${qs ? `?${qs}` : ''}`;
   return request<ChatResponse>(url);
 }
 

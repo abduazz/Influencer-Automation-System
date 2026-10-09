@@ -154,7 +154,7 @@ export default function BloggerTelegramChat({
     try {
       const res = await updateIntegrationChatSettings(
         integration.id, 
-        manualChatId.trim() || null,
+        telegramChatId || manualChatId || null,
         manualUsername.trim() || null
       );
       setTelegramChatId(res.telegramChatId);
@@ -298,32 +298,24 @@ export default function BloggerTelegramChat({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
-              <label className="text-[11px] font-medium text-neutral-600 block mb-1">
-                {lang === 'uz' ? 'Blogger @username (yoki tel)' : lang === 'en' ? 'Blogger @username (or phone)' : 'Telegram логин блогера (@юзернейм):'}
-              </label>
-              <input
-                type="text"
-                value={manualUsername}
-                onChange={(e) => setManualUsername(e.target.value)}
-                placeholder="@username или номер"
-                className="w-full px-2.5 py-1.5 bg-white border border-neutral-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-neutral-900"
-              />
-            </div>
-
-            <div>
-              <label className="text-[11px] font-medium text-neutral-600 block mb-1">
-                {lang === 'uz' ? 'Chat ID (ixtiyoriy)' : lang === 'en' ? 'Chat ID (optional)' : 'Telegram Chat ID (опционально):'}
-              </label>
-              <input
-                type="text"
-                value={manualChatId}
-                onChange={(e) => setManualChatId(e.target.value)}
-                placeholder="например, 123456789"
-                className="w-full px-2.5 py-1.5 bg-white border border-neutral-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-neutral-900"
-              />
-            </div>
+          <div>
+            <label className="text-[11px] font-medium text-neutral-600 block mb-1">
+              {lang === 'uz' ? 'Blogger @username (yoki tel)' : lang === 'en' ? 'Blogger @username (or phone)' : 'Telegram логин блогера (@юзернейм):'}
+            </label>
+            <input
+              type="text"
+              value={manualUsername}
+              onChange={(e) => setManualUsername(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSaveManualSettings();
+                }
+              }}
+              placeholder="@username или номер"
+              className="w-full px-2.5 py-1.5 bg-white border border-neutral-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-neutral-900"
+              autoFocus
+            />
           </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-neutral-200/80 mt-1">

@@ -2,11 +2,16 @@ import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurch
 
 // Fetch helper that handles errors
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('ff_user_role') : null;
+  const cachedEmail = typeof window !== 'undefined' ? localStorage.getItem('ff_user_email') : null;
+
   const res = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      ...(cachedRole ? { 'X-User-Role': cachedRole } : {}),
+      ...(cachedEmail ? { 'X-User-Email': cachedEmail } : {}),
       ...(options?.headers || {}),
     },
   });
@@ -141,17 +146,18 @@ export function createIntegration(
     body: JSON.stringify(data),
   });
 }
-export function updateIntegration(
+export async function updateIntegration(
   id: string,
   data: Partial<Integration>,
   userEmail?: string
 ): Promise<Integration> {
   const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
-  return request<Integration>(`/api/integrations/${id}`, {
+  const res = await request<any>(`/api/integrations/${id}`, {
     method: 'PUT',
     headers,
     body: JSON.stringify(data),
   });
+  return (res && res.integration) ? res.integration : (res as Integration);
 }
 export function deleteIntegration(id: string): Promise<void> {
   return request<void>(`/api/integrations/${id}`, { method: 'DELETE' });
@@ -480,6 +486,7 @@ export interface TelegramGatewayStatus {
     expires?: number;
   } | null;
   qrLoginActive?: boolean;
+  sessionLost?: boolean;
 }
 
 export function fetchTelegramGatewayStatus(): Promise<TelegramGatewayStatus> {

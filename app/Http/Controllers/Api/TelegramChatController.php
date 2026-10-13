@@ -40,6 +40,17 @@ class TelegramChatController extends Controller
 
         $messages = $query->get()->map(function ($msg) {
             $isEdited = $msg->updated_at && $msg->created_at && $msg->updated_at->diffInSeconds($msg->created_at) > 1;
+
+            $sentAt = $msg->sent_at ?? $msg->created_at;
+            $receivedAt = $msg->received_at;
+            if (!$receivedAt) {
+                if ($msg->sender_type === 'blogger') {
+                    $receivedAt = $msg->created_at ?? $sentAt;
+                } elseif ($msg->status === 'delivered' || $msg->status === 'read' || $msg->status === 'sent') {
+                    $receivedAt = $msg->updated_at ?? $msg->created_at ?? $sentAt;
+                }
+            }
+
             return [
                 'id' => (string) $msg->id,
                 'integrationId' => (string) $msg->integration_id,
@@ -51,6 +62,8 @@ class TelegramChatController extends Controller
                 'mediaType' => $msg->media_type,
                 'status' => $msg->status,
                 'isEdited' => $isEdited,
+                'sentAt' => $sentAt ? $sentAt->toISOString() : null,
+                'receivedAt' => $receivedAt ? $receivedAt->toISOString() : null,
                 'createdAt' => $msg->created_at ? $msg->created_at->toISOString() : now()->toISOString(),
                 'updatedAt' => $msg->updated_at ? $msg->updated_at->toISOString() : now()->toISOString(),
             ];
@@ -133,7 +146,7 @@ class TelegramChatController extends Controller
 
         if (empty($integration->telegram_username) && empty($integration->telegram_chat_id)) {
             return response()->json([
-                'error' => 'У блогера не указан Telegram логин. Укажите @username блогера в карточке для отправки сообщения.',
+                'error' => 'У блогера не указан контакт Telegram. Укажите @username или номер телефона блогера в карточке для отправки сообщения.',
             ], 422);
         }
 
@@ -147,8 +160,12 @@ class TelegramChatController extends Controller
         }
 
         if (empty($gatewayStatus['isAuthorized'])) {
+            $isSuperAdmin = $this->checkSuperAdmin($request);
+            $errorMsg = $isSuperAdmin
+                ? 'Рабочий Telegram-аккаунт отвязан. Нажмите «Личный Telegram (QR)» в шапке доски и отсканируйте QR-код с телефона для повторного подключения.'
+                : 'Рабочий Telegram-аккаунт временно отвязан. Супер-администратор уже оповещён о необходимости сканирования QR-кода. Пожалуйста, подождите или обратитесь к супер-администратору.';
             return response()->json([
-                'error' => 'Личный Telegram-шлюз не авторизован. Откройте «Личный Telegram шлюз» в шапке доски и отсканируйте QR-код для синхронизации со своим профилем.',
+                'error' => $errorMsg,
             ], 422);
         }
 
@@ -190,7 +207,11 @@ class TelegramChatController extends Controller
             $updates['telegram_chat_id'] = $request->input('telegramChatId') ?: null;
         }
         if ($request->has('telegramUsername') || array_key_exists('telegramUsername', $request->all())) {
-            $cleanUser = ltrim(trim($request->input('telegramUsername') ?? ''), '@');
+            $rawUser = trim($request->input('telegramUsername') ?? '');
+            if (preg_match('#(?:t\.me|telegram\.me)/(?:s/)?([a-zA-Z0-9_]+)#i', $rawUser, $m)) {
+                $rawUser = $m[1];
+            }
+            $cleanUser = ltrim($rawUser, '@');
             $updates['telegram_username'] = $cleanUser ?: null;
         }
 
@@ -278,6 +299,8 @@ class TelegramChatController extends Controller
                 'mediaType' => $chatMessage->media_type,
                 'status' => $chatMessage->status,
                 'isEdited' => true,
+                'sentAt' => ($chatMessage->sent_at ?? $chatMessage->created_at)?->toISOString(),
+                'receivedAt' => ($chatMessage->received_at ?? $chatMessage->updated_at)?->toISOString(),
                 'createdAt' => $chatMessage->created_at ? $chatMessage->created_at->toISOString() : now()->toISOString(),
                 'updatedAt' => $chatMessage->updated_at ? $chatMessage->updated_at->toISOString() : now()->toISOString(),
             ],
@@ -394,12 +417,15 @@ class TelegramChatController extends Controller
                 $integration->save();
 
                 // Save system message
+                $now = now();
                 ChatMessage::create([
                     'integration_id' => $integration->id,
                     'sender_type' => 'system',
                     'sender_name' => 'Telegram Bot',
                     'text' => "Блогер {$firstName} (@{$username}) подключился к диалогу в Telegram (Chat ID: {$chatId})",
                     'status' => 'delivered',
+                    'sent_at' => $now,
+                    'received_at' => $now,
                 ]);
 
                 // Send confirmation to the blogger
@@ -440,6 +466,10 @@ class TelegramChatController extends Controller
                 $msgContent = $mediaType ? "[Вложение: {$mediaType}]" : "—";
             }
 
+            $date = $request->input('message.date');
+            $sentAt = $date ? \Illuminate\Support\Carbon::createFromTimestamp($date) : now();
+            $receivedAt = now();
+
             ChatMessage::create([
                 'integration_id' => $integration->id,
                 'sender_type' => 'blogger',
@@ -448,6 +478,8 @@ class TelegramChatController extends Controller
                 'telegram_message_id' => $messageId,
                 'media_type' => $mediaType,
                 'status' => 'delivered',
+                'sent_at' => $sentAt,
+                'received_at' => $receivedAt,
             ]);
         } else {
             TelegramService::sendMessage($chatId, "Здравствуйте! Чтобы связать переписку с вашей карточкой блогера, откройте персональную ссылку от менеджера.");

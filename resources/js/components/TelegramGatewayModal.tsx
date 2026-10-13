@@ -97,7 +97,14 @@ export default function TelegramGatewayModal({
 
     // Start polling status every 2.5s while modal is open
     pollingRef.current = setInterval(async () => {
-      await checkStatus();
+      const current = await checkStatus();
+      // Auto-refresh QR if expiring in less than 3s
+      if (current?.isRunning && !current?.isAuthorized && current?.qr?.expires) {
+        const expMs = current.qr.expires > 10000000000 ? current.qr.expires : current.qr.expires * 1000;
+        if (expMs < Date.now() + 3000 && !qrLoading) {
+          handleStartQr();
+        }
+      }
     }, 2500);
 
     return () => {
@@ -218,13 +225,23 @@ export default function TelegramGatewayModal({
           {/* QR Code Scan State */}
           {status?.isRunning && !status?.isAuthorized && (
             <div className="space-y-4">
-              <div className="text-center space-y-1">
-                <h4 className="font-bold text-slate-900 text-sm">
-                  Сканируйте QR-код в приложении Telegram
-                </h4>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Откройте Telegram на телефоне ➔ <strong>Настройки ➔ Устройства ➔ Подключить устройство</strong>
-                </p>
+              <div className="bg-sky-50/80 border border-sky-200/80 rounded-2xl p-3.5 space-y-2 text-xs text-sky-950">
+                <div className="font-bold flex items-center gap-2 text-sky-900 text-sm">
+                  <Smartphone className="w-4 h-4 text-sky-600 shrink-0" />
+                  <span>
+                    {lang === 'uz' ? 'Telefondan 5 soniyada ulanish:' : lang === 'en' ? 'Connect in 5 seconds from phone:' : 'Быстрое подключение с телефона (за 5 секунд):'}
+                  </span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-slate-700 font-medium pl-1 text-[11px] leading-relaxed">
+                  <li>{lang === 'uz' ? 'Telefoningizda Telegram ilovasini oching' : lang === 'en' ? 'Open Telegram app on your phone' : 'Откройте Telegram на телефоне'}</li>
+                  <li>
+                    {lang === 'uz' ? <><strong>Sozlamalar</strong> → <strong>Qurilmalar</strong></> : lang === 'en' ? <><strong>Settings</strong> → <strong>Devices</strong></> : <><strong>Настройки</strong> → <strong>Устройства</strong></>}
+                  </li>
+                  <li>
+                    {lang === 'uz' ? <><strong>«Qurilmani ulash»</strong> tugmasini bosing</> : lang === 'en' ? <>Tap <strong>"Link Desktop Device"</strong></> : <>Нажмите <strong>«Подключить устройство»</strong></>}
+                  </li>
+                  <li>{lang === 'uz' ? 'Kamerani quyidagi QR-kodga yo‘naltiring' : lang === 'en' ? 'Point camera at the QR code below' : 'Наведите камеру телефона на QR-код ниже'}</li>
+                </ol>
               </div>
 
               {/* QR Image Box */}

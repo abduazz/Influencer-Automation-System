@@ -405,6 +405,7 @@ export default function App() {
   };
 
   const handleEditIntegration = async (id: string, updatedFields: Partial<Integration>) => {
+    setIntegrations((prev) => prev.map(item => item.id === id ? { ...item, ...updatedFields } : item));
     const integration = await updateIntegration(id, updatedFields, currentUserEmail || undefined);
     setIntegrations((prev) => prev.map(item => item.id === id ? { ...item, ...integration } : item));
     const [freshReports, freshIntegrations] = await Promise.all([
@@ -992,6 +993,7 @@ export default function App() {
                 userRole={currentUserRole}
                 currentUserEmail={currentUserEmail}
                 currentUserName={currentUserName}
+                bloggerRequisitesList={bloggerRequisitesList}
                 onOpenRequisitesDirectory={() => setActiveTab('requisites_directory')}
                 onClearStage={handleClearKanbanStage}
                 onRefreshSubscribers={handleRefreshIntegrationSubscribers}

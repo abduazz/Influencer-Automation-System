@@ -19,10 +19,14 @@ class ChatMessage extends Model
         'media_url',
         'media_type',
         'status',
+        'sent_at',
+        'received_at',
     ];
 
     protected $casts = [
         'telegram_message_id' => 'integer',
+        'sent_at' => 'datetime',
+        'received_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

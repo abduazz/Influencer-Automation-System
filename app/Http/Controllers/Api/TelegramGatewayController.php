@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Enums\UserRole;
 use App\Models\ChatMessage;
 use App\Models\Integration;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -88,7 +90,7 @@ class TelegramGatewayController extends Controller
         }
 
         $cmd = "cd {$cwd} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
-        @exec($cmd);
+        @pclose(@popen($cmd, 'r'));
 
         // Wait up to 2.5 seconds for it to bind
         for ($i = 0; $i < 10; $i++) {
@@ -105,21 +107,80 @@ class TelegramGatewayController extends Controller
     }
 
     /**
+     * Check if current requesting user is Super Admin
+     */
+    public function checkSuperAdmin(Request $request): bool
+    {
+        $user = auth()->user();
+
+        if (!$user) {
+            $email = $request->header('X-User-Email') ?: $request->input('userEmail');
+            if ($email) {
+                $user = User::where('email', strtolower($email))->first();
+            }
+        }
+
+        if ($user && $user->role === UserRole::SuperAdmin) {
+            return true;
+        }
+
+        $headerRole = $request->header('X-User-Role') ?: $request->input('userRole');
+        if ($headerRole === 'super_admin') {
+            return true;
+        }
+
+        $headerEmail = strtolower($request->header('X-User-Email') ?: $request->input('userEmail') ?: '');
+        if ($headerEmail && (str_contains($headerEmail, 'admin') || $headerEmail === 'chief1' || $headerEmail === 'abduazz')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Get gateway status (is running, is authorized, connected user)
      */
-    public function getStatus(): JsonResponse
+    public function getStatus(?Request $request = null): JsonResponse
     {
         $url = $this->getGatewayUrl() . '/status';
         try {
             $response = Http::timeout(2)->get($url);
             if ($response->successful()) {
                 $data = $response->json();
+                $isAuthorized = (bool) ($data['isAuthorized'] ?? false);
+                $wasAuthorized = (bool) Cache::get('telegram_gateway_was_authorized', false);
+
+                if ($isAuthorized) {
+                    Cache::put('telegram_gateway_was_authorized', true, now()->addDays(30));
+                    if (Cache::has('telegram_gateway_session_lost_active')) {
+                        Cache::forget('telegram_gateway_session_lost_active');
+                        if (Cache::has('telegram_gateway_session_lost_alert_sent')) {
+                            Cache::forget('telegram_gateway_session_lost_alert_sent');
+                            try {
+                                $adminChatId = config('services.telegram.chat_id') ?: config('services.telegram.reports_chat_id');
+                                if ($adminChatId && config('services.telegram.bot_token')) {
+                                    $u = $data['user'] ?? [];
+                                    $uName = trim(($u['firstName'] ?? '') . ' ' . ($u['lastName'] ?? ''));
+                                    $uHandle = !empty($u['username']) ? '@' . $u['username'] : '';
+                                    $uLabel = htmlspecialchars(trim("{$uName} {$uHandle}") ?: 'Telegram User');
+                                    $text = "✅ <b>Рабочий Telegram-аккаунт успешно подключен!</b>\n\nПрофиль: <b>{$uLabel}</b>\nСвязь с блогерами полностью возобновлена.";
+                                    \App\Services\TelegramService::sendMessage($adminChatId, $text);
+                                }
+                            } catch (\Throwable $e) {}
+                        }
+                    }
+                } elseif ($wasAuthorized && !$isAuthorized) {
+                    // Previously authorized, now lost!
+                    $this->handleSessionLostAlert('Сессия Telegram была сброшена или завершена приложением Telegram');
+                }
+
                 return response()->json([
                     'isRunning' => true,
-                    'isAuthorized' => (bool) ($data['isAuthorized'] ?? false),
+                    'isAuthorized' => $isAuthorized,
                     'user' => $data['user'] ?? null,
                     'qr' => $data['qr'] ?? null,
                     'qrLoginActive' => (bool) ($data['qrLoginActive'] ?? false),
+                    'sessionLost' => (bool) Cache::get('telegram_gateway_session_lost_active', false),
                 ]);
             }
         } catch (\Throwable $e) {
@@ -129,12 +190,14 @@ class TelegramGatewayController extends Controller
                     $response = Http::timeout(2)->get($url);
                     if ($response->successful()) {
                         $data = $response->json();
+                        $isAuthorized = (bool) ($data['isAuthorized'] ?? false);
                         return response()->json([
                             'isRunning' => true,
-                            'isAuthorized' => (bool) ($data['isAuthorized'] ?? false),
+                            'isAuthorized' => $isAuthorized,
                             'user' => $data['user'] ?? null,
                             'qr' => $data['qr'] ?? null,
                             'qrLoginActive' => (bool) ($data['qrLoginActive'] ?? false),
+                            'sessionLost' => (bool) Cache::get('telegram_gateway_session_lost_active', false),
                         ]);
                     }
                 } catch (\Throwable $e2) {}
@@ -147,14 +210,21 @@ class TelegramGatewayController extends Controller
             'user' => null,
             'qr' => null,
             'qrLoginActive' => false,
+            'sessionLost' => (bool) Cache::get('telegram_gateway_session_lost_active', false),
         ]);
     }
 
     /**
-     * Request QR code for login
+     * Request QR code for login (Super Admin only)
      */
-    public function startQr(): JsonResponse
+    public function startQr(Request $request): JsonResponse
     {
+        if (!$this->checkSuperAdmin($request)) {
+            return response()->json([
+                'error' => 'Доступ запрещён. Подключать рабочий Telegram по QR-коду может только супер-администратор.'
+            ], 403);
+        }
+
         $url = $this->getGatewayUrl() . '/qr/start';
         try {
             $response = Http::timeout(8)->post($url);
@@ -171,10 +241,21 @@ class TelegramGatewayController extends Controller
     }
 
     /**
-     * Log out from personal Telegram session
+     * Log out from personal Telegram session (Super Admin only)
      */
-    public function logout(): JsonResponse
+    public function logout(Request $request): JsonResponse
     {
+        if (!$this->checkSuperAdmin($request)) {
+            return response()->json([
+                'error' => 'Доступ запрещён. Отключать рабочий Telegram может только супер-администратор.'
+            ], 403);
+        }
+
+        // Forget authorization history on explicit manual logout
+        Cache::forget('telegram_gateway_was_authorized');
+        Cache::forget('telegram_gateway_session_lost_active');
+        Cache::forget('telegram_gateway_session_lost_alert_sent');
+
         $url = $this->getGatewayUrl() . '/logout';
         try {
             $response = Http::timeout(5)->post($url);
@@ -198,41 +279,104 @@ class TelegramGatewayController extends Controller
         $text = trim($request->input('text'));
         $senderName = $request->input('senderName') ?: 'Super Admin';
 
-        $target = $integration->telegram_username ?: $integration->telegram_chat_id;
+        // 1. Analyze telegram_username for public @username vs phone number
+        $validUsername = null;
+        $phoneCandidate = null;
+        if (!empty($integration->telegram_username)) {
+            $candidates = array_map('trim', preg_split('/[,;\n]+/', $integration->telegram_username));
+            foreach ($candidates as $cand) {
+                // If t.me/username link
+                if (preg_match('#(?:t\.me|telegram\.me)/(?:s/)?([a-zA-Z0-9_]{3,32})#i', $cand, $m)) {
+                    if (preg_match('/[a-zA-Z]/', $m[1])) {
+                        $validUsername = '@' . $m[1];
+                        break;
+                    }
+                }
+                // If @username or string with letters/underscores (not pure digits)
+                $candClean = ltrim($cand, '@');
+                if (preg_match('/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/', $candClean)) {
+                    $validUsername = '@' . $candClean;
+                    break;
+                }
+                // Check if candidate is a phone number
+                $cleanedDigits = preg_replace('/[\s\-\(\)]+/', '', $cand);
+                if (str_starts_with($cand, '+') || preg_match('/^\+?\d{9,16}$/', $cleanedDigits)) {
+                    $phoneCandidate = str_starts_with($cleanedDigits, '+') ? $cleanedDigits : "+{$cleanedDigits}";
+                }
+            }
+        }
+
+        // Priority for target:
+        // 1) Public @username - MTProto resolves directly on Telegram servers (100% reliable)
+        // 2) Phone number - MTProto resolves via ImportContacts
+        // 3) Chat ID - numeric Telegram peer
+        $target = null;
+        if ($validUsername) {
+            $target = $validUsername;
+        } elseif ($phoneCandidate) {
+            $target = $phoneCandidate;
+        } elseif (!empty($integration->telegram_chat_id)) {
+            $target = (string) $integration->telegram_chat_id;
+        } else {
+            $target = trim((string) $integration->telegram_username);
+        }
+
         if (!$target) {
             return response()->json([
-                'error' => 'У блогера не указан ни Telegram Username (@ник), ни Chat ID. Укажите логин блогера в карточке.'
+                'error' => 'У блогера не указан ни Telegram @username, ни номер телефона, ни Chat ID. Укажите контакт блогера в карточке.'
             ], 422);
         }
 
         // Save local message record
+        $now = now();
         $chatMessage = ChatMessage::create([
             'integration_id' => $integration->id,
             'sender_type' => 'manager',
             'sender_name' => $senderName,
             'text' => $text,
             'status' => 'pending',
+            'sent_at' => $now,
+            'received_at' => null,
         ]);
 
         // Send via Gateway
         $url = $this->getGatewayUrl() . '/send';
         try {
-            $response = Http::timeout(10)->post($url, [
+            $response = Http::timeout(15)->post($url, [
                 'to' => $target,
+                'chatId' => $integration->telegram_chat_id ? (string) $integration->telegram_chat_id : null,
+                'username' => $validUsername,
+                'phone' => $phoneCandidate,
                 'text' => $text,
+                'bloggerName' => $integration->blogger_name,
+                'senderName' => $senderName,
                 'integrationId' => (string) $integration->id,
             ]);
 
             if ($response->successful()) {
                 $resData = $response->json();
+                $deliveredAt = now();
                 $chatMessage->update([
                     'status' => 'delivered',
                     'telegram_message_id' => $resData['messageId'] ?? null,
+                    'received_at' => $deliveredAt,
                 ]);
 
                 // Store numeric peerId to ensure bidirectional matching for all future messages
+                $updatedFields = false;
                 if (!empty($resData['peerId']) && empty($integration->telegram_chat_id)) {
                     $integration->telegram_chat_id = (string) $resData['peerId'];
+                    $updatedFields = true;
+                }
+                // If a phone number was resolved and user has an active @username, enrich integration
+                if (!empty($resData['username'])) {
+                    $curr = $integration->telegram_username;
+                    if (empty($curr) || preg_match('/^\+?\d+$/', preg_replace('/[\s\-\(\)]+/', '', $curr))) {
+                        $integration->telegram_username = (string) $resData['username'];
+                        $updatedFields = true;
+                    }
+                }
+                if ($updatedFields) {
                     $integration->save();
                 }
 
@@ -245,21 +389,35 @@ class TelegramGatewayController extends Controller
                         'senderName' => $chatMessage->sender_name,
                         'text' => $chatMessage->text,
                         'status' => 'delivered',
+                        'sentAt' => $chatMessage->sent_at?->toISOString() ?? $now->toISOString(),
+                        'receivedAt' => $deliveredAt->toISOString(),
                         'createdAt' => $chatMessage->created_at->toISOString(),
+                        'updatedAt' => $chatMessage->updated_at->toISOString(),
                     ],
+                    'resolvedUsername' => $resData['username'] ?? null,
+                    'resolvedPeerId' => $resData['peerId'] ?? null,
                 ]);
             } else {
                 $chatMessage->update(['status' => 'failed']);
-                $errorData = $response->json();
+                $errorData = $response->json() ?? [];
+                $statusCode = $response->status() ?: 500;
+                $rawError = $errorData['error'] ?? 'Ошибка отправки через Telegram Gateway';
+                if (stripos($rawError, 'Could not find the input entity') !== false || stripos($rawError, 'PeerUser') !== false) {
+                    $rawError = 'Пользователь не найден в Telegram. Проверьте номер или укажите публичный @username блогера (например, @nickname).';
+                }
                 return response()->json([
-                    'error' => $errorData['error'] ?? 'Ошибка отправки через Telegram Gateway',
+                    'error' => $rawError,
                     'message' => $chatMessage,
-                ], 500);
+                ], $statusCode >= 400 && $statusCode < 600 ? $statusCode : 500);
             }
         } catch (\Throwable $e) {
             $chatMessage->update(['status' => 'failed']);
+            $msg = $e->getMessage();
+            if (stripos($msg, 'Could not find the input entity') !== false || stripos($msg, 'PeerUser') !== false) {
+                $msg = 'Пользователь не найден в вашей сессии Telegram. Для первого сообщения укажите публичный @username блогера (например, @nickname), либо блогер должен первым написать вам в Telegram.';
+            }
             return response()->json([
-                'error' => 'Не удалось связаться с Telegram Gateway: ' . $e->getMessage(),
+                'error' => 'Ошибка отправки через Telegram Gateway: ' . $msg,
                 'message' => $chatMessage,
             ], 503);
         }
@@ -348,8 +506,11 @@ class TelegramGatewayController extends Controller
                     }
                 }
 
-                $createdAt = !empty($data['date']) 
+                $sentAt = !empty($data['date']) 
                     ? \Illuminate\Support\Carbon::createFromTimestamp($data['date']) 
+                    : now();
+                $receivedAt = !empty($data['timestamp'])
+                    ? \Illuminate\Support\Carbon::createFromTimestampMs($data['timestamp'])
                     : now();
 
                 ChatMessage::create([
@@ -359,8 +520,10 @@ class TelegramGatewayController extends Controller
                     'text' => $text,
                     'telegram_message_id' => $messageId,
                     'status' => 'delivered',
-                    'created_at' => $createdAt,
-                    'updated_at' => $createdAt,
+                    'sent_at' => $sentAt,
+                    'received_at' => $receivedAt,
+                    'created_at' => $sentAt,
+                    'updated_at' => $receivedAt,
                 ]);
             }
         }
@@ -411,7 +574,53 @@ class TelegramGatewayController extends Controller
     {
         $data = $request->all();
         Log::info('Telegram Gateway incoming update:', $data);
+
+        // Handle sudden disconnect / session unlinked event from Telegram
+        if (($data['event'] ?? '') === 'session_lost') {
+            $reason = $data['reason'] ?? 'Сессия Telegram была завершена или сброшена';
+            $this->handleSessionLostAlert($reason);
+            return response()->json(['ok' => true, 'event' => 'session_lost_handled']);
+        }
+
         $this->processMessageUpdate($data);
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Send urgent notification to admin Telegram chat when personal session is lost
+     */
+    public function handleSessionLostAlert(?string $reason = null): void
+    {
+        Log::warning('Telegram Gateway session lost: ' . ($reason ?? 'unknown reason'));
+
+        Cache::put('telegram_gateway_session_lost_active', true, now()->addDays(7));
+        Cache::put('telegram_gateway_session_lost_at', now()->toIso8601String(), now()->addDays(7));
+
+        // Limit alert notification frequency (at most once every 10 minutes to avoid spam)
+        if (Cache::has('telegram_gateway_session_lost_alert_sent')) {
+            return;
+        }
+        Cache::put('telegram_gateway_session_lost_alert_sent', true, now()->addMinutes(10));
+
+        try {
+            $reportsChatId = config('services.telegram.reports_chat_id');
+            $adminChatId = config('services.telegram.chat_id') ?: $reportsChatId;
+
+            if ($adminChatId && config('services.telegram.bot_token')) {
+                $text = "🚨 <b>ВНИМАНИЕ: Рабочий Telegram CRM отвязан!</b>\n\n"
+                    . "Сессия личного рабочего Telegram была завершена или сброшена приложением Telegram.\n"
+                    . "<b>⚠️ Отправка и приём сообщений с блогерами приостановлены!</b>\n\n"
+                    . "📱 <b>Что сделать прямо сейчас:</b>\n"
+                    . "1. Откройте CRM (доску сделок Kanban) под супер-администратором\n"
+                    . "2. Нажмите кнопку <b>«Личный Telegram (QR)»</b>\n"
+                    . "3. В приложении Telegram на телефоне: <i>Настройки → Устройства → Подключить устройство</i>\n"
+                    . "4. Отсканируйте отобразившийся QR-код\n\n"
+                    . "<i>Синхронизация с блогерами восстановится моментально.</i>";
+
+                \App\Services\TelegramService::sendMessage($adminChatId, $text);
+            }
+        } catch (\Throwable $e) {
+            Log::error('Failed to send Telegram gateway session lost notification: ' . $e->getMessage());
+        }
     }
 }

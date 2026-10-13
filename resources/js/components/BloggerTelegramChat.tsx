@@ -21,7 +21,8 @@ import {
   ChevronDown,
   Users,
   Pencil,
-  Trash2
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { fetchChatMessages, sendChatMessage, updateIntegrationChatSettings, editChatMessage, deleteChatMessage } from '../services/api';
 import { formatTelegramLink, formatTelegramHandle } from '../utils/platform';
@@ -36,6 +37,25 @@ interface BloggerTelegramChatProps {
   onIntegrationUpdated?: (updated: Integration) => void;
   isInline?: boolean;
 }
+
+const UZ_MONTHS = [
+  'yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun',
+  'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'
+];
+
+/** Check if input looks like a phone number (e.g. +7977..., 79771730800, +9989...) */
+const isPhoneOnly = (val: string | null | undefined): boolean => {
+  if (!val) return false;
+  const clean = val.trim().replace(/[\s\-\(\)]+/g, '');
+  return clean.startsWith('+') || /^\d{7,16}$/.test(clean);
+};
+
+/** Normalize telegram input, stripping t.me links */
+const cleanTelegramUsernameInput = (val: string): string => {
+  let clean = val.trim();
+  clean = clean.replace(/^https?:\/\/(www\.)?(t\.me|telegram\.me)\/(?:s\/)?/i, '');
+  return clean;
+};
 
 export default function BloggerTelegramChat({
   integration,
@@ -134,6 +154,7 @@ export default function BloggerTelegramChat({
 
     // Optimistic message append
     const tempId = `temp-${Date.now()}`;
+    const nowIso = new Date().toISOString();
     const optimisticMessage: ChatMessage = {
       id: tempId,
       integrationId: integration.id,
@@ -141,7 +162,9 @@ export default function BloggerTelegramChat({
       senderName: currentUserName || 'Super Admin',
       text: textToSend,
       status: 'pending',
-      createdAt: new Date().toISOString(),
+      sentAt: nowIso,
+      receivedAt: null,
+      createdAt: nowIso,
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
@@ -152,6 +175,8 @@ export default function BloggerTelegramChat({
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? res.message : m))
       );
+      // Reload chat/integration to pick up resolved telegramUsername / telegramChatId
+      loadMessages(true);
     } catch (err: any) {
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
@@ -245,12 +270,18 @@ export default function BloggerTelegramChat({
   };
 
   const handleSaveManualSettings = async () => {
-    const trimmed = manualUsername.trim();
+    let trimmed = cleanTelegramUsernameInput(manualUsername);
+    if (trimmed.startsWith('@')) {
+      trimmed = trimmed.substring(1);
+    }
     setSavingSettings(true);
     try {
+      const contactChanged = trimmed !== (telegramUsername || '');
+      const newChatId = contactChanged ? null : (telegramChatId || manualChatId || null);
+
       const res = await updateIntegrationChatSettings(
         integration.id, 
-        telegramChatId || manualChatId || null,
+        newChatId,
         trimmed || null
       );
       setTelegramChatId(res.telegramChatId);
@@ -302,13 +333,75 @@ export default function BloggerTelegramChat({
       setSavingSettings(false);
     }
   };
-
-  const formatMessageTime = (isoString: string) => {
+  const formatFullDateTime = (isoString?: string | null) => {
+    if (!isoString) return '';
     try {
-      const date = new Date(isoString);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return '';
+      if (lang === 'en') {
+        const datePart = d.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const timePart = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return `${datePart}, ${timePart}`;
+      }
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const seconds = String(d.getSeconds()).padStart(2, '0');
+      return `${day}.${month}.${year}, ${hours}:${minutes}:${seconds}`;
     } catch {
       return '';
+    }
+  };
+
+  const getMessageDateKey = (msg: ChatMessage) => {
+    const raw = msg.sentAt || msg.createdAt;
+    if (!raw) return '';
+    try {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return '';
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    } catch {
+      return '';
+    }
+  };
+
+  const formatDayDivider = (dateKey: string) => {
+    if (!dateKey) return '';
+    try {
+      const [y, m, d] = dateKey.split('-').map(Number);
+      if (isNaN(y) || isNaN(m) || isNaN(d)) return dateKey;
+      const date = new Date(y, m - 1, d);
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+
+      const isToday = today.getFullYear() === y && today.getMonth() === m - 1 && today.getDate() === d;
+      const isYesterday = yesterday.getFullYear() === y && yesterday.getMonth() === m - 1 && yesterday.getDate() === d;
+
+      let formattedDate = '';
+      if (lang === 'uz') {
+        const monthName = UZ_MONTHS[m - 1] || '';
+        formattedDate = y !== today.getFullYear()
+          ? `${d}-${monthName}, ${y}-yil`
+          : `${d}-${monthName}`;
+      } else {
+        formattedDate = date.toLocaleDateString(
+          lang === 'en' ? 'en-US' : 'ru-RU',
+          { day: 'numeric', month: 'long', year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined }
+        );
+      }
+
+      if (isToday) {
+        return lang === 'uz' ? `Bugun, ${formattedDate}` : lang === 'en' ? `Today, ${formattedDate}` : `Сегодня, ${formattedDate}`;
+      }
+      if (isYesterday) {
+        return lang === 'uz' ? `Kecha, ${formattedDate}` : lang === 'en' ? `Yesterday, ${formattedDate}` : `Вчера, ${formattedDate}`;
+      }
+      return formattedDate;
+    } catch {
+      return dateKey;
     }
   };
 
@@ -404,22 +497,32 @@ export default function BloggerTelegramChat({
 
           <div>
             <label className="text-[11px] font-medium text-neutral-600 block mb-1">
-              {lang === 'uz' ? 'Blogger @username (yoki tel)' : lang === 'en' ? 'Blogger @username (or phone)' : 'Telegram логин блогера (@юзернейм):'}
+              {lang === 'uz' ? 'Blogger @username yoki telefon raqami:' : lang === 'en' ? 'Blogger @username or phone:' : 'Telegram логин (@юзернейм) или номер телефона:'}
             </label>
             <input
               type="text"
               value={manualUsername}
-              onChange={(e) => setManualUsername(e.target.value)}
+              onChange={(e) => setManualUsername(cleanTelegramUsernameInput(e.target.value))}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   handleSaveManualSettings();
                 }
               }}
-              placeholder="@username или номер"
+              placeholder="@username или номер (+7977...)"
               className="w-full px-2.5 py-1.5 bg-white border border-neutral-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-neutral-900"
               autoFocus
             />
+            {isPhoneOnly(manualUsername) && (
+              <div className="mt-1.5 p-2 bg-sky-50 border border-sky-200 rounded-lg text-[11px] text-sky-900 flex items-start gap-1.5">
+                <span className="shrink-0 text-sky-600 font-bold">📱</span>
+                <span>
+                  {lang === 'uz'
+                    ? "Telefon raqami kiritildi. Tizim Telegram orqali kontaktni avtomatik topadi va bog'laydi."
+                    : "Указан номер телефона. Система автоматически найдет аккаунт блогера в Telegram при отправке."}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-neutral-200/80 mt-1">
@@ -509,23 +612,23 @@ export default function BloggerTelegramChat({
                 </div>
                 <p className="text-[11px] text-neutral-500 mb-2.5 leading-relaxed">
                   {lang === 'uz'
-                    ? 'Bloggerning @username yoki telefonini kiriting:'
+                    ? 'Bloggerning @username yoki telefon raqamini kiriting:'
                     : lang === 'en'
-                    ? 'Enter the blogger’s @username or phone number:'
-                    : 'Укажите @username или номер блогера для общения в карточке:'}
+                    ? 'Enter blogger’s @username or phone number:'
+                    : 'Укажите @username или номер телефона блогера для общения:'}
                 </p>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="text"
                     value={manualUsername}
-                    onChange={(e) => setManualUsername(e.target.value)}
+                    onChange={(e) => setManualUsername(cleanTelegramUsernameInput(e.target.value))}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         handleSaveManualSettings();
                       }
                     }}
-                    placeholder="@username блогера"
+                    placeholder="@username или номер (+7977...)"
                     className="flex-1 px-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:bg-white"
                   />
                   <button
@@ -538,6 +641,28 @@ export default function BloggerTelegramChat({
                   </button>
                 </div>
               </div>
+            ) : isPhoneOnly(telegramUsername) && !telegramChatId ? (
+              <div className="w-full max-w-sm bg-sky-50/80 border border-sky-200 rounded-xl p-3.5 text-left my-2 text-xs">
+                <div className="font-semibold text-sky-950 flex items-center gap-1.5 mb-1">
+                  <span>📱</span>
+                  <span>{lang === 'uz' ? 'Telefon raqami orqali chat' : 'Связь по номеру телефона'}</span>
+                </div>
+                <p className="text-[11px] text-sky-800 mb-2.5 leading-relaxed">
+                  {lang === 'uz'
+                    ? `Bloger telefon raqami: ${telegramUsername}. Birinchi xabarni pastda yozishingiz mumkin — tizim Telegram orqali kontaktni avtomatik topadi.`
+                    : `Указан номер: ${telegramUsername}. Напишите сообщение в поле ниже — система автоматически найдет аккаунт блогера в Telegram и свяжет диалог.`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualUsername(telegramUsername);
+                    setShowSettings(true);
+                  }}
+                  className="text-[11px] text-sky-700 hover:text-sky-900 font-semibold underline cursor-pointer"
+                >
+                  {lang === 'uz' ? 'Raqamni yoki @username-ni o‘zgartirish' : 'Изменить номер или указать @username'}
+                </button>
+              </div>
             ) : (
               <p className="text-xs text-neutral-500">
                 {lang === 'uz'
@@ -549,100 +674,164 @@ export default function BloggerTelegramChat({
             )}
           </div>
         ) : (
-          messages.map((msg) => {
+          messages.map((msg, index) => {
+            const prevMsg = index > 0 ? messages[index - 1] : null;
+            const dateKey = getMessageDateKey(msg);
+            const prevDateKey = prevMsg ? getMessageDateKey(prevMsg) : '';
+            const showDateDivider = !prevMsg || (dateKey !== '' && dateKey !== prevDateKey);
+
             if (msg.senderType === 'system') {
               return (
-                <div key={msg.id} className="flex justify-center my-2">
-                  <div className="px-3 py-1 rounded-full bg-neutral-200/80 text-neutral-600 text-[11px] font-medium max-w-md text-center">
-                    {msg.text}
+                <div key={msg.id} className="flex flex-col items-center my-2">
+                  {showDateDivider && dateKey && (
+                    <div className="flex justify-center mb-2.5 select-none">
+                      <span className="px-3 py-0.5 rounded-full bg-neutral-100 border border-neutral-200/80 text-neutral-500 text-[10px] font-semibold tracking-wide shadow-2xs">
+                        {formatDayDivider(dateKey)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="px-3.5 py-1.5 rounded-full bg-neutral-200/80 text-neutral-600 text-[11px] font-medium max-w-md text-center flex items-center gap-2 shadow-2xs">
+                    <span>{msg.text}</span>
+                    <span className="text-[9.5px] opacity-75 font-mono">
+                      {formatFullDateTime(msg.sentAt || msg.createdAt)}
+                    </span>
                   </div>
                 </div>
               );
             }
 
             const isManager = msg.senderType === 'manager';
+            const sentAt = msg.sentAt || msg.createdAt;
+            const receivedAt = msg.receivedAt || (msg.senderType === 'blogger' ? (msg.createdAt || msg.sentAt) : (msg.status === 'delivered' || msg.status === 'read' ? (msg.updatedAt || msg.createdAt) : null));
 
             return (
-              <div
-                key={msg.id}
-                className={`flex flex-col ${isManager ? 'items-end' : 'items-start'}`}
-              >
-                {!isManager && msg.senderName && (
-                  <span className="text-[10px] font-semibold text-neutral-500 mb-0.5 ml-1">
-                    {msg.senderName}
-                  </span>
+              <React.Fragment key={msg.id}>
+                {showDateDivider && dateKey && (
+                  <div className="flex justify-center my-2.5 select-none">
+                    <span className="px-3 py-0.5 rounded-full bg-neutral-100 border border-neutral-200/80 text-neutral-500 text-[10px] font-semibold tracking-wide shadow-2xs">
+                      {formatDayDivider(dateKey)}
+                    </span>
+                  </div>
                 )}
-                {isManager && (
-                  <span className="text-[10px] font-semibold text-neutral-500 mb-0.5 mr-1 text-right">
-                    {(msg.senderName && msg.senderName !== 'Менеджер')
-                      ? msg.senderName
-                      : (currentUserName || 'Super Admin')}
-                  </span>
-                )}
-                <div className={`group relative flex items-center gap-1.5 max-w-[85%] sm:max-w-[75%] ${isManager ? 'flex-row' : 'flex-row-reverse'}`}>
-                  {/* Super Admin Hover Actions */}
-                  {isSuperAdmin && (
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0 bg-white/95 backdrop-blur-xs px-1 py-0.5 rounded-lg border border-neutral-200/90 shadow-2xs">
-                      {isManager && (
+                <div
+                  className={`flex flex-col ${isManager ? 'items-end' : 'items-start'}`}
+                >
+                  {!isManager && msg.senderName && (
+                    <span className="text-[10px] font-semibold text-neutral-500 mb-0.5 ml-1">
+                      {msg.senderName}
+                    </span>
+                  )}
+                  {isManager && (
+                    <span className="text-[10px] font-semibold text-neutral-500 mb-0.5 mr-1 text-right">
+                      {(msg.senderName && msg.senderName !== 'Менеджер')
+                        ? msg.senderName
+                        : (currentUserName || 'Super Admin')}
+                    </span>
+                  )}
+                  <div className={`group relative flex items-center gap-1.5 max-w-[85%] sm:max-w-[75%] ${isManager ? 'flex-row' : 'flex-row-reverse'}`}>
+                    {/* Super Admin Hover Actions */}
+                    {isSuperAdmin && (
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0 bg-white/95 backdrop-blur-xs px-1 py-0.5 rounded-lg border border-neutral-200/90 shadow-2xs">
+                        {isManager && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(msg)}
+                            className="p-1 rounded text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition cursor-pointer"
+                            title={lang === 'uz' ? 'Tahrirlash' : 'Редактировать'}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => handleStartEdit(msg)}
-                          className="p-1 rounded text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition cursor-pointer"
-                          title={lang === 'uz' ? 'Tahrirlash' : 'Редактировать'}
+                          onClick={() => handleStartDelete(msg)}
+                          className="p-1 rounded text-neutral-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                          title={lang === 'uz' ? 'O‘chirish' : 'Удалить'}
                         >
-                          <Pencil className="w-3 h-3" />
+                          <Trash2 className="w-3 h-3" />
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleStartDelete(msg)}
-                        className="p-1 rounded text-neutral-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                        title={lang === 'uz' ? 'O‘chirish' : 'Удалить'}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
+                      </div>
+                    )}
 
-                  {/* Message Bubble */}
-                  <div
-                    className={`w-full px-3.5 py-2 rounded-2xl text-xs shadow-2xs relative break-words ${
-                      isManager
-                        ? 'bg-neutral-900 text-white rounded-br-xs'
-                        : 'bg-white text-neutral-900 border border-neutral-200/90 rounded-bl-xs'
-                    }`}
-                  >
-                    <div className="whitespace-pre-wrap leading-relaxed select-text">
-                      {msg.text}
-                    </div>
+                    {/* Message Bubble */}
                     <div
-                      className={`flex items-center justify-end gap-1.5 mt-1 text-[9px] ${
-                        isManager ? 'text-neutral-400' : 'text-neutral-400'
+                      className={`w-full min-w-[210px] sm:min-w-[230px] px-3.5 py-2.5 rounded-2xl text-xs shadow-2xs relative break-words ${
+                        isManager
+                          ? 'bg-neutral-900 text-white rounded-br-xs'
+                          : 'bg-white text-neutral-900 border border-neutral-200/90 rounded-bl-xs'
                       }`}
                     >
+                      <div className="whitespace-pre-wrap leading-relaxed select-text">
+                        {msg.text}
+                      </div>
+
+                      {/* Timestamps Section: Дата и время отправления и получения */}
+                      <div className={`mt-2 pt-1.5 border-t text-[10px] space-y-0.5 select-none ${
+                        isManager ? 'border-white/15 text-neutral-300' : 'border-neutral-200/80 text-neutral-600'
+                      }`}>
+                        {/* Дата/время отправления */}
+                        <div className="flex items-center justify-between gap-3 text-[10px]">
+                          <span className="inline-flex items-center gap-1 font-semibold opacity-85">
+                            <Send className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                            <span>{lang === 'uz' ? 'Yuborilgan' : lang === 'en' ? 'Sent' : 'Отправлено'}:</span>
+                          </span>
+                          <span className="font-mono font-medium whitespace-nowrap text-[9.5px]">
+                            {formatFullDateTime(sentAt)}
+                          </span>
+                        </div>
+
+                        {/* Дата/время получения / доставки */}
+                        <div className="flex items-center justify-between gap-3 text-[10px]">
+                          <span className="inline-flex items-center gap-1 font-semibold opacity-85">
+                            <CheckCheck className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                            <span>
+                              {isManager
+                                ? (lang === 'uz' ? 'Yetkazilgan' : lang === 'en' ? 'Delivered' : 'Доставлено')
+                                : (lang === 'uz' ? 'Qabul qilingan' : lang === 'en' ? 'Received' : 'Получено')}:
+                            </span>
+                          </span>
+                          <span className="font-mono font-medium whitespace-nowrap text-[9.5px] flex items-center gap-1">
+                            {receivedAt ? (
+                              <>
+                                <span>{formatFullDateTime(receivedAt)}</span>
+                                {isManager && (
+                                  <span>
+                                    {msg.status === 'delivered' || msg.status === 'read' ? (
+                                      <CheckCheck className="w-3 h-3 text-emerald-400 inline" />
+                                    ) : msg.status === 'sent' ? (
+                                      <Check className="w-3 h-3 text-neutral-300 inline" />
+                                    ) : (
+                                      <AlertCircle className="w-2.5 h-2.5 text-rose-400 inline" />
+                                    )}
+                                  </span>
+                                )}
+                              </>
+                            ) : isManager && msg.status === 'pending' ? (
+                              <span className="text-amber-300 italic flex items-center gap-1 font-sans text-[10px]">
+                                <Clock className="w-2.5 h-2.5 animate-spin inline" />
+                                <span>{lang === 'uz' ? 'Yuborilmoqda...' : lang === 'en' ? 'Sending...' : 'Отправка...'}</span>
+                              </span>
+                            ) : isManager && msg.status === 'failed' ? (
+                              <span className="text-rose-400 font-semibold flex items-center gap-1 font-sans text-[10px]">
+                                <AlertCircle className="w-2.5 h-2.5 inline" />
+                                <span>{lang === 'uz' ? 'Xatolik' : lang === 'en' ? 'Failed' : 'Не доставлено'}</span>
+                              </span>
+                            ) : (
+                              <span>—</span>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+
                       {msg.isEdited && (
-                        <span className="italic text-[9px] opacity-75">
-                          {lang === 'uz' ? 'tahrirlangan' : 'изм.'}
-                        </span>
-                      )}
-                      <span>{formatMessageTime(msg.createdAt)}</span>
-                      {isManager && (
-                        <span>
-                          {msg.status === 'pending' ? (
-                            <Clock className="w-2.5 h-2.5 text-neutral-400" />
-                          ) : msg.status === 'delivered' || msg.status === 'read' ? (
-                            <CheckCheck className="w-3 h-3 text-neutral-400" />
-                          ) : msg.status === 'sent' ? (
-                            <Check className="w-3 h-3 text-neutral-400" />
-                          ) : (
-                            <AlertCircle className="w-2.5 h-2.5 text-rose-400" title="Не доставлено в Telegram" />
-                          )}
-                        </span>
+                        <div className="text-[9px] italic opacity-70 mt-1 text-right">
+                          {lang === 'uz' ? 'tahrirlangan' : lang === 'en' ? 'edited' : 'изменено'}
+                        </div>
                       )}
                     </div>
                   </div>
                 </div>
-              </div>
+              </React.Fragment>
             );
           })
         )}

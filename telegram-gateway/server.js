@@ -100,6 +100,90 @@ function formatUser(user) {
   };
 }
 
+/**
+ * Normalizes and extracts phone number or phone link:
+ * - "+79771730800" -> "+79771730800"
+ * - "79771730800" -> "+79771730800"
+ * - "89771730800" -> "+79771730800"
+ * - "https://t.me/+79771730800" -> "+79771730800"
+ * - "+998933362233" -> "+998933362233"
+ */
+function extractPhoneNumber(input) {
+  if (!input) return null;
+  let clean = String(input).trim();
+  clean = clean.replace(/^(https?:\/\/)?(www\.)?(t\.me|telegram\.me)\/(?:\+)?/i, '+');
+  clean = clean.replace(/^tg:\/\/resolve\?(?:phone=|\+)/i, '+');
+
+  if (clean.startsWith('+')) {
+    const digits = clean.slice(1).replace(/\D/g, '');
+    if (digits.length >= 7 && digits.length <= 16) {
+      return `+${digits}`;
+    }
+    return null;
+  }
+
+  const digitsOnly = clean.replace(/\D/g, '');
+  const hasLetters = /[a-zA-Z_]/.test(clean);
+  if (hasLetters) {
+    return null;
+  }
+
+  // Uzbekistan mobile: 998 + 9 digits = 12 digits (e.g. 998995962233)
+  if (digitsOnly.length === 12 && digitsOnly.startsWith('998')) {
+    return `+${digitsOnly}`;
+  }
+
+  // Russia / Kazakhstan mobile: 11 digits starting with 79, 89, 77, 87
+  if (digitsOnly.length === 11) {
+    if (digitsOnly.startsWith('89') || digitsOnly.startsWith('87')) {
+      return `+7${digitsOnly.slice(1)}`;
+    }
+    if (digitsOnly.startsWith('79') || digitsOnly.startsWith('77')) {
+      return `+${digitsOnly}`;
+    }
+  }
+
+  // 9, 10 or arbitrary digit strings (such as Telegram User IDs 1122243813 or 8857588390)
+  // are Telegram Chat/User IDs, NOT phone numbers!
+  return null;
+}
+
+/**
+ * Resolves a phone number to an active Telegram User using MTProto ImportContacts
+ */
+async function resolvePhoneUser(phone, contactName = 'Blogger') {
+  try {
+    const randomId = BigInt(Math.floor(Math.random() * 1000000000));
+    const contact = new Api.InputPhoneContact({
+      clientId: randomId,
+      phone: phone,
+      firstName: contactName || 'Blogger',
+      lastName: '',
+    });
+
+    const res = await client.invoke(new Api.contacts.ImportContacts({
+      contacts: [contact],
+    }));
+
+    if (res && res.users && res.users.length > 0) {
+      const user = res.users[0];
+      return {
+        found: true,
+        user: user,
+        id: user.id ? user.id.toString() : null,
+        username: user.username || null,
+        firstName: user.firstName || '',
+        phone: user.phone || phone,
+      };
+    }
+
+    return { found: false, phone };
+  } catch (err) {
+    console.error(`[GATEWAY] ImportContacts error for phone ${phone}:`, err.message);
+    return { found: false, phone, error: err.message };
+  }
+}
+
 async function saveSession() {
   const sessionStr = client.session.save();
   fs.writeFileSync(SESSION_FILE, JSON.stringify({ session: sessionStr, updatedAt: new Date().toISOString() }));
@@ -201,6 +285,83 @@ function setupMessageListener() {
     }
   }, new NewMessage({}));
 }
+
+let lastAuthCheckTime = 0;
+
+// Notify Laravel webhook when session is unlinked or lost
+async function notifyLaravelSessionLost(reason) {
+  for (const url of CANDIDATE_WEBHOOK_URLS) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          event: 'session_lost',
+          reason: reason,
+          timestamp: Date.now(),
+        }),
+      });
+      if (res.ok) {
+        console.log(`🚨 Notified Laravel about Telegram session disconnect at ${url}`);
+        return;
+      }
+    } catch (e) {}
+  }
+}
+
+// Handle unexpected session disconnection / revocation
+async function handleSessionLost(reason) {
+  if (!isAuthorized && !currentUser) return;
+  console.warn(`🚨 [GATEWAY] Telegram session lost / unlinked by Telegram: ${reason}`);
+  isAuthorized = false;
+  currentUser = null;
+  clearSession();
+
+  // Notify Laravel backend immediately so admin gets alerted
+  await notifyLaravelSessionLost(reason);
+
+  // Automatically initiate QR login in background so fresh QR is immediately ready for admin
+  startQrLogin().catch((err) => console.error('Auto-start QR login failed:', err?.message));
+}
+
+// Actively verify authorization status (throttled to at most once per 15s)
+async function verifyAuthorization() {
+  if (!isAuthorized) return false;
+  const now = Date.now();
+  if (now - lastAuthCheckTime < 15000) {
+    return isAuthorized;
+  }
+  lastAuthCheckTime = now;
+
+  try {
+    const authValid = await client.isUserAuthorized();
+    if (!authValid) {
+      await handleSessionLost('client.isUserAuthorized() returned false (session invalidated)');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    const msg = String(err?.message || '');
+    if (
+      msg.includes('AUTH_KEY_UNREGISTERED') ||
+      msg.includes('SESSION_REVOKED') ||
+      msg.includes('SESSION_EXPIRED') ||
+      msg.includes('USER_DEACTIVATED') ||
+      msg.includes('401')
+    ) {
+      await handleSessionLost(`Auth key revoked: ${msg}`);
+      return false;
+    }
+    return isAuthorized;
+  }
+}
+
+// Periodic background authorization verification (every 30 seconds)
+setInterval(() => {
+  if (isAuthorized) {
+    verifyAuthorization().catch(() => {});
+  }
+}, 30000);
 
 // Initialize Client
 async function initClient() {
@@ -324,6 +485,9 @@ const server = http.createServer(async (req, res) => {
   try {
     // 1. GET /status
     if (url.pathname === '/status' && req.method === 'GET') {
+      if (isAuthorized) {
+        await verifyAuthorization();
+      }
       return sendJson(200, {
         isAuthorized,
         user: currentUser,
@@ -356,24 +520,60 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody();
       let target = body.to || body.chatId || body.username;
       const text = body.text;
+      const bloggerName = body.bloggerName || body.senderName || 'Blogger';
+
+      // If a valid public username is provided, prioritize it over raw numeric target
+      if (body.username && typeof body.username === 'string') {
+        const u = body.username.trim();
+        if (/[a-zA-Z]/.test(u) && !u.startsWith('+')) {
+          target = u.startsWith('@') ? u : `@${u}`;
+        }
+      }
 
       if (!target || !text) {
         return sendJson(400, { error: 'Target (to) and text are required' });
       }
 
-      // Format username or ID (strip t.me/ links)
-      if (typeof target === 'string') {
-        target = target.trim();
-        target = target.replace(/^(https?:\/\/)?(t\.me\/)/i, '');
-        if (!target.startsWith('@') && !target.startsWith('-') && !target.startsWith('+') && isNaN(Number(target))) {
-          target = `@${target}`;
-        } else if (!isNaN(Number(target))) {
-          target = Number(target);
+      let resolvedPeer = null;
+      let resolvedUsername = null;
+      let isPhoneTarget = false;
+      const detectedPhone = extractPhoneNumber(target);
+
+      // If target is a phone number, resolve via MTProto ImportContacts
+      if (detectedPhone && !body.chatId) {
+        isPhoneTarget = true;
+        console.log(`[GATEWAY] Target is phone (${detectedPhone}). Resolving via MTProto ImportContacts...`);
+        const phoneResult = await resolvePhoneUser(detectedPhone, bloggerName);
+        if (phoneResult.found && phoneResult.user) {
+          console.log(`[GATEWAY] Phone ${detectedPhone} resolved to User ID: ${phoneResult.id} (@${phoneResult.username || 'no_user'})`);
+          resolvedPeer = phoneResult.user;
+          resolvedUsername = phoneResult.username;
+        } else {
+          console.warn(`[GATEWAY] Phone ${detectedPhone} not registered in Telegram or hidden by user privacy.`);
+          return sendJson(404, {
+            error: `Номер ${detectedPhone} не зарегистрирован в Telegram (или пользователь скрыл аккаунт в настройках приватности). Проверьте правильность номера или укажите публичный @username блогера.`,
+            notFound: true,
+            phone: detectedPhone,
+          });
         }
       }
 
+      if (!resolvedPeer) {
+        // Format username or ID (strip t.me/ links)
+        if (typeof target === 'string') {
+          target = target.trim();
+          target = target.replace(/^(https?:\/\/)?(t\.me\/)/i, '');
+          if (!target.startsWith('@') && !target.startsWith('-') && !target.startsWith('+') && isNaN(Number(target))) {
+            target = `@${target}`;
+          } else if (!isNaN(Number(target))) {
+            target = Number(target);
+          }
+        }
+        resolvedPeer = target;
+      }
+
       try {
-        const result = await client.sendMessage(target, { message: text });
+        const result = await client.sendMessage(resolvedPeer, { message: text });
         let peerId = null;
         if (result.peerId) {
           peerId = (result.peerId.userId || result.peerId.chatId || result.peerId.channelId || '').toString();
@@ -383,9 +583,28 @@ const server = http.createServer(async (req, res) => {
           messageId: result.id,
           date: result.date,
           peerId: peerId,
+          username: resolvedUsername,
+          phone: detectedPhone,
         });
       } catch (err) {
         console.error('Send error:', err);
+        const errMsg = String(err?.message || '');
+        if (
+          errMsg.includes('AUTH_KEY_UNREGISTERED') ||
+          errMsg.includes('SESSION_REVOKED') ||
+          errMsg.includes('SESSION_EXPIRED') ||
+          errMsg.includes('USER_DEACTIVATED') ||
+          errMsg.includes('401')
+        ) {
+          handleSessionLost(`Send failed with auth error: ${errMsg}`).catch(() => {});
+        }
+        if (errMsg.includes('Could not find the input entity') || errMsg.includes('PeerUser')) {
+          return sendJson(400, {
+            error: isPhoneTarget
+              ? `Номер ${detectedPhone} не зарегистрирован в Telegram (или скрыт настройками приватности). Пожалуйста, укажите публичный @username блогера.`
+              : 'Пользователь не найден в вашей сессии Telegram. Для первого сообщения укажите публичный @username блогера (например, @nickname), либо собеседник должен первым написать вам в Telegram.'
+          });
+        }
         return sendJson(500, { error: err.message || 'Failed to send message via Telegram' });
       }
     }
@@ -409,22 +628,45 @@ const server = http.createServer(async (req, res) => {
 
       const body = await readBody();
       let target = body.target || body.username || body.chatId;
+
+      // If a valid public username is provided, prioritize it
+      if (body.username && typeof body.username === 'string') {
+        const u = body.username.trim();
+        if (/[a-zA-Z]/.test(u) && !u.startsWith('+')) {
+          target = u.startsWith('@') ? u : `@${u}`;
+        }
+      }
+
       if (!target) {
         return sendJson(400, { error: 'Target is required' });
       }
 
-      if (typeof target === 'string') {
-        target = target.trim();
-        target = target.replace(/^(https?:\/\/)?(t\.me\/)/i, '');
-        if (!target.startsWith('@') && !target.startsWith('-') && !target.startsWith('+') && isNaN(Number(target))) {
-          target = `@${target}`;
-        } else if (!isNaN(Number(target))) {
-          target = Number(target);
+      let resolvedPeer = null;
+      const detectedPhone = extractPhoneNumber(target);
+      if (detectedPhone && !body.chatId) {
+        const phoneResult = await resolvePhoneUser(detectedPhone);
+        if (phoneResult.found && phoneResult.user) {
+          resolvedPeer = phoneResult.user;
+        } else {
+          return sendJson(200, { success: true, messages: [], notFound: true, phone: detectedPhone });
         }
       }
 
+      if (!resolvedPeer) {
+        if (typeof target === 'string') {
+          target = target.trim();
+          target = target.replace(/^(https?:\/\/)?(t\.me\/)/i, '');
+          if (!target.startsWith('@') && !target.startsWith('-') && !target.startsWith('+') && isNaN(Number(target))) {
+            target = `@${target}`;
+          } else if (!isNaN(Number(target))) {
+            target = Number(target);
+          }
+        }
+        resolvedPeer = target;
+      }
+
       try {
-        const messages = await client.getMessages(target, { limit: 25 });
+        const messages = await client.getMessages(resolvedPeer, { limit: 25 });
         const list = [];
         for (const m of messages) {
           if (!m || !m.id) continue;
@@ -451,7 +693,66 @@ const server = http.createServer(async (req, res) => {
         return sendJson(200, { success: true, messages: list });
       } catch (err) {
         console.error('Fetch history error:', err.message);
+        const errMsg = String(err?.message || '');
+        if (errMsg.includes('Could not find the input entity') || errMsg.includes('PeerUser')) {
+          return sendJson(200, { success: true, messages: [] });
+        }
         return sendJson(500, { error: err.message });
+      }
+    }
+
+    // 6.1 POST /resolve - Resolve and check phone number or @username
+    if (url.pathname === '/resolve' && req.method === 'POST') {
+      if (!isAuthorized) {
+        return sendJson(401, { error: 'Telegram gateway is not authorized.' });
+      }
+      const body = await readBody();
+      const target = body.target || body.to || body.username || body.phone;
+      if (!target) {
+        return sendJson(400, { error: 'Target is required' });
+      }
+
+      const phone = extractPhoneNumber(target);
+      if (phone) {
+        const res = await resolvePhoneUser(phone, body.name || 'Blogger');
+        if (res.found) {
+          return sendJson(200, {
+            found: true,
+            type: 'phone',
+            phone: res.phone,
+            peerId: res.id,
+            username: res.username,
+            firstName: res.firstName,
+          });
+        } else {
+          return sendJson(404, {
+            found: false,
+            type: 'phone',
+            phone: phone,
+            error: `Номер ${phone} не зарегистрирован в Telegram (или пользователь скрыл аккаунт в настройках приватности).`,
+          });
+        }
+      }
+
+      try {
+        let cleanUser = String(target).trim().replace(/^(https?:\/\/)?(t\.me\/)/i, '');
+        if (!cleanUser.startsWith('@')) cleanUser = `@${cleanUser}`;
+        const entity = await client.getEntity(cleanUser);
+        if (entity) {
+          return sendJson(200, {
+            found: true,
+            type: 'username',
+            peerId: entity.id ? entity.id.toString() : null,
+            username: entity.username || null,
+            firstName: entity.firstName || entity.title || '',
+          });
+        }
+      } catch (e) {
+        return sendJson(404, {
+          found: false,
+          type: 'username',
+          error: `Пользователь ${target} не найден в Telegram.`,
+        });
       }
     }
 
@@ -497,6 +798,16 @@ const server = http.createServer(async (req, res) => {
         });
       } catch (err) {
         console.error('Edit message error:', err.message);
+        const errMsg = String(err?.message || '');
+        if (
+          errMsg.includes('AUTH_KEY_UNREGISTERED') ||
+          errMsg.includes('SESSION_REVOKED') ||
+          errMsg.includes('SESSION_EXPIRED') ||
+          errMsg.includes('USER_DEACTIVATED') ||
+          errMsg.includes('401')
+        ) {
+          handleSessionLost(`Edit failed with auth error: ${errMsg}`).catch(() => {});
+        }
         return sendJson(500, { error: err.message || 'Failed to edit message in Telegram' });
       }
     }
@@ -539,6 +850,16 @@ const server = http.createServer(async (req, res) => {
         });
       } catch (err) {
         console.error('Delete message error:', err.message);
+        const errMsg = String(err?.message || '');
+        if (
+          errMsg.includes('AUTH_KEY_UNREGISTERED') ||
+          errMsg.includes('SESSION_REVOKED') ||
+          errMsg.includes('SESSION_EXPIRED') ||
+          errMsg.includes('USER_DEACTIVATED') ||
+          errMsg.includes('401')
+        ) {
+          handleSessionLost(`Delete failed with auth error: ${errMsg}`).catch(() => {});
+        }
         return sendJson(500, { error: err.message || 'Failed to delete message in Telegram' });
       }
     }

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Integration, Project, KanbanColumn, INITIAL_KANBAN_COLUMNS, DealComment } from '../data/mockData';
+import { Integration, Project, KanbanColumn, INITIAL_KANBAN_COLUMNS, DealComment, BloggerRequisites } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
@@ -22,6 +22,7 @@ import {
   GripVertical,
   Layers,
   FileText,
+  CreditCard,
   User,
   Users,
   FileCheck,
@@ -37,11 +38,15 @@ import {
   ChevronUp,
   ChevronDown,
   QrCode,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle,
+  ArrowRight,
+  Loader2
 } from 'lucide-react';
 import BloggerAudienceCard from './BloggerAudienceCard';
 import BloggerTelegramChat from './BloggerTelegramChat';
 import TelegramGatewayModal from './TelegramGatewayModal';
+import { fetchTelegramGatewayStatus, TelegramGatewayStatus } from '../services/api';
 
 interface KanbanViewProps {
   projects: Project[];
@@ -56,6 +61,7 @@ interface KanbanViewProps {
   userRole?: string | null;
   currentUserEmail?: string | null;
   currentUserName?: string | null;
+  bloggerRequisitesList?: BloggerRequisites[];
   onOpenRequisitesDirectory?: () => void;
   onClearStage?: (stageId: string) => void | Promise<void>;
   onRefreshSubscribers?: (integrationId: string, overrides?: any) => Promise<any>;
@@ -83,6 +89,7 @@ export default function KanbanView({
   userRole,
   currentUserEmail,
   currentUserName,
+  bloggerRequisitesList = [],
   onOpenRequisitesDirectory,
   onClearStage,
   onRefreshSubscribers,
@@ -233,11 +240,53 @@ export default function KanbanView({
   const [activeChatDeal, setActiveChatDeal] = useState<Integration | null>(null);
   const [modalActiveTab, setModalActiveTab] = useState<'details' | 'chat'>('details');
   const [isGatewayModalOpen, setIsGatewayModalOpen] = useState(false);
+
+  // Super Admin check
+  const isSuperAdmin = 
+    userRole === 'super_admin' || 
+    (!userRole && (currentUserName === 'Super Admin' || (currentUserEmail && (currentUserEmail.includes('admin') || currentUserEmail === 'chief1' || currentUserEmail === 'abduazz'))));
+
+  // Telegram Gateway live connection monitoring (Super Admin only)
+  const [gatewayStatus, setGatewayStatus] = useState<TelegramGatewayStatus | null>(null);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+
+    let isMounted = true;
+    const checkGateway = async () => {
+      try {
+        const res = await fetchTelegramGatewayStatus();
+        if (isMounted) {
+          setGatewayStatus(res);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setGatewayStatus({ isRunning: false, isAuthorized: false });
+        }
+      }
+    };
+
+    checkGateway();
+    // Poll gateway status every 20 seconds so super admin immediately sees if Telegram was unlinked
+    const interval = setInterval(checkGateway, 20000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [isSuperAdmin]);
+
   const [editBloggerName, setEditBloggerName] = useState('');
   const [editBloggerLink, setEditBloggerLink] = useState('');
   const [editTelegramUsername, setEditTelegramUsername] = useState('');
   const [telegramContacts, setTelegramContacts] = useState<string[]>(['']);
   const [isTgFocused, setIsTgFocused] = useState(false);
+  const tgBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isPhoneLike = (val: string | null | undefined): boolean => {
+    if (!val) return false;
+    const clean = val.trim().replace(/[\s\-\(\)]+/g, '');
+    return clean.startsWith('+') || /^\d{7,16}$/.test(clean);
+  };
 
   // Split multiple telegram contacts or return empty single contact
   const parseTelegramContacts = (val: string | null | undefined): string[] => {
@@ -290,6 +339,8 @@ export default function KanbanView({
   const [editPlatform, setEditPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Instagram');
   const [editProjectId, setEditProjectId] = useState('');
   const [editKanbanStage, setEditKanbanStage] = useState('');
+  const [initialKanbanStage, setInitialKanbanStage] = useState('');
+  const [isQuickMoving, setIsQuickMoving] = useState(false);
   const [editPricePerSlot, setEditPricePerSlot] = useState<number | ''>(0);
   const [editSlotsCount, setEditSlotsCount] = useState<number | ''>(1);
   const [editPaidAmount, setEditPaidAmount] = useState<number | ''>(0);
@@ -297,6 +348,9 @@ export default function KanbanView({
   const [editStartDate, setEditStartDate] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
   const [editReferralLink, setEditReferralLink] = useState('');
+  const [editCardNumber, setEditCardNumber] = useState('');
+  const [editCardName, setEditCardName] = useState('');
+  const [isCardCopied, setIsCardCopied] = useState(false);
   const [editSubscribersCount, setEditSubscribersCount] = useState<number | ''>('');
   const [editCommentsList, setEditCommentsList] = useState<DealComment[]>([]);
   const [newCommentInput, setNewCommentInput] = useState('');
@@ -304,6 +358,59 @@ export default function KanbanView({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const isDraggingRef = React.useRef(false);
+
+  const handleCardNumberChange = (raw: string) => {
+    if (/^[\d\s]*$/.test(raw)) {
+      const digits = raw.replace(/\D/g, '').slice(0, 16);
+      const formatted = digits.replace(/(\d{4})(?=\d)/g, '$1 ');
+      setEditCardNumber(formatted);
+      return;
+    }
+    setEditCardNumber(raw);
+  };
+
+  // Target Payment Column ("Готов к оплате") resolution & customization
+  const [paymentStageColId, setPaymentStageColId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('kanban_payment_target_column_id');
+      if (saved) return saved;
+    }
+    return 'ready_for_payment';
+  });
+
+  const handleSetPaymentStageColId = (colId: string) => {
+    setPaymentStageColId(colId);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('kanban_payment_target_column_id', colId);
+    }
+  };
+
+  const paymentColumn = useMemo(() => {
+    // 1. Check if user explicitly selected a target column in settings
+    if (paymentStageColId) {
+      const matched = columns.find(c => c.id === paymentStageColId);
+      if (matched) return matched;
+    }
+    // 2. Check default system column ready_for_payment
+    const systemCol = columns.find(c => c.id === 'ready_for_payment');
+    if (systemCol) return systemCol;
+    // 3. Fallback: match by title keywords if renamed in production
+    const titleMatch = columns.find(c => 
+      /готов.*оплат|ready.*pay|to.lov.*tayyor/i.test(c.title) ||
+      (/оплат|pay|to.lov/i.test(c.title) && c.id !== 'paid_in_progress')
+    );
+    if (titleMatch) return titleMatch;
+    // 4. Fallback: first non-backlog column
+    return columns.find(c => c.id !== 'backlog') || columns[0] || { id: 'ready_for_payment', title: 'Готов к оплате', color: 'indigo' };
+  }, [columns, paymentStageColId]);
+
+  const areCardFieldsFilled = useMemo(() => {
+    const cleanDigits = editCardNumber.replace(/\s+/g, '');
+    const cleanName = editCardName.trim();
+    const isCardOk = cleanDigits.length >= 4 || editCardNumber.trim().length >= 4;
+    const isNameOk = cleanName.length >= 1;
+    return Boolean(isCardOk && isNameOk);
+  }, [editCardNumber, editCardName]);
 
   // Modals state
   const [isCreateMode, setIsCreateMode] = useState(false);
@@ -531,7 +638,9 @@ export default function KanbanView({
     setIsTgFocused(false);
     setEditPlatform('Instagram');
     setEditProjectId(selectedProjectId !== 'all' ? selectedProjectId : (projects[0]?.id || ''));
-    setEditKanbanStage(stageId || columns[0]?.id || 'wishlist');
+    const startStage = stageId || columns[0]?.id || 'wishlist';
+    setEditKanbanStage(startStage);
+    setInitialKanbanStage(startStage);
     setEditPricePerSlot(0);
     setEditSlotsCount(1);
     setEditPaidAmount(0);
@@ -539,11 +648,15 @@ export default function KanbanView({
     setEditStartDate(new Date().toISOString().split('T')[0]);
     setEditEndDate(new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]);
     setEditReferralLink('');
+    setEditCardNumber('');
+    setEditCardName('');
+    setIsCardCopied(false);
     setEditSubscribersCount('');
     setEditCommentsList([]);
     setNewCommentInput('');
     setEditStatus('active');
     setSaveSuccess(false);
+    setIsQuickMoving(false);
   };
 
   // Open Deal Detail / Edit Modal
@@ -558,7 +671,9 @@ export default function KanbanView({
     setIsTgFocused(false);
     setEditPlatform(deal.platform || 'Instagram');
     setEditProjectId(deal.projectId || (projects[0] ? projects[0].id : ''));
-    setEditKanbanStage(deal.kanbanStage || columns[0]?.id || 'wishlist');
+    const startStage = deal.kanbanStage || columns[0]?.id || 'wishlist';
+    setEditKanbanStage(startStage);
+    setInitialKanbanStage(startStage);
     setEditPricePerSlot(deal.pricePerSlot ?? 0);
     setEditSlotsCount(deal.slotsCount || 1);
     setEditPaidAmount(deal.paidAmount || 0);
@@ -566,19 +681,140 @@ export default function KanbanView({
     setEditStartDate(deal.startDate || new Date().toISOString().split('T')[0]);
     setEditEndDate(deal.endDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]);
     setEditReferralLink(deal.referralLink || '');
+    const req = deal.requisites || bloggerRequisitesList?.find(r => 
+      (r.integrationId && String(r.integrationId) === String(deal.id)) ||
+      (deal.bloggerName && r.bloggerName && r.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === deal.bloggerName.replace(/^[@#]/, '').trim().toLowerCase())
+    );
+    setEditCardNumber(req?.cardNumberOrIban || '');
+    setEditCardName(req?.fullName || req?.recipientName || '');
+    setIsCardCopied(false);
     setEditSubscribersCount(deal.subscribersCount ?? '');
     setEditCommentsList(parseComments(deal.comments));
     setNewCommentInput('');
     setEditStatus(deal.status || 'active');
     setSaveSuccess(false);
+    setIsQuickMoving(false);
   };
 
   // Close Deal Modal
   const handleCloseDealModal = () => {
     setSelectedDeal(null);
     setIsCreateMode(false);
+    setInitialKanbanStage('');
+    setIsQuickMoving(false);
     setSaveSuccess(false);
     setModalActiveTab('details');
+  };
+
+  // Quick Move & Save directly to payment column ("Готов к оплате")
+  const handleMoveToPaymentColumn = async () => {
+    if (!paymentColumn) return;
+    const targetStageId = paymentColumn.id;
+    setEditKanbanStage(targetStageId);
+
+    if (isCreateMode) {
+      // In create mode, setting editKanbanStage is sufficient for when form is submitted
+      return;
+    }
+
+    if (selectedDeal) {
+      setIsQuickMoving(true);
+      try {
+        const calculatedTotal = Number(editPricePerSlot || 0) * Number(editSlotsCount || 0);
+
+        let finalComments = [...editCommentsList];
+        if (newCommentInput.trim()) {
+          const authorName = currentUserEmail || (userRole ? `${lang === 'uz' ? 'Foydalanuvchi' : lang === 'en' ? 'User' : 'Пользователь'} (${userRole})` : (lang === 'uz' ? 'Foydalanuvchi' : lang === 'en' ? 'User' : 'Пользователь'));
+          finalComments.push({
+            id: `comment-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            author: authorName,
+            text: newCommentInput.trim(),
+            createdAt: new Date().toISOString()
+          });
+          setNewCommentInput('');
+        }
+
+        const cleanCard = editCardNumber.trim();
+        const cleanCardName = editCardName.trim();
+        const existingReq = selectedDeal.requisites || bloggerRequisitesList?.find(r => 
+          (r.integrationId && String(r.integrationId) === String(selectedDeal.id)) ||
+          (r.bloggerName && r.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === editBloggerName.trim().toLowerCase())
+        );
+
+        let requisitesPayload: BloggerRequisites | undefined = undefined;
+        if (cleanCard || cleanCardName) {
+          requisitesPayload = {
+            ...(existingReq || {}),
+            id: existingReq?.id || `req-${selectedDeal.id}`,
+            integrationId: String(selectedDeal.id),
+            bloggerName: editBloggerName.trim() || selectedDeal.bloggerName,
+            taxStatus: existingReq?.taxStatus || 'card_transfer',
+            cardNumberOrIban: cleanCard,
+            fullName: cleanCardName || existingReq?.fullName || editBloggerName.trim(),
+            recipientName: cleanCardName || existingReq?.recipientName || existingReq?.fullName || editBloggerName.trim(),
+            submittedAt: existingReq?.submittedAt || new Date().toISOString(),
+            status: 'submitted',
+          };
+        } else if (existingReq) {
+          requisitesPayload = {
+            ...existingReq,
+            cardNumberOrIban: '',
+            fullName: '',
+            recipientName: '',
+          };
+        }
+
+        const targetProjectId = editProjectId || projects[0]?.id || selectedDeal.projectId;
+
+        const updatedFields: Partial<Integration> = {
+          bloggerName: editBloggerName.trim(),
+          bloggerPageLink: editBloggerLink.trim(),
+          telegramUsername: editTelegramUsername.trim(),
+          platform: editPlatform,
+          projectId: targetProjectId,
+          pricePerSlot: Number(editPricePerSlot) || 0,
+          slotsCount: Number(editSlotsCount) || 1,
+          totalAmount: calculatedTotal,
+          paidAmount: Number(editPaidAmount) || 0,
+          paidSlotsCount: Number(editPaidSlotsCount) || 0,
+          startDate: selectedDeal.startDate || editStartDate || new Date().toISOString().split('T')[0],
+          endDate: selectedDeal.endDate || editEndDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          referralLink: editReferralLink.trim(),
+          comments: finalComments,
+          status: editStatus,
+          kanbanStage: targetStageId,
+          subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
+          requisites: requisitesPayload,
+        };
+
+        if (isChannelChangedInModal) {
+          updatedFields.subscribersHistory = [];
+          updatedFields.subscribersUpdatedAt = undefined;
+          if (editSubscribersCount === '') {
+            updatedFields.subscribersCount = undefined;
+          }
+        }
+
+        // 1. Move stage immediately on board (optimistic)
+        onUpdateIntegrationStage(selectedDeal.id, targetStageId);
+
+        // 2. Persist deal with stage & requisites
+        if (onEditIntegration) {
+          await onEditIntegration(selectedDeal.id, updatedFields);
+        }
+
+        // 3. Mark success and close modal smoothly
+        setSaveSuccess(true);
+        setTimeout(() => {
+          handleCloseDealModal();
+        }, 500);
+      } catch (err) {
+        console.error('Failed to move deal to payment column:', err);
+        alert(t.kanbanSaveErrorAlert || 'Ошибка при сохранении данных сделки');
+      } finally {
+        setIsQuickMoving(false);
+      }
+    }
   };
 
   // Save Deal Changes (Create or Edit)
@@ -611,6 +847,48 @@ export default function KanbanView({
         setNewCommentInput('');
       }
 
+      // Requisites payload handling (card number & name)
+      let requisitesPayload: BloggerRequisites | undefined = undefined;
+      const cleanCard = editCardNumber.trim();
+      const cleanCardName = editCardName.trim();
+      const existingReq = selectedDeal?.requisites || bloggerRequisitesList?.find(r => 
+        selectedDeal && ((r.integrationId && String(r.integrationId) === String(selectedDeal.id)) ||
+        (r.bloggerName && r.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === editBloggerName.trim().toLowerCase()))
+      );
+
+      if (cleanCard || cleanCardName) {
+        requisitesPayload = {
+          ...(existingReq || {}),
+          id: existingReq?.id || `req-${selectedDeal?.id || Date.now()}`,
+          integrationId: selectedDeal?.id ? String(selectedDeal.id) : '',
+          bloggerName: editBloggerName.trim(),
+          taxStatus: existingReq?.taxStatus || 'card_transfer',
+          cardNumberOrIban: cleanCard,
+          fullName: cleanCardName || existingReq?.fullName || editBloggerName.trim(),
+          recipientName: cleanCardName || existingReq?.recipientName || existingReq?.fullName || editBloggerName.trim(),
+          submittedAt: existingReq?.submittedAt || new Date().toISOString(),
+          status: existingReq?.status || 'submitted',
+        };
+      } else if (existingReq) {
+        requisitesPayload = {
+          ...existingReq,
+          cardNumberOrIban: '',
+          fullName: '',
+          recipientName: '',
+        };
+      }
+
+      // Automatically promote to target payment column if card fields are filled
+      let finalKanbanStage = editKanbanStage;
+      if (areCardFieldsFilled && paymentColumn) {
+        const isEarlyStage = !selectedDeal?.kanbanStage || 
+          ['wishlist', 'negotiation', 'requisites_pending', 'contract', 'backlog'].includes(selectedDeal.kanbanStage);
+        const stageUntouchedOrEarly = (editKanbanStage === initialKanbanStage && isEarlyStage);
+        if (editKanbanStage === paymentColumn.id || stageUntouchedOrEarly) {
+          finalKanbanStage = paymentColumn.id;
+        }
+      }
+
       if (isCreateMode) {
         await onAddIntegration({
           projectId: targetProjectId,
@@ -627,9 +905,10 @@ export default function KanbanView({
           referralLink: editReferralLink.trim() || '',
           comments: finalComments,
           status: editStatus,
-          kanbanStage: editKanbanStage,
+          kanbanStage: finalKanbanStage,
           createdBy: currentUserName || currentUserEmail || undefined,
           subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
+          requisites: requisitesPayload,
         });
       } else if (selectedDeal) {
         const updatedFields: Partial<Integration> = {
@@ -648,8 +927,9 @@ export default function KanbanView({
           referralLink: editReferralLink.trim(),
           comments: finalComments,
           status: editStatus,
-          kanbanStage: editKanbanStage,
+          kanbanStage: finalKanbanStage,
           subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
+          requisites: requisitesPayload,
         };
 
         if (isChannelChangedInModal) {
@@ -663,8 +943,8 @@ export default function KanbanView({
         if (onEditIntegration) {
           await onEditIntegration(selectedDeal.id, updatedFields);
         }
-        if (editKanbanStage !== selectedDeal.kanbanStage) {
-          onUpdateIntegrationStage(selectedDeal.id, editKanbanStage);
+        if (finalKanbanStage !== selectedDeal.kanbanStage) {
+          onUpdateIntegrationStage(selectedDeal.id, finalKanbanStage);
         }
       }
 
@@ -915,15 +1195,43 @@ export default function KanbanView({
               <span>{t.kanbanConfigureColumnsBtn || 'Настройка столбцов'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsGatewayModalOpen(true)}
-              className="flex items-center gap-1.5 h-8 px-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold text-xs rounded-lg border border-sky-200 transition cursor-pointer shadow-2xs"
-              title="Подключить личный рабочий Telegram по QR-коду"
-            >
-              <QrCode className="w-3.5 h-3.5 text-sky-600" />
-              <span>{lang === 'uz' ? 'Shaxsiy TG (QR)' : lang === 'en' ? 'Personal TG (QR)' : 'Личный Telegram (QR)'}</span>
-            </button>
+            {/* Personal Telegram (QR) Gateway - Super Admin Only */}
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsGatewayModalOpen(true)}
+                className={`flex items-center gap-1.5 h-8 px-2.5 font-semibold text-xs rounded-lg border transition cursor-pointer shadow-2xs ${
+                  gatewayStatus && !gatewayStatus.isAuthorized
+                    ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300 ring-2 ring-rose-400/50 animate-pulse'
+                    : gatewayStatus?.isAuthorized
+                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                    : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'
+                }`}
+                title={
+                  gatewayStatus && !gatewayStatus.isAuthorized
+                    ? (lang === 'uz' ? 'DIQQAT: Telegram uzilgan! QR-kodni zudlik bilan skanerlang' : lang === 'en' ? 'WARNING: Telegram disconnected! Scan QR code immediately' : 'ВНИМАНИЕ: Рабочий Telegram отвязан! Нажмите для срочного сканирования QR-кода')
+                    : gatewayStatus?.isAuthorized && gatewayStatus.user?.username
+                    ? `Telegram: @${gatewayStatus.user.username} (Подключен)`
+                    : (lang === 'uz' ? 'Shaxsiy Telegramni ulash' : lang === 'en' ? 'Connect personal Telegram' : 'Подключить личный рабочий Telegram по QR-коду')
+                }
+              >
+                {gatewayStatus && !gatewayStatus.isAuthorized ? (
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                ) : gatewayStatus?.isAuthorized ? (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                ) : (
+                  <QrCode className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                )}
+                <span>
+                  {gatewayStatus && !gatewayStatus.isAuthorized
+                    ? (lang === 'uz' ? 'TG uzilgan! (QR)' : lang === 'en' ? 'TG Disconnected! (QR)' : 'TG отвязан! (QR)')
+                    : gatewayStatus?.isAuthorized && gatewayStatus.user?.username
+                    ? `@${gatewayStatus.user.username}`
+                    : (lang === 'uz' ? 'Shaxsiy TG (QR)' : lang === 'en' ? 'Personal TG (QR)' : 'Личный Telegram (QR)')
+                  }
+                </span>
+              </button>
+            )}
 
             <button
               onClick={() => handleOpenCreateDealModal()}
@@ -935,6 +1243,43 @@ export default function KanbanView({
           </div>
         </div>
       </div>
+
+      {/* Super Admin Alert Banner: Displayed when Personal Telegram Session is disconnected */}
+      {isSuperAdmin && gatewayStatus && !gatewayStatus.isAuthorized && (
+        <div className="mb-3 p-3 sm:p-3.5 bg-gradient-to-r from-rose-600 via-rose-500 to-amber-600 text-white rounded-2xl shadow-lg border border-rose-300/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-white/20 backdrop-blur-md rounded-xl shrink-0 ring-2 ring-white/30">
+              <AlertTriangle className="w-5 h-5 text-white animate-bounce" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="font-black text-sm tracking-tight text-white">
+                  {lang === 'uz' ? 'Diqqat: Ishchi Telegram uzilgan!' : lang === 'en' ? 'Attention: Working Telegram disconnected!' : 'Внимание: Рабочий Telegram отвязан!'}
+                </h4>
+                <span className="text-[10px] font-black uppercase tracking-wider bg-white text-rose-700 px-2 py-0.5 rounded-full shadow-xs">
+                  {lang === 'uz' ? 'Shoshilinch' : lang === 'en' ? 'Urgent' : 'Срочно'}
+                </span>
+              </div>
+              <p className="text-xs text-rose-50 font-medium mt-0.5 leading-snug">
+                {lang === 'uz' 
+                  ? 'Bloggerlar bilan xabarlar almashinuvi to‘xtab qolmasligi uchun telefoningizdagi Telegram orqali QR-kodni zudlik bilan skanerlang.'
+                  : lang === 'en'
+                  ? 'To keep messaging bloggers without interruption, scan the QR code immediately using Telegram on your phone.'
+                  : 'Отправка и приём сообщений с блогерами приостановлены. Отсканируйте QR-код через приложение Telegram на телефоне (Настройки → Устройства → Подключить устройство).'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsGatewayModalOpen(true)}
+            className="shrink-0 flex items-center gap-2 px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 font-extrabold text-xs rounded-xl shadow-md transition active:scale-95 cursor-pointer ring-2 ring-white/60"
+          >
+            <QrCode className="w-4 h-4 text-rose-600" />
+            <span>{lang === 'uz' ? 'QR-kodni skanerlash' : lang === 'en' ? 'Scan QR Code' : 'Сканировать QR-код'}</span>
+          </button>
+        </div>
+      )}
 
       {/* Kanban Dynamic Columns Horizontal Scroll Container */}
       <div className="flex gap-2.5 items-stretch overflow-x-auto overflow-y-hidden pb-1 pt-0.5 snap-x flex-1 min-h-0">
@@ -1101,7 +1446,10 @@ export default function KanbanView({
                 ) : (
                   columnDeals.map((deal) => {
                     const project = projects.find(p => p.id === deal.projectId);
-                    const hasRequisites = !!deal.requisites;
+                    const hasRequisites = !!deal.requisites || (bloggerRequisitesList && bloggerRequisitesList.some(r => 
+                      (r.integrationId && String(r.integrationId) === String(deal.id)) ||
+                      (deal.bloggerName && r.bloggerName && r.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === deal.bloggerName.replace(/^[@#]/, '').trim().toLowerCase())
+                    ));
                     const isDragging = draggedDealId === deal.id;
 
                     return (
@@ -1270,7 +1618,7 @@ export default function KanbanView({
                         </div>
 
                         {/* Action Button for 'ready_for_payment' Stage: Создать отчёт */}
-                        {(column.id === 'ready_for_payment' || deal.kanbanStage === 'ready_for_payment') && onNavigateToReports && (
+                        {(column.id === 'ready_for_payment' || column.id === paymentColumn.id || deal.kanbanStage === 'ready_for_payment' || deal.kanbanStage === paymentColumn.id) && onNavigateToReports && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1376,6 +1724,44 @@ export default function KanbanView({
               );
             })()}
 
+            {/* Dedicated Target Payment Column ("Готов к оплате") Selector Card */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200/80 text-indigo-600 flex items-center justify-center shrink-0">
+                    <CreditCard className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-xs text-slate-900">
+                        {t.kanbanPaymentStageSettingHeader || 'Целевой столбец «Готов к оплате»'}
+                      </span>
+                      <span className="px-2 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full font-black truncate max-w-[140px]">
+                        {paymentColumn.title}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {t.kanbanPaymentStageSettingDesc || 'Столбец, в который карточка переносится при заполнении карты и имени блогера:'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-1">
+                <select
+                  value={paymentColumn.id}
+                  onChange={(e) => handleSetPaymentStageColId(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-black cursor-pointer transition shadow-2xs"
+                >
+                  {columns.filter(c => c.id !== 'backlog').map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} {c.id === 'ready_for_payment' ? `(${t.kanbanDefaultBadge || 'по умолчанию'})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
 
             {/* Existing columns list with reordering */}
             <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
@@ -1432,11 +1818,16 @@ export default function KanbanView({
                           {idx + 1}
                         </span>
                         <span className="truncate text-xs font-bold text-slate-800">{col.title}</span>
-                        {col.id === 'ready_for_payment' && (
+                        {col.id === paymentColumn.id ? (
+                          <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded font-bold shrink-0 flex items-center gap-1">
+                            <CreditCard className="w-2.5 h-2.5" />
+                            <span>{t.kanbanTargetForPaymentBadge || 'Готов к оплате'}</span>
+                          </span>
+                        ) : col.id === 'ready_for_payment' ? (
                           <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded font-bold shrink-0">
                             Кнопка отчёта
                           </span>
-                        )}
+                        ) : null}
                         {col.id === 'paid_in_progress' && (
                           <span className="text-[9px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold shrink-0">
                             Оплата
@@ -1445,6 +1836,16 @@ export default function KanbanView({
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {col.id !== paymentColumn.id && col.id !== 'backlog' && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetPaymentStageColId(col.id)}
+                            className="p-1 text-slate-400 hover:text-indigo-600 transition cursor-pointer"
+                            title={t.kanbanSetAsPaymentStageTooltip || 'Назначить целевым столбцом для готовых к оплате'}
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleToggleColumnVisibility(col.id)}
@@ -1580,7 +1981,7 @@ export default function KanbanView({
             {/* Quick Action Buttons (Edit mode only) */}
             {!isCreateMode && selectedDeal && (
               <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {(selectedDeal.kanbanStage === 'ready_for_payment' || editKanbanStage === 'ready_for_payment') && onNavigateToReports && (
+                {(selectedDeal.kanbanStage === 'ready_for_payment' || selectedDeal.kanbanStage === paymentColumn.id || editKanbanStage === 'ready_for_payment' || editKanbanStage === paymentColumn.id) && onNavigateToReports && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1646,8 +2047,8 @@ export default function KanbanView({
                   onClick={() => setModalActiveTab(modalActiveTab === 'chat' ? 'details' : 'chat')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition cursor-pointer ${
                     modalActiveTab === 'chat'
-                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
-                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-200/80'
+                      ? 'bg-[#229ED9] text-white border-[#229ED9] shadow-xs'
+                      : 'bg-sky-50 hover:bg-sky-100 text-[#229ED9] border-sky-200/80'
                   }`}
                   title="Открыть онлайн Telegram-чат прямо в карточке"
                 >
@@ -1754,94 +2155,127 @@ export default function KanbanView({
                     <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                       {t.kanbanBloggerTgLabel || 'Личный Telegram блогера (для связи)'}
                     </label>
+                    {telegramContacts.length > 1 && !isTgFocused && (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        {lang === 'uz' ? `Kontaktlar: ${telegramContacts.length}` : lang === 'en' ? `Contacts: ${telegramContacts.length}` : `Контактов: ${telegramContacts.length}`}
+                      </span>
+                    )}
                   </div>
 
                   <div className="space-y-2">
                     {telegramContacts.map((contact, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <div className="relative flex-1 min-w-0">
-                          <input
-                            type="text"
-                            value={contact}
-                            onChange={(e) => updateTelegramContact(idx, e.target.value)}
-                            onFocus={() => setIsTgFocused(true)}
-                            onBlur={() => {
-                              setTimeout(() => setIsTgFocused(false), 200);
-                            }}
-                            placeholder={idx === 0 
-                              ? (t.kanbanBloggerTgPlaceholder || 'например, @username, username или +998901234567') 
-                              : (lang === 'uz' ? "Qo'shimcha @username yoki raqam" : lang === 'en' ? 'Additional @username or number' : 'Дополнительный @username или номер')}
-                            className="w-full pl-9 pr-38 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
-                          />
-                          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                            <Send className="w-3.5 h-3.5 text-sky-500" />
+                      <div key={idx} className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1 min-w-0">
+                            <input
+                              type="text"
+                              value={contact}
+                              onChange={(e) => updateTelegramContact(idx, e.target.value)}
+                              onFocus={() => {
+                                if (tgBlurTimeoutRef.current) {
+                                  clearTimeout(tgBlurTimeoutRef.current);
+                                  tgBlurTimeoutRef.current = null;
+                                }
+                                setIsTgFocused(true);
+                              }}
+                              onBlur={() => {
+                                if (tgBlurTimeoutRef.current) {
+                                  clearTimeout(tgBlurTimeoutRef.current);
+                                }
+                                tgBlurTimeoutRef.current = setTimeout(() => {
+                                  setIsTgFocused(false);
+                                }, 200);
+                              }}
+                              placeholder={idx === 0 
+                                ? (t.kanbanBloggerTgPlaceholder || 'например, @username или https://t.me/username') 
+                                : (lang === 'uz' ? "Qo'shimcha @username yoki raqam" : lang === 'en' ? 'Additional @username or number' : 'Дополнительный @username или номер')}
+                              className="w-full pl-9 pr-38 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
+                            />
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                              <Send className="w-3.5 h-3.5 text-sky-500" />
+                            </div>
+
+                            {/* Button inside input: open Telegram chat inside platform */}
+                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!isCreateMode && selectedDeal) {
+                                    setModalActiveTab('chat');
+                                  }
+                                }}
+                                disabled={isCreateMode || !selectedDeal}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition shadow-xs cursor-pointer ${
+                                  isCreateMode || !selectedDeal
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                                    : 'bg-[#229ED9] hover:bg-[#1b8bc2] active:bg-[#177fa2] text-white'
+                                }`}
+                                title={
+                                  isCreateMode || !selectedDeal
+                                    ? (lang === 'uz' ? 'Platformada chat kartochka yaratilgandan so‘ng ochiladi' : lang === 'en' ? 'Chat available after creating deal' : 'Чат в платформе доступен после сохранения карточки')
+                                    : (lang === 'uz' ? 'Platformada Telegram chatni ochish' : lang === 'en' ? 'Open Telegram chat in platform' : 'Открыть онлайн Telegram-чат прямо в платформе')
+                                }
+                              >
+                                <MessageSquare className="w-3.5 h-3.5 text-white" />
+                                <span>{t.kanbanChatInPlatform || 'Чат в платформе'}</span>
+                                {selectedDeal && (selectedDeal.telegramChatId || selectedDeal.telegramUsername) && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 ring-1 ring-white/50 shrink-0" />
+                                )}
+                              </button>
+                            </div>
                           </div>
 
-                          {/* Button inside input: open Telegram chat inside platform */}
-                          <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                          {/* Button next to input: redirect to blogger's account in Telegram application */}
+                          {contact.trim() && (
+                            <a
+                              href={getTelegramAppUrl(contact)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center justify-center px-2.5 py-2 bg-slate-100 hover:bg-sky-50 text-sky-600 hover:text-sky-700 rounded-xl border border-slate-200 hover:border-sky-300 transition shrink-0"
+                              title={t.kanbanOpenInTelegramApp || 'Открыть в приложении Telegram'}
+                            >
+                              <Send className="w-4 h-4 text-sky-500" />
+                            </a>
+                          )}
+
+                          {/* Remove additional contact button */}
+                          {telegramContacts.length > 1 && (
                             <button
                               type="button"
-                              onClick={() => {
-                                if (!isCreateMode && selectedDeal) {
-                                  setModalActiveTab('chat');
-                                }
-                              }}
-                              disabled={isCreateMode || !selectedDeal}
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition shadow-xs cursor-pointer ${
-                                isCreateMode || !selectedDeal
-                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                                  : 'bg-neutral-900 hover:bg-black text-white hover:text-sky-300'
-                              }`}
-                              title={
-                                isCreateMode || !selectedDeal
-                                  ? (lang === 'uz' ? 'Platformada chat kartochka yaratilgandan so‘ng ochiladi' : lang === 'en' ? 'Chat available after creating deal' : 'Чат в платформе доступен после сохранения карточки')
-                                  : (lang === 'uz' ? 'Platformada Telegram chatni ochish' : lang === 'en' ? 'Open Telegram chat in platform' : 'Открыть онлайн Telegram-чат прямо в платформе')
-                              }
+                              onClick={() => handleRemoveTgContact(idx)}
+                              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl border border-slate-200/60 hover:border-rose-200 transition shrink-0 cursor-pointer"
+                              title={lang === 'uz' ? "Ushbu kontaktni o'chirish" : lang === 'en' ? 'Remove this contact' : 'Удалить этот контакт'}
                             >
-                              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>{t.kanbanChatInPlatform || 'Чат в платформе'}</span>
-                              {selectedDeal && (selectedDeal.telegramChatId || selectedDeal.telegramUsername) && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                              )}
+                              <X className="w-4 h-4" />
                             </button>
-                          </div>
+                          )}
                         </div>
 
-                        {/* Button next to input: redirect to blogger's account in Telegram application */}
-                        {contact.trim() && (
-                          <a
-                            href={getTelegramAppUrl(contact)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center justify-center px-2.5 py-2 bg-slate-100 hover:bg-sky-50 text-sky-600 hover:text-sky-700 rounded-xl border border-slate-200 hover:border-sky-300 transition shrink-0"
-                            title={t.kanbanOpenInTelegramApp || 'Открыть в приложении Telegram'}
-                          >
-                            <Send className="w-4 h-4 text-sky-500" />
-                          </a>
-                        )}
-
-                        {/* Remove additional contact button */}
-                        {telegramContacts.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveTgContact(idx)}
-                            className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl border border-slate-200/60 hover:border-rose-200 transition shrink-0 cursor-pointer"
-                            title={lang === 'uz' ? "Ushbu kontaktni o'chirish" : lang === 'en' ? 'Remove this contact' : 'Удалить этот контакт'}
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                        {idx === 0 && contact.trim() && isPhoneLike(contact) && (
+                          <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1 pl-1">
+                            <span>📱</span>
+                            <span>
+                              {lang === 'uz'
+                                ? "Telefon raqami kiritildi (Telegramda mavjud bo‘lsa, tizim avtomatik bog‘laydi)"
+                                : "Указан номер телефона (если аккаунт зарегистрирован, система автоматически свяжет его)"}
+                            </span>
+                          </div>
                         )}
                       </div>
                     ))}
                   </div>
 
-                  {/* Add another number or username action (shown when focused, or when has value / multiple contacts) */}
-                  {(isTgFocused || telegramContacts.length > 1 || telegramContacts.some(c => c.trim().length > 0)) && (
+                  {/* Add another number or username action (shown only when focused) */}
+                  {isTgFocused && (
                     <div className="flex items-center justify-between mt-2">
                       <button
                         type="button"
                         onMouseDown={(e) => {
                           e.preventDefault();
+                          if (tgBlurTimeoutRef.current) {
+                            clearTimeout(tgBlurTimeoutRef.current);
+                            tgBlurTimeoutRef.current = null;
+                          }
                           handleAddTgContact();
                         }}
                         className="inline-flex items-center gap-1.5 text-[11px] font-bold text-sky-600 hover:text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-lg border border-sky-200/80 transition cursor-pointer"
@@ -1998,6 +2432,115 @@ export default function KanbanView({
                 />
               </div>
 
+              {/* Bank Card & Cardholder Name Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      {t.kanbanBankCardNumberLabel || 'Номер банковской карты'}
+                    </label>
+                    {editCardNumber.trim() && (
+                      <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={editCardNumber}
+                      onChange={(e) => handleCardNumberChange(e.target.value)}
+                      placeholder={t.kanbanCardNumberPlaceholder || '8600 •••• •••• ••••'}
+                      className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
+                    />
+                    <CreditCard className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                    {editCardNumber.trim() && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await copyToClipboard(editCardNumber.replace(/\s+/g, ''));
+                          setIsCardCopied(true);
+                          setTimeout(() => setIsCardCopied(false), 2000);
+                        }}
+                        className="absolute right-2.5 top-2 p-0.5 text-slate-400 hover:text-black transition cursor-pointer"
+                        title={isCardCopied ? (t.kanbanCopiedSuccess || 'Скопировано!') : (lang === 'uz' ? 'Kartani nusxalash' : lang === 'en' ? 'Copy card' : 'Скопировать номер карты')}
+                      >
+                        {isCardCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    {t.kanbanCardholderNameLabel || 'Имя владельца карты'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={editCardName}
+                      onChange={(e) => setEditCardName(e.target.value)}
+                      placeholder={t.kanbanCardholderNamePlaceholder || 'Имя Фамилия'}
+                      className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition"
+                    />
+                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Move to Payment Stage Button (Shown when both card number & name are filled) */}
+              {areCardFieldsFilled && paymentColumn && (
+                <div className="p-3 bg-gradient-to-r from-indigo-50/90 via-sky-50/80 to-emerald-50/90 rounded-2xl border border-indigo-200/90 shadow-2xs space-y-2 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <CreditCard className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-black text-slate-900 truncate">
+                            {t.kanbanRequisitesCompleteTitle || 'Реквизиты карты заполнены'}
+                          </span>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-medium truncate">
+                          {editKanbanStage === paymentColumn.id
+                            ? (lang === 'uz' ? `Kartochka «${paymentColumn.title}» ustuniga belgilangan` : lang === 'en' ? `Card is assigned to "${paymentColumn.title}" column` : `Карточка определена в столбец «${paymentColumn.title}»`)
+                            : (lang === 'uz' ? `Kartochkani «${paymentColumn.title}» ustuniga o‘tkazish mumkin` : lang === 'en' ? `Ready to move to "${paymentColumn.title}" column` : `Можно перенести сделку в столбец «${paymentColumn.title}»`)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {editKanbanStage !== paymentColumn.id ? (
+                      <button
+                        type="button"
+                        disabled={isQuickMoving}
+                        onClick={handleMoveToPaymentColumn}
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-extrabold text-xs rounded-xl shadow-xs hover:shadow transition flex items-center gap-1.5 shrink-0 cursor-pointer group disabled:opacity-60"
+                        title={lang === 'uz' ? `«${paymentColumn.title}» ustuniga o‘tkazish` : lang === 'en' ? `Move to "${paymentColumn.title}"` : `Перенести в «${paymentColumn.title}»`}
+                      >
+                        {isQuickMoving ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>{t.kanbanMovingToPaymentBtn || 'Переносим...'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>{lang === 'uz' ? `«${paymentColumn.title}» ga o‘tkazish` : lang === 'en' ? `Move to "${paymentColumn.title}"` : `В «${paymentColumn.title}»`}</span>
+                            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-xl border border-emerald-200 shrink-0">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                        <span>{lang === 'uz' ? `«${paymentColumn.title}» da` : lang === 'en' ? `In "${paymentColumn.title}"` : `В «${paymentColumn.title}»`}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Comments Section / Лента комментариев */}
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 w-full">
                 <div className="flex items-center justify-between">
@@ -2148,100 +2691,106 @@ export default function KanbanView({
               </div>
 
               {/* Requisites Information Section (Edit mode only) */}
-              {!isCreateMode && selectedDeal && (
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-slate-600" />
-                      <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-                        {t.kanbanRequisitesSectionTitle || 'Реквизиты блогера'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {selectedDeal.requisites?.taxStatus === 'card_transfer' ? (
-                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                          {t.kanbanCardTaxStatus || '💳 На карту'}
-                        </span>
-                      ) : selectedDeal.requisites?.taxStatus === 'contract' ? (
-                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-                          {t.kanbanContractTaxStatus || '📄 Договор'}
-                        </span>
-                      ) : null}
-                      {selectedDeal.requisites ? (
-                        <span className="flex items-center gap-1 text-[11px] text-emerald-700 font-bold bg-emerald-100/80 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {t.kanbanRequisitesFilled || 'Заполнены'}
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[11px] text-amber-700 font-medium bg-amber-100/80 px-2 py-0.5 rounded-full">
-                          <Clock className="w-3 h-3 text-amber-600" /> {t.kanbanRequisitesPending || 'Ожидаются'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedDeal.requisites ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanFullNameLabel || 'ФИО:'}</span>
-                        <span className="font-bold text-slate-900">{selectedDeal.requisites.fullName || '—'}</span>
-                      </div>
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanCardIbanLabel || 'Номер карты / IBAN:'}</span>
-                        <span className="font-mono font-bold text-slate-900">{selectedDeal.requisites.cardNumberOrIban || '—'}</span>
-                      </div>
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanPinflTinLabel || 'ПИНФЛ / ИНН:'}</span>
-                        <span className="font-mono font-bold text-slate-900">{selectedDeal.requisites.pinflOrTin || '—'}</span>
-                      </div>
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanBankPhoneLabel || 'Банк / Телефон:'}</span>
-                        <span className="font-semibold text-slate-900">
-                          {selectedDeal.requisites.bankName || selectedDeal.requisites.phone || '—'}
+              {!isCreateMode && selectedDeal && (() => {
+                const activeRequisites = selectedDeal.requisites || bloggerRequisitesList?.find(r => 
+                  (r.integrationId && String(r.integrationId) === String(selectedDeal.id)) ||
+                  (selectedDeal.bloggerName && r.bloggerName && r.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === selectedDeal.bloggerName.replace(/^[@#]/, '').trim().toLowerCase())
+                );
+                return (
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-slate-600" />
+                        <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                          {t.kanbanRequisitesSectionTitle || 'Реквизиты блогера'}
                         </span>
                       </div>
-
-                      {/* Passport Scans Previews */}
-                      {(selectedDeal.requisites.passportFrontScan || selectedDeal.requisites.passportBackScan) && (
-                        <div className="sm:col-span-2 bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                          <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider flex items-center gap-1">
-                            <FileCheck className="w-3 h-3 text-emerald-600" /> {t.kanbanPassportCopiesLabel || 'Копии паспорта / ID-карты (2 стороны):'}
+                      <div className="flex items-center gap-1.5">
+                        {activeRequisites?.taxStatus === 'card_transfer' ? (
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                            {t.kanbanCardTaxStatus || '💳 На карту'}
                           </span>
-                          <div className="grid grid-cols-2 gap-2 pt-0.5">
-                            {selectedDeal.requisites.passportFrontScan && (
-                              <div 
-                                onClick={() => setActivePassportScanZoom({ src: selectedDeal.requisites!.passportFrontScan!, title: t.kanbanPassportFront || 'Лицевая сторона' })}
-                                className="group relative rounded-lg border border-slate-200 overflow-hidden cursor-pointer bg-slate-50 hover:border-black transition"
-                              >
-                                <img src={selectedDeal.requisites.passportFrontScan} alt="Лицевая сторона" className="w-full h-20 object-cover group-hover:scale-105 transition duration-150" />
-                                <div className="p-1 text-center bg-white/95 text-[10px] font-bold text-slate-700 border-t border-slate-100 flex items-center justify-between px-2">
-                                  <span>{t.kanbanPassportFront || 'Лицевая сторона'}</span>
-                                  <ZoomIn className="w-3 h-3 text-slate-400" />
-                                </div>
-                              </div>
-                            )}
-                            {selectedDeal.requisites.passportBackScan && (
-                              <div 
-                                onClick={() => setActivePassportScanZoom({ src: selectedDeal.requisites!.passportBackScan!, title: t.kanbanPassportBack || 'Обратная сторона' })}
-                                className="group relative rounded-lg border border-slate-200 overflow-hidden cursor-pointer bg-slate-50 hover:border-black transition"
-                              >
-                                <img src={selectedDeal.requisites.passportBackScan} alt="Обратная сторона" className="w-full h-20 object-cover group-hover:scale-105 transition duration-150" />
-                                <div className="p-1 text-center bg-white/95 text-[10px] font-bold text-slate-700 border-t border-slate-100 flex items-center justify-between px-2">
-                                  <span>{t.kanbanPassportBack || 'Обратная сторона'}</span>
-                                  <ZoomIn className="w-3 h-3 text-slate-400" />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                        ) : activeRequisites?.taxStatus === 'contract' ? (
+                          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                            {t.kanbanContractTaxStatus || '📄 Договор'}
+                          </span>
+                        ) : null}
+                        {activeRequisites ? (
+                          <span className="flex items-center gap-1 text-[11px] text-emerald-700 font-bold bg-emerald-100/80 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {t.kanbanRequisitesFilled || 'Заполнены'}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-[11px] text-amber-700 font-medium bg-amber-100/80 px-2 py-0.5 rounded-full">
+                            <Clock className="w-3 h-3 text-amber-600" /> {t.kanbanRequisitesPending || 'Ожидаются'}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-xs text-slate-500 pt-1">
-                      {t.kanbanNoRequisitesFilledYet || 'Блогер еще не заполнил реквизиты. Вы можете скопировать и отправить ему ссылку на форму реквизитов.'}
-                    </p>
-                  )}
-                </div>
-              )}
+
+                    {activeRequisites ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanFullNameLabel || 'ФИО:'}</span>
+                          <span className="font-bold text-slate-900">{activeRequisites.fullName || '—'}</span>
+                        </div>
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanCardIbanLabel || 'Номер карты / IBAN:'}</span>
+                          <span className="font-mono font-bold text-slate-900">{activeRequisites.cardNumberOrIban || '—'}</span>
+                        </div>
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanPinflTinLabel || 'ПИНФЛ / ИНН:'}</span>
+                          <span className="font-mono font-bold text-slate-900">{activeRequisites.pinflOrTin || '—'}</span>
+                        </div>
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 font-semibold block">{t.kanbanBankPhoneLabel || 'Банк / Телефон:'}</span>
+                          <span className="font-semibold text-slate-900">
+                            {activeRequisites.bankName || activeRequisites.phone || '—'}
+                          </span>
+                        </div>
+
+                        {/* Passport Scans Previews */}
+                        {(activeRequisites.passportFrontScan || activeRequisites.passportBackScan) && (
+                          <div className="sm:col-span-2 bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                            <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider flex items-center gap-1">
+                              <FileCheck className="w-3 h-3 text-emerald-600" /> {t.kanbanPassportCopiesLabel || 'Копии паспорта / ID-карты (2 стороны):'}
+                            </span>
+                            <div className="grid grid-cols-2 gap-2 pt-0.5">
+                              {activeRequisites.passportFrontScan && (
+                                <div 
+                                  onClick={() => setActivePassportScanZoom({ src: activeRequisites.passportFrontScan!, title: t.kanbanPassportFront || 'Лицевая сторона' })}
+                                  className="group relative rounded-lg border border-slate-200 overflow-hidden cursor-pointer bg-slate-50 hover:border-black transition"
+                                >
+                                  <img src={activeRequisites.passportFrontScan} alt="Лицевая сторона" className="w-full h-20 object-cover group-hover:scale-105 transition duration-150" />
+                                  <div className="p-1 text-center bg-white/95 text-[10px] font-bold text-slate-700 border-t border-slate-100 flex items-center justify-between px-2">
+                                    <span>{t.kanbanPassportFront || 'Лицевая сторона'}</span>
+                                    <ZoomIn className="w-3 h-3 text-slate-400" />
+                                  </div>
+                                </div>
+                              )}
+                              {activeRequisites.passportBackScan && (
+                                <div 
+                                  onClick={() => setActivePassportScanZoom({ src: activeRequisites.passportBackScan!, title: t.kanbanPassportBack || 'Обратная сторона' })}
+                                  className="group relative rounded-lg border border-slate-200 overflow-hidden cursor-pointer bg-slate-50 hover:border-black transition"
+                                >
+                                  <img src={activeRequisites.passportBackScan} alt="Обратная сторона" className="w-full h-20 object-cover group-hover:scale-105 transition duration-150" />
+                                  <div className="p-1 text-center bg-white/95 text-[10px] font-bold text-slate-700 border-t border-slate-100 flex items-center justify-between px-2">
+                                    <span>{t.kanbanPassportBack || 'Обратная сторона'}</span>
+                                    <ZoomIn className="w-3 h-3 text-slate-400" />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500 pt-1">
+                        {t.kanbanNoRequisitesFilledYet || 'Блогер еще не заполнил реквизиты. Вы можете скопировать и отправить ему ссылку на форму реквизитов.'}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </form>
             )}
 
@@ -2385,12 +2934,17 @@ export default function KanbanView({
         </div>
       )}
 
-      {/* Telegram Gateway Modal for Personal Account QR Code Login */}
-      <TelegramGatewayModal
-        isOpen={isGatewayModalOpen}
-        onClose={() => setIsGatewayModalOpen(false)}
-        lang={lang}
-      />
+      {/* Telegram Gateway Modal for Personal Account QR Code Login - Super Admin Only */}
+      {isSuperAdmin && isGatewayModalOpen && (
+        <TelegramGatewayModal
+          isOpen={isGatewayModalOpen}
+          onClose={() => {
+            setIsGatewayModalOpen(false);
+            fetchTelegramGatewayStatus().then(setGatewayStatus).catch(() => {});
+          }}
+          lang={lang}
+        />
+      )}
     </div>
   );
 }

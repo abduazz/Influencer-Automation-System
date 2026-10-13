@@ -86,6 +86,8 @@ export interface ChatMessage {
   mediaUrl?: string | null;
   mediaType?: string | null;
   status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+  sentAt?: string | null;
+  receivedAt?: string | null;
   createdAt: string;
   updatedAt?: string;
   isEdited?: boolean;

@@ -121,6 +121,25 @@ class IntegrationController extends Controller
             'requisites' => $request->requisites,
         ]);
 
+        if ($request->has('requisites') && is_array($request->requisites) && !empty($request->requisites['cardNumberOrIban'])) {
+            try {
+                \App\Models\BloggerRequisite::updateOrCreate(
+                    ['integration_id' => $integration->id],
+                    [
+                        'blogger_name' => $integration->blogger_name,
+                        'tax_status' => $request->requisites['taxStatus'] ?? 'card_transfer',
+                        'full_name' => $request->requisites['fullName'] ?? $integration->blogger_name,
+                        'card_number_or_iban' => $request->requisites['cardNumberOrIban'] ?? '',
+                        'recipient_name' => $request->requisites['recipientName'] ?? $request->requisites['fullName'] ?? $integration->blogger_name,
+                        'status' => $request->requisites['status'] ?? 'submitted',
+                        'submitted_at' => $request->requisites['submittedAt'] ?? now(),
+                    ]
+                );
+            } catch (\Throwable $e) {
+                \Log::warning('Could not sync to blogger_requisites table on store: ' . $e->getMessage());
+            }
+        }
+
         $integration->refresh();
 
         return response()->json($this->formatIntegration($integration), 201);
@@ -177,7 +196,27 @@ class IntegrationController extends Controller
         if ($request->has('createdBy')) $updateData['created_by'] = $request->createdBy;
         if ($request->has('slotsConfig')) $updateData['slots_config'] = $request->slotsConfig;
         if ($request->has('comments')) $updateData['comments'] = $request->comments;
-        if ($request->has('requisites')) $updateData['requisites'] = $request->requisites;
+        if ($request->has('requisites')) {
+            $updateData['requisites'] = $request->requisites;
+            if (is_array($request->requisites) && !empty($request->requisites['cardNumberOrIban'])) {
+                try {
+                    \App\Models\BloggerRequisite::updateOrCreate(
+                        ['integration_id' => $integration->id],
+                        [
+                            'blogger_name' => $request->input('bloggerName', $integration->blogger_name),
+                            'tax_status' => $request->requisites['taxStatus'] ?? 'card_transfer',
+                            'full_name' => $request->requisites['fullName'] ?? $integration->blogger_name,
+                            'card_number_or_iban' => $request->requisites['cardNumberOrIban'] ?? '',
+                            'recipient_name' => $request->requisites['recipientName'] ?? $request->requisites['fullName'] ?? $integration->blogger_name,
+                            'status' => $request->requisites['status'] ?? 'submitted',
+                            'submitted_at' => $request->requisites['submittedAt'] ?? now(),
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    \Log::warning('Could not sync to blogger_requisites table on update: ' . $e->getMessage());
+                }
+            }
+        }
 
         if ($request->has('subscribersCount')) {
             $updateData['subscribers_count'] = $request->subscribersCount;

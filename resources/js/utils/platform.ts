@@ -72,7 +72,7 @@ export function formatTelegramLink(input: string | null | undefined): string {
 }
 
 /**
- * Formats a telegram handle for clean display, e.g. "@username"
+ * Formats a telegram handle for clean display, e.g. "@username" or "+998995962233"
  */
 export function formatTelegramHandle(input: string | null | undefined): string {
   if (!input) return '';
@@ -83,5 +83,11 @@ export function formatTelegramHandle(input: string | null | undefined): string {
     clean = match ? match[1] : clean;
   }
   clean = clean.replace(/^@+/, '');
+
+  // If it's a phone number, display as phone without '@'
+  if (clean.startsWith('+') || /^\+?\d{7,16}$/.test(clean.replace(/[\s\-\(\)]+/g, ''))) {
+    return clean.startsWith('+') ? clean : `+${clean}`;
+  }
+
   return clean ? `@${clean}` : '';
 }

@@ -405,11 +405,17 @@ export default function DashboardView({
   }, 0);
   const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
 
-  // Helper to format metric values safely without decimals
+  // Helper to format metric values into millions with 1 decimal place (e.g. 81.0M, 2.0M)
   const formatMetricVal = (val: number | string): string => {
     const num = typeof val === 'number' ? val : Number(val);
     if (isNaN(num)) return String(val);
-    return Math.round(num).toLocaleString('ru-RU');
+    const sign = num < 0 ? '-' : '';
+    const abs = Math.abs(num);
+    const millions = abs / 1_000_000;
+    const formatted = millions >= 1000
+      ? millions.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).replace(/,/g, ' ')
+      : millions.toFixed(1);
+    return `${sign}${formatted}M`;
   };
 
   // Helper for dynamic font size based on number length to prevent overflow on 100% zoom
@@ -684,7 +690,7 @@ export default function DashboardView({
             </span>
             <span 
               className={`${getMetricValueClasses(formatMetricVal(totalSpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={formatMetricVal(totalSpend)}
+              title={`${Math.round(Number(totalSpend || 0)).toLocaleString('ru-RU')} UZS`}
             >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
@@ -701,7 +707,7 @@ export default function DashboardView({
             </span>
             <span 
               className={`${getMetricValueClasses(formatMetricVal(selectedProjectMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={formatMetricVal(selectedProjectMonthlySpend)}
+              title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS`}
             >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
@@ -718,7 +724,7 @@ export default function DashboardView({
             </span>
             <span 
               className={`${getMetricValueClasses(formatMetricVal(totalRemainingToPay))} font-black text-rose-600 mt-1 tracking-tight truncate w-full`}
-              title={formatMetricVal(totalRemainingToPay)}
+              title={`${Math.round(Number(totalRemainingToPay || 0)).toLocaleString('ru-RU')} UZS`}
             >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />

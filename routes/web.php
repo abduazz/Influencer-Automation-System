@@ -5,6 +5,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/{any}', function (Request $request) {
+    if ($request->query('page') === 'logs') {
+        return redirect('/log-viewer');
+    }
+
     $path = $request->path();
     $bootstrapData = null;
 

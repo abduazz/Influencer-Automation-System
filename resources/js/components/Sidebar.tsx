@@ -261,21 +261,17 @@ export default function Sidebar({
                 </div>
               </button>
 
-              <button
+              <a
                 id="nav-logs-btn"
-                onClick={() => setActiveTab('logs')}
-                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group ${
-                  activeTab === 'logs'
-                    ? 'bg-black text-white'
-                    : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
-                }`}
+                href="/log-viewer"
+                className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group hover:bg-neutral-100 text-neutral-600 hover:text-black`}
                 title="Log Viewer"
               >
                 <div className="flex items-center gap-3.5">
-                  <ScrollText className={`w-4 h-4 ${activeTab === 'logs' ? 'text-white' : 'text-black'}`} />
+                  <ScrollText className="w-4 h-4 text-black group-hover:text-black" />
                   {!isCollapsed && <span>Log Viewer</span>}
                 </div>
-              </button>
+              </a>
             </>
           )}
 

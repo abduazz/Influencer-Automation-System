@@ -71,7 +71,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt, CheckCircle2, AlertCircle, X, ScrollText } from 'lucide-react';
 
 export default function App() {
   // Synchronous instant bootstrap cache (HTML preload or localStorage)
@@ -154,11 +154,19 @@ export default function App() {
     if (params.get('view') === 'requisites' || window.location.pathname.startsWith('/requisites')) {
       return 'requisites';
     }
-    const pageParam = params.get('page') as AppTab;
-    if (pageParam && ALL_VALID_TABS.includes(pageParam)) {
-      return pageParam;
+    const pageParam = params.get('page');
+    if (pageParam === 'logs') {
+      window.location.replace('/log-viewer');
+      return 'projects';
+    }
+    if (pageParam && ALL_VALID_TABS.includes(pageParam as AppTab)) {
+      return pageParam as AppTab;
     }
     const cachedTab = localStorage.getItem('tezi_active_tab') as AppTab;
+    if (cachedTab === 'logs') {
+      localStorage.setItem('tezi_active_tab', 'projects');
+      return 'projects';
+    }
     if (cachedTab && ALL_VALID_TABS.includes(cachedTab)) {
       return cachedTab;
     }
@@ -783,11 +791,17 @@ export default function App() {
           integrationId: integrationId
         });
         setActiveTab('blogger');
+      } else if (page === 'logs') {
+        window.location.replace('/log-viewer');
+        return;
       } else if (page && ALL_VALID_TABS.includes(page as any)) {
         setActiveTab(page as any);
       } else {
         const cached = localStorage.getItem('tezi_active_tab') as AppTab;
-        if (cached && ALL_VALID_TABS.includes(cached)) {
+        if (cached === 'logs') {
+          localStorage.setItem('tezi_active_tab', 'projects');
+          setActiveTab('projects');
+        } else if (cached && ALL_VALID_TABS.includes(cached)) {
           setActiveTab(cached);
         } else if (!isTg) {
           setActiveTab('projects');
@@ -1333,17 +1347,15 @@ export default function App() {
 
             {/* System Logs Tab */}
             {currentUserRole === 'super_admin' && (
-              <button
-                onClick={() => setActiveTab('logs')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'logs' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+              <a
+                href="/log-viewer"
+                className="flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 text-neutral-400 hover:text-black"
               >
-                <Terminal className="w-5 h-5" />
+                <ScrollText className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
-                  {lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'Logs'}
+                  Log Viewer
                 </span>
-              </button>
+              </a>
             )}
           </div>
         </nav>

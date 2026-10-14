@@ -72,8 +72,6 @@ Route::post('/bulk-purchases/{bulkPurchase}/allocate', [\App\Http\Controllers\Ap
 Route::delete('/bulk-purchases/{bulkPurchase}', [\App\Http\Controllers\Api\BulkPurchaseController::class, 'destroy']);
 
 
-Route::get('/logs', [\App\Http\Controllers\Api\LogController::class, 'index']);
-Route::delete('/logs', [\App\Http\Controllers\Api\LogController::class, 'destroy']);
 
 Route::get('/shorten-url', function (\Illuminate\Http\Request $request) {
     $url = $request->query('url');

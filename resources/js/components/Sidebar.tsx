@@ -20,7 +20,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Terminal,
-  Receipt
+  Receipt,
+  ScrollText
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
@@ -268,11 +269,11 @@ export default function Sidebar({
                     ? 'bg-black text-white'
                     : 'hover:bg-neutral-100 text-neutral-600 hover:text-black'
                 }`}
-                title={lang === 'ru' ? 'Логи' : lang === 'uz' ? 'Loglar' : 'System Logs'}
+                title="Log Viewer"
               >
                 <div className="flex items-center gap-3.5">
-                  <Terminal className={`w-4 h-4 ${activeTab === 'logs' ? 'text-white' : 'text-black'}`} />
-                  {!isCollapsed && <span>{lang === 'ru' ? 'Системные логи' : lang === 'uz' ? 'Tizim loglari' : 'System Logs'}</span>}
+                  <ScrollText className={`w-4 h-4 ${activeTab === 'logs' ? 'text-white' : 'text-black'}`} />
+                  {!isCollapsed && <span>Log Viewer</span>}
                 </div>
               </button>
             </>

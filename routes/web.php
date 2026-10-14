@@ -23,4 +23,4 @@ Route::get('/{any}', function (Request $request) {
     return view('app', [
         'bootstrapData' => $bootstrapData,
     ]);
-})->where('any', '^(?!admin|api).*$');
+})->where('any', '^(?!admin|api|log-viewer).*$');

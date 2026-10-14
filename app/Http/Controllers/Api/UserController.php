@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
@@ -38,6 +39,14 @@ class UserController extends Controller
             return response()->json([
                 'message' => 'Неверный логин/email или пароль.',
             ], 401);
+        }
+
+        Auth::login($user, true);
+        if ($request->hasSession()) {
+            $request->session()->put('user_id', $user->id);
+            $request->session()->put('user_role', $user->role->value);
+            $request->session()->put('user_email', $user->email);
+            $request->session()->regenerate();
         }
 
         return response()->json([

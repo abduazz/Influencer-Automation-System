@@ -212,6 +212,8 @@ export default function App() {
     setCurrentUserRole(role);
     localStorage.setItem('ff_user_email', email);
     localStorage.setItem('ff_user_role', role);
+    document.cookie = `ff_user_email=${encodeURIComponent(email)}; path=/; max-age=2592000; SameSite=Lax`;
+    document.cookie = `ff_user_role=${encodeURIComponent(role)}; path=/; max-age=2592000; SameSite=Lax`;
     setActiveTab('projects');
   };
 
@@ -220,8 +222,20 @@ export default function App() {
     setCurrentUserRole(null);
     localStorage.removeItem('ff_user_email');
     localStorage.removeItem('ff_user_role');
+    document.cookie = 'ff_user_email=; path=/; max-age=0; SameSite=Lax';
+    document.cookie = 'ff_user_role=; path=/; max-age=0; SameSite=Lax';
     clearBootstrapCache();
   };
+
+  // Synchronize auth cookie on mount if already logged in via localStorage
+  useEffect(() => {
+    const cachedEmail = localStorage.getItem('ff_user_email');
+    const cachedRole = localStorage.getItem('ff_user_role');
+    if (cachedEmail && cachedRole) {
+      document.cookie = `ff_user_email=${encodeURIComponent(cachedEmail)}; path=/; max-age=2592000; SameSite=Lax`;
+      document.cookie = `ff_user_role=${encodeURIComponent(cachedRole)}; path=/; max-age=2592000; SameSite=Lax`;
+    }
+  }, []);
 
   // Mapped URL simulated routing parameters state
   const [simulatedUrlParams, setSimulatedUrlParams] = useState<{

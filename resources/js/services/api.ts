@@ -293,21 +293,7 @@ export async function shortenUrl(longUrl: string): Promise<string> {
   }
 }
 
-// System Logs API
-export interface LogEntry {
-  timestamp: string;
-  environment: string;
-  level: string;
-  message: string;
-}
 
-export function fetchLogs(): Promise<LogEntry[]> {
-  return request<LogEntry[]>('/api/logs');
-}
-
-export function clearLogs(): Promise<void> {
-  return request<void>('/api/logs', { method: 'DELETE' });
-}
 
 // Bulk Purchases API
 export function fetchBulkPurchases(): Promise<BulkPurchase[]> {

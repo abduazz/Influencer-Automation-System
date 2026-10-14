@@ -18,7 +18,7 @@ Route::get('/{any}', function (Request $request) {
 
     if (!$isCabinetRoute && !$isRequisitesRoute) {
         try {
-            $bootstrapData = app(BootstrapController::class)->getBootstrapData();
+            $bootstrapData = app(BootstrapController::class)->getBootstrapData($request);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Bootstrap preload in Blade failed: ' . $e->getMessage());
         }

@@ -8,11 +8,24 @@ use App\Models\Integration;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+use App\Services\SubdomainService;
+
 class BloggerSubmissionController extends Controller
 {
-    public function index()
+    public function index(?Request $request = null)
     {
-        return response()->json(BloggerSubmission::all()->map(function ($sub) {
+        $request = $request ?? request();
+        $scopedProjectIds = SubdomainService::getScopedProjectIds($request);
+
+        $query = BloggerSubmission::query();
+
+        if ($scopedProjectIds !== null) {
+            $query->whereHas('integration', function ($q) use ($scopedProjectIds) {
+                $q->whereIn('project_id', $scopedProjectIds);
+            });
+        }
+
+        return response()->json($query->get()->map(function ($sub) {
             return [
                 'id' => (string) $sub->id,
                 'integrationId' => (string) $sub->integration_id,

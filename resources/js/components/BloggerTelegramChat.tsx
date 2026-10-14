@@ -124,21 +124,32 @@ export default function BloggerTelegramChat({
   };
 
   useEffect(() => {
-    setTelegramUsername(integration.telegramUsername || '');
-    setManualUsername(integration.telegramUsername || '');
-    setTelegramChatId(integration.telegramChatId || null);
-    setManualChatId(integration.telegramChatId || '');
-    loadMessages();
+    const currentUsername = integration.telegramUsername || '';
+    const currentChatId = integration.telegramChatId || null;
 
-    // Start smart polling every 3.5 seconds
+    setTelegramUsername(currentUsername);
+    setManualUsername(currentUsername);
+    setTelegramChatId(currentChatId);
+    setManualChatId(currentChatId || '');
+
+    if (!currentUsername && !currentChatId) {
+      setMessages([]);
+      setLoading(false);
+    } else {
+      loadMessages();
+    }
+
+    // Start smart polling every 3.5 seconds only when contact exists
     pollingRef.current = setInterval(() => {
-      loadMessages(true);
+      if (integration.telegramUsername || integration.telegramChatId) {
+        loadMessages(true);
+      }
     }, 3500);
 
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [integration.id]);
+  }, [integration.id, integration.telegramUsername, integration.telegramChatId]);
 
   useEffect(() => {
     scrollToBottom(false);
@@ -288,6 +299,9 @@ export default function BloggerTelegramChat({
       const savedUser = res.telegramUsername !== undefined ? (res.telegramUsername || '') : trimmed;
       setTelegramUsername(savedUser);
       setManualUsername(savedUser);
+      if (contactChanged) {
+        setMessages([]);
+      }
       setShowSettings(false);
       if (onIntegrationUpdated) {
         onIntegrationUpdated({
@@ -296,6 +310,7 @@ export default function BloggerTelegramChat({
           telegramUsername: savedUser || undefined,
         });
       }
+      loadMessages(true, true);
     } catch (err: any) {
       alert('Ошибка при сохранении: ' + err.message);
     } finally {
@@ -319,6 +334,7 @@ export default function BloggerTelegramChat({
       setTelegramUsername('');
       setManualChatId('');
       setManualUsername('');
+      setMessages([]);
       setShowSettings(false);
       if (onIntegrationUpdated) {
         onIntegrationUpdated({
@@ -880,19 +896,26 @@ export default function BloggerTelegramChat({
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
+            disabled={!telegramUsername && !telegramChatId}
             placeholder={
-              editingMessage
+              (!telegramUsername && !telegramChatId)
+                ? (lang === 'uz' ? 'Xabar yozish uchun avval Telegram kontaktni ulang...' : 'Для отправки сообщений привяжите Telegram блогера...')
+                : editingMessage
                 ? (lang === 'uz' ? 'O‘zgartirilgan xabarni kiriting (Enter - saqlash)...' : 'Введите измененный текст (Enter для сохранения)...')
                 : (lang === 'uz' ? 'Xabar yozing (Enter - jo‘natish)...' : 'Напишите сообщение (Enter для отправки)...')
             }
             rows={1}
-            className="flex-1 max-h-28 min-h-[38px] px-3.5 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-normal text-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:bg-white transition resize-none leading-relaxed"
+            className={`flex-1 max-h-28 min-h-[38px] px-3.5 py-2 border rounded-xl text-xs font-normal focus:outline-none transition resize-none leading-relaxed ${
+              (!telegramUsername && !telegramChatId)
+                ? 'bg-neutral-100/70 border-neutral-200 text-neutral-400 cursor-not-allowed'
+                : 'bg-neutral-50 border-neutral-200 text-neutral-900 focus:ring-1 focus:ring-neutral-900 focus:bg-white'
+            }`}
             autoFocus={!!editingMessage}
           />
 
           <button
             type="submit"
-            disabled={!inputText.trim() || sending || savingEdit}
+            disabled={!inputText.trim() || sending || savingEdit || (!telegramUsername && !telegramChatId)}
             className={`h-[38px] px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs shrink-0 cursor-pointer ${
               editingMessage
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'

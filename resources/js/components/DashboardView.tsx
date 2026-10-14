@@ -41,7 +41,7 @@ interface DashboardViewProps {
   integrations: Integration[];
   submissions: BloggerSubmission[];
   onAddProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
-  onEditProject?: (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null) => void;
+  onEditProject?: (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, subdomain?: string) => void;
   onDeleteProject: (id: string) => void;
   onAddIntegration: (integration: Omit<Integration, 'id' | 'totalAmount'>) => void;
   onEditIntegration: (id: string, integration: Partial<Integration>) => void;
@@ -114,6 +114,7 @@ export default function DashboardView({
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [newProjectThreadId, setNewProjectThreadId] = useState('');
   const [newProjectMonthlyLimit, setNewProjectMonthlyLimit] = useState('');
+  const [newProjectSubdomain, setNewProjectSubdomain] = useState('1');
 
   // Edit Project Form state
   const [showEditProjectModal, setShowEditProjectModal] = useState(false);
@@ -121,6 +122,7 @@ export default function DashboardView({
   const [editProjectDesc, setEditProjectDesc] = useState('');
   const [editProjectThreadId, setEditProjectThreadId] = useState('');
   const [editProjectMonthlyLimit, setEditProjectMonthlyLimit] = useState('');
+  const [editProjectSubdomain, setEditProjectSubdomain] = useState('1');
 
   // New / Editing Integration Form state
   const [bloggerName, setBloggerName] = useState('');
@@ -221,11 +223,13 @@ export default function DashboardView({
       description: newProjectDesc,
       telegramThreadId: newProjectThreadId,
       monthlyLimit: newProjectMonthlyLimit ? parseInt(newProjectMonthlyLimit, 10) : null,
+      subdomain: newProjectSubdomain || '1',
     });
     setNewProjectName('');
     setNewProjectDesc('');
     setNewProjectThreadId('');
     setNewProjectMonthlyLimit('');
+    setNewProjectSubdomain('1');
     setShowAddProjectModal(false);
   };
 
@@ -238,7 +242,8 @@ export default function DashboardView({
         editProjectName, 
         editProjectDesc, 
         editProjectThreadId, 
-        editProjectMonthlyLimit ? parseInt(editProjectMonthlyLimit, 10) : null
+        editProjectMonthlyLimit ? parseInt(editProjectMonthlyLimit, 10) : null,
+        editProjectSubdomain || '1'
       );
     }
     setShowEditProjectModal(false);
@@ -504,6 +509,7 @@ export default function DashboardView({
                         setEditProjectDesc(selectedProject.description || '');
                         setEditProjectThreadId(selectedProject.telegramThreadId || '');
                         setEditProjectMonthlyLimit(selectedProject.monthlyLimit ? String(selectedProject.monthlyLimit) : '');
+                        setEditProjectSubdomain(selectedProject.subdomain || '1');
                         setShowEditProjectModal(true);
                       }}
                       className="text-neutral-400 hover:text-black p-1 rounded transition duration-150 cursor-pointer"
@@ -533,7 +539,14 @@ export default function DashboardView({
                   </div>
                 )}
               </div>
-              <h3 className="text-base font-black text-black tracking-tight">{selectedProject.name}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-black text-black tracking-tight">{selectedProject.name}</h3>
+                {selectedProject.subdomain && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-neutral-100 text-neutral-600 border border-neutral-200">
+                    {selectedProject.subdomain}.tezi.uz
+                  </span>
+                )}
+              </div>
               {selectedProject.description && (
                 <p className="text-xs text-neutral-500 max-w-3xl leading-relaxed">
                   {selectedProject.description}
@@ -1058,6 +1071,22 @@ export default function DashboardView({
                 />
               </div>
 
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {lang === 'ru' ? 'Субдомен (Subdomain)' : lang === 'uz' ? 'Subdomen' : 'Subdomain'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="1"
+                  value={newProjectSubdomain}
+                  onChange={(e) => setNewProjectSubdomain(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+                <span className="text-[10px] text-neutral-400 mt-1 block">
+                  {lang === 'ru' ? 'Например: 1 для 1.tezi.uz, 2 для 2.tezi.uz' : 'Masalan: 1 (1.tezi.uz uchun), 2 (2.tezi.uz uchun)'}
+                </span>
+              </div>
+
               <div className="pt-2 flex gap-3">
                 <button
                   type="button"
@@ -1146,6 +1175,22 @@ export default function DashboardView({
                   onChange={(e) => setEditProjectMonthlyLimit(e.target.value)}
                   className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
                 />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {lang === 'ru' ? 'Субдомен (Subdomain)' : lang === 'uz' ? 'Subdomen' : 'Subdomain'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="1"
+                  value={editProjectSubdomain}
+                  onChange={(e) => setEditProjectSubdomain(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+                <span className="text-[10px] text-neutral-400 mt-1 block">
+                  {lang === 'ru' ? 'Например: 1 для 1.tezi.uz, 2 для 2.tezi.uz' : 'Masalan: 1 (1.tezi.uz uchun), 2 (2.tezi.uz uchun)'}
+                </span>
               </div>
 
               <div className="pt-2 flex gap-3">

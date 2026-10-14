@@ -9,6 +9,7 @@ use App\Enums\UserRole;
 use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -208,11 +209,36 @@ class TelegramChatController extends Controller
         }
         if ($request->has('telegramUsername') || array_key_exists('telegramUsername', $request->all())) {
             $rawUser = trim($request->input('telegramUsername') ?? '');
-            if (preg_match('#(?:t\.me|telegram\.me)/(?:s/)?([a-zA-Z0-9_]+)#i', $rawUser, $m)) {
-                $rawUser = $m[1];
+            $parts = preg_split('/[,;\n]+/', $rawUser);
+            $cleanedParts = [];
+            foreach ($parts as $part) {
+                $part = trim($part);
+                if ($part === '') continue;
+                if (preg_match('#(?:t\.me|telegram\.me)/(?:s/)?([a-zA-Z0-9_]+)#i', $part, $m)) {
+                    $part = $m[1];
+                }
+                $part = ltrim($part, '@');
+                if ($part !== '') {
+                    $cleanedParts[] = $part;
+                }
             }
-            $cleanUser = ltrim($rawUser, '@');
+            $cleanUser = implode(', ', $cleanedParts);
             $updates['telegram_username'] = $cleanUser ?: null;
+        }
+
+        $oldTg = $integration->telegram_username ? strtolower(trim(preg_replace('/[@\s]+/', '', $integration->telegram_username))) : '';
+        $newTg = !empty($updates['telegram_username']) ? strtolower(trim(preg_replace('/[@\s]+/', '', $updates['telegram_username']))) : '';
+
+        // If unlinked (cleared) or contact changed to another handle
+        if ($newTg === '') {
+            $updates['telegram_chat_id'] = null;
+            $updates['telegram_username'] = null;
+            ChatMessage::where('integration_id', $integration->id)->delete();
+            Cache::forget('tg_history_sync_' . $integration->id);
+        } elseif ($oldTg !== '' && $oldTg !== $newTg) {
+            $updates['telegram_chat_id'] = null;
+            ChatMessage::where('integration_id', $integration->id)->delete();
+            Cache::forget('tg_history_sync_' . $integration->id);
         }
 
         $integration->update($updates);

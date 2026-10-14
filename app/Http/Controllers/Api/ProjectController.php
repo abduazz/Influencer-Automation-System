@@ -6,17 +6,34 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use Illuminate\Http\Request;
 
+use App\Services\SubdomainService;
+
 class ProjectController extends Controller
 {
-    public function index()
+    public function index(?Request $request = null)
     {
-        return response()->json(Project::all()->map(function ($project) {
+        $request = $request ?? request();
+        $subdomain = SubdomainService::resolve($request);
+
+        $query = Project::query();
+        if ($subdomain !== null) {
+            if ($subdomain === '1') {
+                $query->where(function ($q) {
+                    $q->where('subdomain', '1')->orWhereNull('subdomain')->orWhere('subdomain', '');
+                });
+            } else {
+                $query->where('subdomain', $subdomain);
+            }
+        }
+
+        return response()->json($query->get()->map(function ($project) {
             return [
                 'id' => (string) $project->id,
                 'name' => $project->name,
                 'description' => $project->description ?? '',
                 'telegramThreadId' => $project->telegram_thread_id ?? '',
                 'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
+                'subdomain' => $project->subdomain ?? '1',
                 'createdAt' => $project->created_at->format('Y-m-d'),
             ];
         }));
@@ -29,13 +46,18 @@ class ProjectController extends Controller
             'description' => 'nullable|string',
             'telegramThreadId' => 'nullable|string',
             'monthlyLimit' => 'nullable|integer|min:0',
+            'subdomain' => 'nullable|string|max:100',
         ]);
+
+        $currentSubdomain = SubdomainService::resolve($request);
+        $targetSubdomain = $request->subdomain ? trim($request->subdomain) : ($currentSubdomain ?? '1');
 
         $project = Project::create([
             'name' => $request->name,
             'description' => $request->description,
             'telegram_thread_id' => $request->telegramThreadId,
             'monthly_limit' => $request->monthlyLimit,
+            'subdomain' => $targetSubdomain,
         ]);
 
         return response()->json([
@@ -44,6 +66,7 @@ class ProjectController extends Controller
             'description' => $project->description ?? '',
             'telegramThreadId' => $project->telegram_thread_id ?? '',
             'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
+            'subdomain' => $project->subdomain ?? '1',
             'createdAt' => $project->created_at->format('Y-m-d'),
         ], 201);
     }
@@ -70,14 +93,21 @@ class ProjectController extends Controller
             'description' => 'nullable|string',
             'telegramThreadId' => 'nullable|string',
             'monthlyLimit' => 'nullable|integer|min:0',
+            'subdomain' => 'nullable|string|max:100',
         ]);
 
-        $project->update([
+        $dataToUpdate = [
             'name' => $request->name,
             'description' => $request->description,
             'telegram_thread_id' => $request->telegramThreadId,
             'monthly_limit' => $request->monthlyLimit,
-        ]);
+        ];
+
+        if ($request->has('subdomain')) {
+            $dataToUpdate['subdomain'] = $request->subdomain ? trim($request->subdomain) : '1';
+        }
+
+        $project->update($dataToUpdate);
 
         return response()->json([
             'id' => (string) $project->id,
@@ -85,6 +115,7 @@ class ProjectController extends Controller
             'description' => $project->description ?? '',
             'telegramThreadId' => $project->telegram_thread_id ?? '',
             'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
+            'subdomain' => $project->subdomain ?? '1',
             'createdAt' => $project->created_at->format('Y-m-d'),
         ]);
     }

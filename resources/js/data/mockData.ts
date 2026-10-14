@@ -10,6 +10,7 @@ export interface Project {
   telegramThreadId?: string;
   createdAt: string;
   monthlyLimit?: number | null;
+  subdomain?: string;
 }
 
 export interface SlotConfig {
@@ -118,7 +119,7 @@ export interface Integration {
   projectId: string;
   bloggerName: string;
   bloggerPageLink?: string;
-  telegramUsername?: string;
+  telegramUsername?: string | null;
   telegramChatId?: string | null;
   startDate?: string;
   platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
@@ -195,6 +196,23 @@ export interface BloggerSubmission {
   };
 }
 
+export interface SubdomainProjectSummary {
+  id: string;
+  name: string;
+  subdomain?: string;
+  monthlyLimit?: number | null;
+}
+
+export interface SubdomainItem {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  projectsCount?: number;
+  projects?: SubdomainProjectSummary[];
+  createdAt?: string;
+}
+
 export interface AllowedUser {
   id: string;
   name: string;
@@ -204,6 +222,7 @@ export interface AllowedUser {
   allowedMetrics?: string[];
   allowedPages?: string[];
   allowedProjects?: string[];
+  allowedSubdomains?: string[];
 }
 
 export const INITIAL_ALLOWED_USERS: AllowedUser[] = [

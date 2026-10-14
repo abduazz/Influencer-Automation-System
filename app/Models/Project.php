@@ -15,6 +15,7 @@ class Project extends Model
         'description',
         'telegram_thread_id',
         'monthly_limit',
+        'subdomain',
     ];
 
     public function integrations(): HasMany

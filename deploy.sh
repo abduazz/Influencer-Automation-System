@@ -9,6 +9,12 @@ git reset --hard && git pull
 echo "📦 Installing composer dependencies..."
 composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
+echo "💾 Creating pre-deploy database safety backup..."
+mkdir -p storage/backups
+if [ -f "database/database.sqlite" ]; then
+    cp database/database.sqlite "storage/backups/pre_deploy_$(date +%Y%m%d_%H%M%S).sqlite"
+fi
+
 echo "🗃️ Running database migrations and seeding..."
 php artisan migrate --force
 php artisan db:seed --force
@@ -16,8 +22,6 @@ php artisan db:seed --force
 echo "🔄 Syncing reports..."
 php artisan reports:sync
 
-echo "📊 Syncing integrations with actual reports..."
-php artisan integrations:sync-reports
 
 # Ensure Node.js is present (auto-installs standalone portable Node.js if missing)
 if [ -f "telegram-gateway/ensure-node.sh" ]; then

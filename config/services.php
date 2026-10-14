@@ -44,6 +44,8 @@ return [
         'submissions_chat_id' => env('TELEGRAM_SUBMISSIONS_CHAT_ID'),
         'requisites_chat_id' => env('TELEGRAM_REQUISITES_CHAT_ID', '-1004424306910'),
         'requisites_thread_id' => env('TELEGRAM_REQUISITES_THREAD_ID', '483'),
+        'backup_chat_id' => env('TELEGRAM_BACKUP_CHAT_ID', '-1004424306910'),
+        'backup_thread_id' => env('TELEGRAM_BACKUP_THREAD_ID', '597'),
         'chat_id' => env('TELEGRAM_CHAT_ID'),
     ],
 

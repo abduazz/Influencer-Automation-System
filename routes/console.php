@@ -301,6 +301,24 @@ Artisan::command('integrations:sync-reports {--id= : Specific integration ID to 
     $this->info("Completed! {$syncedCount} integration(s) updated from actual reports.");
 })->purpose('Recalculate and sync integrations financials and slots from reports');
 
+Artisan::command('db:backup {--telegram : Send backup to Telegram topic #597} {--local-only : Only create local backup}', function () {
+    $service = new \App\Services\DatabaseBackupService();
+    $this->info("Creating database backup snapshot...");
+    $file = $service->createBackup();
+    $this->info("Backup saved locally to: {$file}");
+
+    if ($this->option('telegram') || !$this->option('local-only')) {
+        $this->info("Uploading backup to Telegram topic #597...");
+        $res = $service->sendToTelegram($file);
+        if ($res['success']) {
+            $this->info("Backup successfully sent to Telegram: " . $res['file']);
+        } else {
+            $this->error("Failed to send backup to Telegram: " . ($res['error'] ?? 'Unknown error'));
+        }
+    }
+})->purpose('Create database backup snapshot and upload to Telegram topic #597')
+  ->dailyAt('03:00');
+
 
 
 

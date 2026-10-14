@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password', 'role', 'allowed_metrics', 'allowed_pages', 'allowed_projects'])]
+#[Fillable(['name', 'email', 'password', 'role', 'allowed_metrics', 'allowed_pages', 'allowed_projects', 'allowed_subdomains'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
@@ -28,6 +28,7 @@ class User extends Authenticatable implements FilamentUser
             'allowed_metrics' => 'array',
             'allowed_pages' => 'array',
             'allowed_projects' => 'array',
+            'allowed_subdomains' => 'array',
         ];
     }
 
@@ -41,6 +42,11 @@ class User extends Authenticatable implements FilamentUser
         return $this->role === UserRole::SuperAdmin;
     }
 
+    public function isExecutive(): bool
+    {
+        return $this->role === UserRole::Executive;
+    }
+
     public function isPrManager(): bool
     {
         return $this->role === UserRole::PrManager;
@@ -49,5 +55,26 @@ class User extends Authenticatable implements FilamentUser
     public function isProductManager(): bool
     {
         return $this->role === UserRole::ProductManager;
+    }
+
+    /**
+     * Check if user has permission to access a specific subdomain slug.
+     */
+    public function hasSubdomainAccess(?string $subdomain): bool
+    {
+        if ($this->isSuperAdmin() || $this->isExecutive()) {
+            return true;
+        }
+
+        if (empty($subdomain) || $subdomain === 'all') {
+            return true;
+        }
+
+        if (empty($this->allowed_subdomains)) {
+            // Null or empty array means all subdomains access by default
+            return true;
+        }
+
+        return in_array($subdomain, $this->allowed_subdomains, true);
     }
 }

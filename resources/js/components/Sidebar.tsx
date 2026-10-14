@@ -306,6 +306,63 @@ export default function Sidebar({
       </div>
 
       <div>
+        {/* Subdomain Switcher for Super Admin */}
+        {userRole === 'super_admin' && !isCollapsed && (
+          <div className="px-6 pt-3 pb-1 border-t border-neutral-100 bg-neutral-50/20">
+            <div className="flex items-center justify-between text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-2">
+              <span className="flex items-center gap-1">
+                <Globe className="w-3.5 h-3.5 text-neutral-500" />
+                {lang === 'ru' ? 'Субдомен' : 'Subdomen'}
+              </span>
+              <span className="text-black font-extrabold text-[11px]">
+                {typeof window !== 'undefined' && window.location.hostname.includes('2.tezi.uz') ? '2.tezi.uz' : '1.tezi.uz'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 bg-neutral-100 p-1 rounded-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window === 'undefined') return;
+                  if (window.location.hostname.includes('tezi.uz')) {
+                    window.location.href = `https://1.tezi.uz${window.location.pathname}${window.location.search}`;
+                  } else {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('subdomain', '1');
+                    window.location.href = url.toString();
+                  }
+                }}
+                className={`py-1 text-[10px] font-black rounded-md transition ${
+                  (typeof window !== 'undefined' && (window.location.hostname.startsWith('1.') || new URLSearchParams(window.location.search).get('subdomain') === '1' || (!window.location.hostname.startsWith('2.') && !new URLSearchParams(window.location.search).get('subdomain'))))
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-neutral-600 hover:text-black hover:bg-neutral-200'
+                }`}
+              >
+                1.tezi.uz
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window === 'undefined') return;
+                  if (window.location.hostname.includes('tezi.uz')) {
+                    window.location.href = `https://2.tezi.uz${window.location.pathname}${window.location.search}`;
+                  } else {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('subdomain', '2');
+                    window.location.href = url.toString();
+                  }
+                }}
+                className={`py-1 text-[10px] font-black rounded-md transition ${
+                  (typeof window !== 'undefined' && (window.location.hostname.startsWith('2.') || new URLSearchParams(window.location.search).get('subdomain') === '2'))
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-neutral-600 hover:text-black hover:bg-neutral-200'
+                }`}
+              >
+                2.tezi.uz
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Language Switcher */}
         <div className={`py-4 border-t border-neutral-100 bg-neutral-50/30 ${isCollapsed ? 'px-2' : 'px-6'}`}>
           {!isCollapsed && (

@@ -117,10 +117,7 @@ const parsePrice = (str: string): number | '' => {
 const compressImage = (file: File, maxWidth = 1000, maxHeight = 1000, quality = 0.65): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+      reject(new Error('Only images are allowed'));
       return;
     }
 
@@ -1784,15 +1781,32 @@ export default function ReportsView({
                             type="file"
                             multiple
                             key={fileInputKey}
-                            accept="image/*,application/pdf"
+                            accept="image/*,image/jpeg,image/png,image/webp,image/heic,image/heif"
                             onChange={async (e) => {
                               const files = Array.from(e.target.files || []);
                               if (files.length === 0) return;
 
+                              const nonImageFiles = files.filter(f => !f.type.startsWith('image/'));
+                              if (nonImageFiles.length > 0) {
+                                alert(
+                                  lang === 'ru'
+                                    ? 'Разрешены только фотографии (изображения). Файлы PDF и документы прикреплять нельзя.'
+                                    : lang === 'uz'
+                                      ? 'Faqat fotosuratlar (rasmlar) ruxsat etiladi. PDF va boshqa hujjatlarni biriktirish mumkin emas.'
+                                      : 'Only photos (images) are allowed. PDF and other documents cannot be attached.'
+                                );
+                              }
+
+                              const imageFiles = files.filter(f => f.type.startsWith('image/'));
+                              if (imageFiles.length === 0) {
+                                setFileInputKey(prev => prev + 1);
+                                return;
+                              }
+
                               setIsCompressingReceipts(true);
                               const newReceipts: string[] = [];
 
-                              for (const file of files) {
+                              for (const file of imageFiles) {
                                 if (file.size > 10 * 1024 * 1024) {
                                   alert(
                                     lang === 'ru'
@@ -1814,7 +1828,7 @@ export default function ReportsView({
                                     reader.onerror = () => resolve('');
                                     reader.readAsDataURL(file);
                                   });
-                                  if (base64) newReceipts.push(base64);
+                                  if (base64 && base64.startsWith('data:image/')) newReceipts.push(base64);
                                 }
                               }
 
@@ -1842,7 +1856,7 @@ export default function ReportsView({
                             <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
                               {receipts.map((r, idx) => (
                                 <div key={idx} className="relative group aspect-square rounded-lg border border-neutral-200 overflow-hidden bg-white shadow-2xs">
-                                  {r.startsWith('data:image/') ? (
+                                  {r.startsWith('data:image/') && (
                                     <img 
                                       src={r} 
                                       alt={`Receipt ${idx + 1}`} 
@@ -1853,11 +1867,6 @@ export default function ReportsView({
                                       }}
                                       title={lang === 'ru' ? 'Нажмите для увеличения' : lang === 'uz' ? 'Kattalashtirish uchun bosing' : 'Click to enlarge'}
                                     />
-                                  ) : (
-                                    <div className="w-full h-full flex flex-col items-center justify-center p-1 text-center bg-neutral-100">
-                                      <span className="text-[10px] font-black text-red-600">PDF</span>
-                                      <span className="text-[8px] text-neutral-400 truncate max-w-full">#{idx + 1}</span>
-                                    </div>
                                   )}
                                   <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[8px] font-black px-1.5 py-0.5 rounded backdrop-blur-xs pointer-events-none">
                                     {idx + 1}
@@ -1883,15 +1892,32 @@ export default function ReportsView({
                                   type="file"
                                   multiple
                                   key={`add-more-${fileInputKey}`}
-                                  accept="image/*,application/pdf"
+                                  accept="image/*,image/jpeg,image/png,image/webp,image/heic,image/heif"
                                   onChange={async (e) => {
                                     const files = Array.from(e.target.files || []);
                                     if (files.length === 0) return;
 
+                                    const nonImageFiles = files.filter(f => !f.type.startsWith('image/'));
+                                    if (nonImageFiles.length > 0) {
+                                      alert(
+                                        lang === 'ru'
+                                          ? 'Разрешены только фотографии (изображения). Файлы PDF и документы прикреплять нельзя.'
+                                          : lang === 'uz'
+                                            ? 'Faqat fotosuratlar (rasmlar) ruxsat etiladi. PDF va boshqa hujjatlarni biriktirish mumkin emas.'
+                                            : 'Only photos (images) are allowed. PDF and other documents cannot be attached.'
+                                      );
+                                    }
+
+                                    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+                                    if (imageFiles.length === 0) {
+                                      setFileInputKey(prev => prev + 1);
+                                      return;
+                                    }
+
                                     setIsCompressingReceipts(true);
                                     const newReceipts: string[] = [];
 
-                                    for (const file of files) {
+                                    for (const file of imageFiles) {
                                       if (file.size > 10 * 1024 * 1024) {
                                         alert(
                                           lang === 'ru'
@@ -1913,7 +1939,7 @@ export default function ReportsView({
                                           reader.onerror = () => resolve('');
                                           reader.readAsDataURL(file);
                                         });
-                                        if (base64) newReceipts.push(base64);
+                                        if (base64 && base64.startsWith('data:image/')) newReceipts.push(base64);
                                       }
                                     }
 

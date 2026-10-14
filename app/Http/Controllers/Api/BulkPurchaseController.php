@@ -10,11 +10,43 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
+use App\Services\SubdomainService;
+
 class BulkPurchaseController extends Controller
 {
-    public function index()
+    public function index(?Request $request = null)
     {
-        return response()->json(BulkPurchase::latest('purchase_date')->get()->map(function ($bp) {
+        $request = $request ?? request();
+        $scopedProjectIds = SubdomainService::getScopedProjectIds($request);
+        $subdomain = SubdomainService::resolve($request);
+
+        $items = BulkPurchase::latest('purchase_date')->get();
+
+        if ($scopedProjectIds !== null) {
+            $items = $items->filter(function ($bp) use ($scopedProjectIds, $subdomain) {
+                $slots = $bp->slots_config ?? [];
+                $hasMatchingSlot = false;
+                $hasAnySlotWithProject = false;
+                foreach ($slots as $s) {
+                    if (!empty($s['projectId'])) {
+                        $hasAnySlotWithProject = true;
+                        if (in_array((int) $s['projectId'], $scopedProjectIds)) {
+                            $hasMatchingSlot = true;
+                            break;
+                        }
+                    }
+                }
+                if ($hasMatchingSlot) {
+                    return true;
+                }
+                if (!$hasAnySlotWithProject && ($subdomain === null || $subdomain === '1')) {
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        return response()->json($items->values()->map(function ($bp) {
             $slots = $bp->slots_config ?? [];
             $allocatedCount = 0;
             foreach ($slots as $s) {

@@ -7,13 +7,29 @@ use App\Models\Report;
 use App\Models\Integration;
 use App\Services\TelegramService;
 use Illuminate\Http\Request;
+use App\Services\SubdomainService;
 use Illuminate\Support\Str;
 
 class ReportController extends Controller
 {
-    public function index()
+    public function index(?Request $request = null)
     {
-        return response()->json(Report::with('project')->latest('date')->get()->map(function ($report) {
+        $request = $request ?? request();
+        $scopedProjectIds = SubdomainService::getScopedProjectIds($request);
+
+        $query = Report::with('project')->latest('date');
+
+        if ($scopedProjectIds !== null) {
+            $query->where(function ($q) use ($scopedProjectIds, $request) {
+                $q->whereIn('project_id', $scopedProjectIds);
+                $subdomain = SubdomainService::resolve($request);
+                if ($subdomain === null || $subdomain === '1') {
+                    $q->orWhereNull('project_id');
+                }
+            });
+        }
+
+        return response()->json($query->get()->map(function ($report) {
             return [
                 'id' => (string) $report->id,
                 'date' => $report->date->format('Y-m-d'),
@@ -100,6 +116,15 @@ class ReportController extends Controller
                 $receipts = [$rawReceipt];
             }
         }
+
+        // Strictly keep only photo/image files (disallow PDFs or other non-image document formats)
+        $receipts = array_values(array_filter($receipts, function ($r) {
+            if (!is_string($r) || empty($r)) return false;
+            if (str_starts_with($r, 'data:')) {
+                return str_starts_with(strtolower($r), 'data:image/');
+            }
+            return !preg_match('/\.pdf(\?.*)?$/i', $r);
+        }));
 
         $receiptToStore = null;
         if (count($receipts) === 1) {
@@ -416,7 +441,13 @@ class ReportController extends Controller
             if ($request->has('paymentType')) $updateData['payment_type'] = $request->paymentType;
 
             if ($request->has('receipts') && is_array($request->input('receipts'))) {
-                $cleanReceipts = array_values(array_filter($request->input('receipts'), fn($r) => !empty($r) && is_string($r)));
+                $cleanReceipts = array_values(array_filter($request->input('receipts'), function ($r) {
+                    if (empty($r) || !is_string($r)) return false;
+                    if (str_starts_with($r, 'data:')) {
+                        return str_starts_with(strtolower($r), 'data:image/');
+                    }
+                    return !preg_match('/\.pdf(\?.*)?$/i', $r);
+                }));
                 if (count($cleanReceipts) === 1) {
                     $updateData['receipt'] = $cleanReceipts[0];
                 } elseif (count($cleanReceipts) > 1) {
@@ -425,7 +456,12 @@ class ReportController extends Controller
                     $updateData['receipt'] = null;
                 }
             } elseif ($request->has('receipt')) {
-                $updateData['receipt'] = $request->input('receipt');
+                $raw = $request->input('receipt');
+                if (is_string($raw) && (str_starts_with(strtolower($raw), 'data:image/') || (!str_starts_with($raw, 'data:') && !preg_match('/\.pdf(\?.*)?$/i', $raw)))) {
+                    $updateData['receipt'] = $raw;
+                } else {
+                    $updateData['receipt'] = null;
+                }
             }
 
             if ($report->payment_type === 'other' || $request->input('paymentType') === 'other') {

@@ -27,18 +27,33 @@ interface ReportsFeedViewProps {
 const findMatchingIntegration = (rep: Report, integrations: Integration[]): Integration | null => {
   if (rep.paymentType === 'other' || !rep.channelBlogger) return null;
   const cleanRepName = rep.channelBlogger.replace(/[@#]/g, '').trim().toLowerCase();
-  
+
   return (
-    integrations.find(i => 
+    integrations.find(i =>
       String(i.projectId) === String(rep.projectId) &&
       i.bloggerName.replace(/[@#]/g, '').trim().toLowerCase() === cleanRepName &&
       i.platform?.toLowerCase() === rep.platform?.toLowerCase()
     ) ||
-    integrations.find(i => 
+    integrations.find(i =>
       i.bloggerName.replace(/[@#]/g, '').trim().toLowerCase() === cleanRepName
     ) ||
     null
   );
+};
+
+const formatPrice = (val: number | ''): string => {
+  if (val === '' || val === undefined || val === null) return '';
+  return new Intl.NumberFormat('ru-RU').format(val);
+};
+
+const parsePrice = (str: string): number | '' => {
+  const clean = str.replace(/\s/g, '').replace(/ /g, ''); // strip regular spaces and non-breaking spaces
+  if (clean === '') return '';
+  const digitsOnly = clean.replace(/[^\d]/g, '');
+  if (digitsOnly === '') return '';
+  const sanitized = digitsOnly.replace(/^0+(?=\d)/, '');
+  const num = Number(sanitized);
+  return isNaN(num) ? '' : num;
 };
 
 const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok') => {
@@ -75,7 +90,7 @@ const getReportReceipts = (rep: Report | null | undefined): string[] => {
         if (Array.isArray(parsed)) {
           return parsed.filter(Boolean);
         }
-      } catch {}
+      } catch { }
     }
     return [rep.receipt];
   }
@@ -161,9 +176,9 @@ export default function ReportsFeedView({
   const [endDate, setEndDate] = useState('');
   const [platform, setPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Telegram');
   const [referralLink, setReferralLink] = useState('');
-  const [pricePerSlot, setPricePerSlot] = useState<number>(150);
+  const [pricePerSlot, setPricePerSlot] = useState<number | ''>(150);
   const [slotsCount, setSlotsCount] = useState<number>(1);
-  const [calculatedTotal, setCalculatedTotal] = useState<number>(150);
+  const [calculatedTotal, setCalculatedTotal] = useState<number | ''>(150);
   const [customizeSlots, setCustomizeSlots] = useState<boolean>(false);
   const [slotGroups, setSlotGroups] = useState<{ quantity: number; platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'; format: string }[]>([]);
 
@@ -176,9 +191,34 @@ export default function ReportsFeedView({
   const [editOtherComments, setEditOtherComments] = useState('');
   const [reportComments, setReportComments] = useState('');
 
-  useEffect(() => {
-    setCalculatedTotal(pricePerSlot * slotsCount);
-  }, [pricePerSlot, slotsCount]);
+  const handlePricePerSlotChange = (newPrice: number | '') => {
+    setPricePerSlot(newPrice);
+    if (newPrice === '') {
+      setCalculatedTotal('');
+      return;
+    }
+    const count = slotsCount > 0 ? slotsCount : 1;
+    setCalculatedTotal(Math.round(Number(newPrice) * count * 100) / 100);
+  };
+
+  const handleTotalAmountChange = (newTotal: number | '') => {
+    setCalculatedTotal(newTotal);
+    if (newTotal === '') {
+      setPricePerSlot('');
+      return;
+    }
+    const count = slotsCount > 0 ? slotsCount : 1;
+    const computedPrice = Math.round((Number(newTotal) / count) * 100) / 100;
+    setPricePerSlot(computedPrice);
+  };
+
+  const handleSlotsCountChange = (newSlots: number) => {
+    setSlotsCount(newSlots);
+    if (pricePerSlot !== '') {
+      const count = newSlots > 0 ? newSlots : 0;
+      setCalculatedTotal(Math.round(Number(pricePerSlot) * count * 100) / 100);
+    }
+  };
 
   const openEditForReport = (rep: Report) => {
     setSelectedReport(null);
@@ -204,6 +244,8 @@ export default function ReportsFeedView({
     const repSlotsCount = Number(rep.slotsCount) > 0 ? Number(rep.slotsCount) : 1;
     const repPricePerSlot = Number(rep.pricePerSlot) || (matching ? Number(matching.pricePerSlot) : 0);
 
+    const repTotalAmount = Number(rep.totalAmount) || (repPricePerSlot * repSlotsCount);
+
     setBloggerName(rep.channelBlogger || matching?.bloggerName || '');
     setBloggerPageLink(rep.bloggerPageLink || matching?.bloggerPageLink || '');
     setTelegramUsername(matching?.telegramUsername || '');
@@ -213,7 +255,7 @@ export default function ReportsFeedView({
     setReferralLink(rep.destination || matching?.referralLink || '');
     setPricePerSlot(repPricePerSlot);
     setSlotsCount(repSlotsCount);
-    setCalculatedTotal(repPricePerSlot * repSlotsCount);
+    setCalculatedTotal(repTotalAmount);
     setReportComments(rep.comments || '');
 
     // Configure slot groups strictly from the REPORT's slotsConfig
@@ -276,6 +318,10 @@ export default function ReportsFeedView({
       }
     }
 
+    const finalPrice = Number(pricePerSlot) || 0;
+    const finalSlots = Number(slotsCount) > 0 ? Number(slotsCount) : 1;
+    const finalTotal = calculatedTotal !== '' ? Number(calculatedTotal) : (finalPrice * finalSlots);
+
     // 1. Update the Report itself
     if (editingReport && onEditReport) {
       await onEditReport(editingReport.id, {
@@ -284,11 +330,11 @@ export default function ReportsFeedView({
         platform,
         destination: referralLink,
         date: startDate || editingReport.date,
-        pricePerSlot,
-        slotsCount,
-        paidSlotsCount: slotsCount,
-        totalAmount: pricePerSlot * slotsCount,
-        paidAmount: pricePerSlot * slotsCount,
+        pricePerSlot: finalPrice,
+        slotsCount: finalSlots,
+        paidSlotsCount: finalSlots,
+        totalAmount: finalTotal,
+        paidAmount: finalTotal,
         comments: reportComments,
         slotsConfig: finalSlotsConfig,
       });
@@ -303,7 +349,7 @@ export default function ReportsFeedView({
         telegramUsername: telegramUsername.trim() || undefined,
         platform,
         referralLink,
-        pricePerSlot,
+        pricePerSlot: finalPrice,
       };
       await onEditIntegration(editingIntegration.id, integrationUpdate);
     }
@@ -385,7 +431,7 @@ export default function ReportsFeedView({
       );
 
       const matchesDate = (!filterStartDate || rep.date >= filterStartDate) &&
-                          (!filterEndDate || rep.date <= filterEndDate);
+        (!filterEndDate || rep.date <= filterEndDate);
 
       const matchesProject = selectedProjectId === 'all' ||
         (rep.projectId && String(rep.projectId) === String(selectedProjectId)) ||
@@ -400,8 +446,8 @@ export default function ReportsFeedView({
     if (filteredReports.length === 0) {
       alert(
         lang === 'ru' ? 'Нет записей для экспорта по выбранным фильтрам.' :
-        lang === 'uz' ? 'Tanlangan filtrlar bo‘yicha eksport qilish uchun yozuvlar yo‘q.' :
-        'No records to export matching the selected filters.'
+          lang === 'uz' ? 'Tanlangan filtrlar bo‘yicha eksport qilish uchun yozuvlar yo‘q.' :
+            'No records to export matching the selected filters.'
       );
       return;
     }
@@ -484,15 +530,15 @@ export default function ReportsFeedView({
         const isOther = rep.paymentType === 'other';
         const paymentTypeText = rep.paymentType === 'prepaid' ? (lang === 'ru' ? 'Предоплата' : lang === 'uz' ? 'Bo\'nak' : 'Prepayment')
           : rep.paymentType === 'full' ? (lang === 'ru' ? 'Полная оплата' : lang === 'uz' ? 'To\'liq to\'lov' : 'Full Payment')
-          : rep.paymentType === 'remaining' ? (lang === 'ru' ? 'Доплата' : lang === 'uz' ? 'Qoldiq to\'lov' : 'Remaining Pay')
-          : (lang === 'ru' ? 'Прочее' : lang === 'uz' ? 'Boshqa' : 'Other');
+            : rep.paymentType === 'remaining' ? (lang === 'ru' ? 'Доплата' : lang === 'uz' ? 'Qoldiq to\'lov' : 'Remaining Pay')
+              : (lang === 'ru' ? 'Прочее' : lang === 'uz' ? 'Boshqa' : 'Other');
 
         const matchingInt = isOther ? null : (
-          integrations.find(i => 
+          integrations.find(i =>
             String(i.projectId) === String(rep.projectId) &&
             i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase() &&
             i.platform.toLowerCase() === rep.platform?.toLowerCase()
-          ) || integrations.find(i => 
+          ) || integrations.find(i =>
             i.bloggerName.toLowerCase() === rep.channelBlogger?.toLowerCase()
           )
         );
@@ -523,8 +569,8 @@ export default function ReportsFeedView({
     const dateStr = new Date().toISOString().split('T')[0];
     const projectSlug = selectedProject ? `_${selectedProject.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '_')}` : '';
     const fileTitle = hasOther ? `Other_Expenses_Report${projectSlug}_${dateStr}` : `Blogger_Integrations_Report${projectSlug}_${dateStr}`;
-    const reportHeading = hasOther 
-      ? (lang === 'ru' ? 'Отчет по прочим расходам' : lang === 'uz' ? 'Boshqa xarajatlar hisoboti' : 'Other Expenses Report') 
+    const reportHeading = hasOther
+      ? (lang === 'ru' ? 'Отчет по прочим расходам' : lang === 'uz' ? 'Boshqa xarajatlar hisoboti' : 'Other Expenses Report')
       : (lang === 'ru' ? 'Отчет по интеграциям с блогерами' : lang === 'uz' ? 'Blogger integratsiyalari hisoboti' : 'Blogger Integrations Report');
     const projectHeadingPart = selectedProject ? ` (${selectedProject.name})` : '';
 
@@ -681,19 +727,17 @@ export default function ReportsFeedView({
           <button
             type="button"
             onClick={() => setShowMobileFilters(!showMobileFilters)}
-            className={`md:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition shadow-3xs cursor-pointer shrink-0 ${
-              hasActiveFilters || showMobileFilters
+            className={`md:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition shadow-3xs cursor-pointer shrink-0 ${hasActiveFilters || showMobileFilters
                 ? 'bg-black text-white border-black'
                 : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50 active:bg-neutral-100'
-            }`}
+              }`}
             title={lang === 'ru' ? 'Фильтры' : lang === 'uz' ? 'Filtrlar' : 'Filters'}
           >
             <Filter className="w-3.5 h-3.5" />
             <span>{lang === 'ru' ? 'Фильтры' : lang === 'uz' ? 'Filtrlar' : 'Filters'}</span>
             {hasActiveFilters && (
-              <span className={`w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center ${
-                showMobileFilters ? 'bg-white text-black' : 'bg-black text-white'
-              }`}>
+              <span className={`w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center ${showMobileFilters ? 'bg-white text-black' : 'bg-black text-white'
+                }`}>
                 {activeFiltersCount}
               </span>
             )}
@@ -782,18 +826,16 @@ export default function ReportsFeedView({
             <button
               onClick={handleExportExcel}
               disabled={filteredReports.length === 0}
-              className={`flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-bold transition shadow-3xs hover:shadow-2xs shrink-0 ${
-                filteredReports.length === 0
+              className={`flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-bold transition shadow-3xs hover:shadow-2xs shrink-0 ${filteredReports.length === 0
                   ? 'bg-neutral-100 border-neutral-200 text-neutral-400 cursor-not-allowed opacity-60'
                   : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700 hover:text-emerald-800 cursor-pointer'
-              }`}
+                }`}
               title={`${t.exportExcel} (${filteredReports.length})`}
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
               <span>{t.exportExcel}</span>
-              <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${
-                filteredReports.length === 0 ? 'bg-neutral-200 text-neutral-500' : 'bg-emerald-100 text-emerald-800'
-              }`}>
+              <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${filteredReports.length === 0 ? 'bg-neutral-200 text-neutral-500' : 'bg-emerald-100 text-emerald-800'
+                }`}>
                 {filteredReports.length}
               </span>
             </button>
@@ -813,22 +855,20 @@ export default function ReportsFeedView({
           <div className="hidden md:flex bg-neutral-100 p-0.5 rounded-xl border border-neutral-200 shrink-0">
             <button
               onClick={() => toggleViewMode('table')}
-              className={`p-1.5 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer ${
-                viewMode === 'table'
+              className={`p-1.5 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer ${viewMode === 'table'
                   ? 'bg-white text-black shadow-3xs border border-neutral-200'
                   : 'text-neutral-500 hover:text-black'
-              }`}
+                }`}
               title={t.viewTable}
             >
               <Table className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => toggleViewMode('grid')}
-              className={`p-1.5 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer ${
-                viewMode === 'grid'
+              className={`p-1.5 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer ${viewMode === 'grid'
                   ? 'bg-white text-black shadow-3xs border border-neutral-200'
                   : 'text-neutral-500 hover:text-black'
-              }`}
+                }`}
               title={t.viewGrid}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
@@ -952,10 +992,10 @@ export default function ReportsFeedView({
                             >
                               <FileText className="w-3.5 h-3.5 text-neutral-500" />
                               <span>
-                                {lang === 'ru' 
-                                  ? (repReceipts.length > 1 ? `Чеки (${repReceipts.length})` : 'Чек') 
-                                  : lang === 'uz' 
-                                    ? (repReceipts.length > 1 ? `Cheklar (${repReceipts.length})` : 'Chek') 
+                                {lang === 'ru'
+                                  ? (repReceipts.length > 1 ? `Чеки (${repReceipts.length})` : 'Чек')
+                                  : lang === 'uz'
+                                    ? (repReceipts.length > 1 ? `Cheklar (${repReceipts.length})` : 'Chek')
                                     : (repReceipts.length > 1 ? `Receipts (${repReceipts.length})` : 'View')}
                               </span>
                             </button>
@@ -989,11 +1029,10 @@ export default function ReportsFeedView({
                                 setCopiedCabinetRepId(rep.id);
                                 setTimeout(() => setCopiedCabinetRepId(null), 2000);
                               }}
-                              className={`inline-flex items-center justify-center p-1.5 border rounded-lg transition shadow-2xs cursor-pointer ${
-                                copiedCabinetRepId === rep.id
+                              className={`inline-flex items-center justify-center p-1.5 border rounded-lg transition shadow-2xs cursor-pointer ${copiedCabinetRepId === rep.id
                                   ? 'bg-emerald-600 border-emerald-600 text-white'
                                   : 'text-black hover:bg-neutral-100 border-neutral-200'
-                              }`}
+                                }`}
                               title={copiedCabinetRepId === rep.id ? (lang === 'ru' ? 'Скопировано!' : 'Copied!') : (lang === 'ru' ? 'Копировать ссылку' : lang === 'uz' ? 'Havolani nusxalash' : 'Copy cabinet link')}
                             >
                               {copiedCabinetRepId === rep.id ? <Check className="w-3.5 h-3.5 text-white" /> : <Link className="w-3.5 h-3.5" />}
@@ -1168,11 +1207,10 @@ export default function ReportsFeedView({
                         setCopiedCabinetRepId(rep.id);
                         setTimeout(() => setCopiedCabinetRepId(null), 2000);
                       }}
-                      className={`text-[10px] font-bold rounded-lg px-2 py-1 transition shrink-0 flex items-center gap-1 cursor-pointer ${
-                        copiedCabinetRepId === rep.id
+                      className={`text-[10px] font-bold rounded-lg px-2 py-1 transition shrink-0 flex items-center gap-1 cursor-pointer ${copiedCabinetRepId === rep.id
                           ? 'bg-emerald-600 text-white shadow-xs'
                           : 'text-neutral-600 hover:text-black bg-neutral-100 hover:bg-neutral-200'
-                      }`}
+                        }`}
                       title={copiedCabinetRepId === rep.id ? (lang === 'ru' ? 'Скопировано!' : 'Copied!') : (lang === 'ru' ? 'Копировать кабинет' : 'Copy cabinet')}
                     >
                       {copiedCabinetRepId === rep.id ? <Check className="w-2.5 h-2.5 text-white" /> : <Link className="w-2.5 h-2.5" />}
@@ -1204,9 +1242,9 @@ export default function ReportsFeedView({
           <Clock className="w-8 h-8 text-neutral-300 mx-auto mb-3" />
           <p className="text-sm font-extrabold text-neutral-600">{t.noReportsTitle}</p>
           <p className="text-xs text-neutral-400 mt-1">
-            {lang === 'ru' ? 'Отчеты не найдены. Попробуйте изменить параметры поиска.' : 
-             lang === 'uz' ? 'Hisobotlar topilmadi. Qidiruv parametrlarini o‘zgartirib ko‘ring.' : 
-             'No reports matching search query were found.'}
+            {lang === 'ru' ? 'Отчеты не найдены. Попробуйте изменить параметры поиска.' :
+              lang === 'uz' ? 'Hisobotlar topilmadi. Qidiruv parametrlarini o‘zgartirib ko‘ring.' :
+                'No reports matching search query were found.'}
           </p>
           {(searchQuery || selectedProjectId !== 'all' || filterStartDate || filterEndDate) && (
             <button
@@ -1226,11 +1264,11 @@ export default function ReportsFeedView({
 
       {/* Detailed Report Modal */}
       {selectedReport && (
-        <div 
+        <div
           onClick={() => setSelectedReport(null)}
           className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 transition-all duration-200 animate-in fade-in"
         >
-          <div 
+          <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-lg bg-white rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-left border border-neutral-200 animate-in zoom-in-95 duration-150"
           >
@@ -1257,9 +1295,9 @@ export default function ReportsFeedView({
                     {renderProjectCell(selectedReport)}
                   </span>
                   <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-500">
-                    {selectedReport.paymentType === 'prepaid' ? t.paymentPrepaid : 
-                     selectedReport.paymentType === 'full' ? t.paymentFull : 
-                     t.paymentOther}
+                    {selectedReport.paymentType === 'prepaid' ? t.paymentPrepaid :
+                      selectedReport.paymentType === 'full' ? t.paymentFull :
+                        t.paymentOther}
                   </span>
                 </div>
                 <h3 className="font-black text-base sm:text-lg text-black tracking-tight truncate">
@@ -1343,8 +1381,8 @@ export default function ReportsFeedView({
                 <div className="flex items-center justify-between gap-2 py-0.5 border-t border-neutral-200/50 pt-2">
                   <span className="text-neutral-500 font-medium">{t.purposeField}:</span>
                   <span className="font-bold text-neutral-900 text-right truncate max-w-[220px]">
-                    {selectedReport.paymentType === 'other' 
-                      ? selectedReport.destination 
+                    {selectedReport.paymentType === 'other'
+                      ? selectedReport.destination
                       : `${selectedReport.platform} блогер интеграция`}
                   </span>
                 </div>
@@ -1406,9 +1444,9 @@ export default function ReportsFeedView({
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
                         <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                          {lang === 'ru' 
+                          {lang === 'ru'
                             ? (modalReceipts.length > 1 ? `Чеки / Скриншоты (${modalReceipts.length})` : 'Чек / Скриншот')
-                            : lang === 'uz' 
+                            : lang === 'uz'
                               ? (modalReceipts.length > 1 ? `Cheklar / Skrinshotlar (${modalReceipts.length})` : 'Chek / Skrinshot')
                               : (modalReceipts.length > 1 ? `Receipts / Screenshots (${modalReceipts.length})` : 'Receipt / Screenshot')}
                         </p>
@@ -1440,10 +1478,10 @@ export default function ReportsFeedView({
                     {/* Main Receipt Viewer with Navigation */}
                     <div className="relative border border-neutral-200 rounded-xl overflow-hidden bg-neutral-900/5 flex items-center justify-center p-2 min-h-[160px] max-h-72">
                       {isImage ? (
-                        <img 
-                          src={currentReceipt} 
-                          alt={`Receipt proof ${activeIndex + 1}`} 
-                          className="max-w-full max-h-68 object-contain rounded cursor-pointer hover:opacity-95 transition" 
+                        <img
+                          src={currentReceipt}
+                          alt={`Receipt proof ${activeIndex + 1}`}
+                          className="max-w-full max-h-68 object-contain rounded cursor-pointer hover:opacity-95 transition"
                           onClick={() => {
                             const w = window.open();
                             if (w) w.document.write(`<img src="${currentReceipt}" style="max-width:100%; height:auto;" />`);
@@ -1456,10 +1494,10 @@ export default function ReportsFeedView({
                           <p className="text-xs font-bold text-neutral-700">
                             {lang === 'ru' ? 'Прикрепленный документ (PDF/Файл)' : lang === 'uz' ? 'Biriktirilgan hujjat (PDF/Fayl)' : 'Attached Document (PDF/File)'}
                           </p>
-                          <a 
-                            href={currentReceipt} 
-                            target="_blank" 
-                            rel="noreferrer" 
+                          <a
+                            href={currentReceipt}
+                            target="_blank"
+                            rel="noreferrer"
                             className="text-blue-600 font-bold hover:underline mt-1.5 text-xs inline-block"
                           >
                             Download / View File
@@ -1504,9 +1542,8 @@ export default function ReportsFeedView({
                             key={tIdx}
                             type="button"
                             onClick={() => setActiveReceiptIndex(tIdx)}
-                            className={`relative flex-shrink-0 w-12 h-12 rounded-lg border-2 overflow-hidden transition cursor-pointer ${
-                              tIdx === activeIndex ? 'border-black ring-2 ring-black/20' : 'border-neutral-200 opacity-60 hover:opacity-100'
-                            }`}
+                            className={`relative flex-shrink-0 w-12 h-12 rounded-lg border-2 overflow-hidden transition cursor-pointer ${tIdx === activeIndex ? 'border-black ring-2 ring-black/20' : 'border-neutral-200 opacity-60 hover:opacity-100'
+                              }`}
                           >
                             {thumb.startsWith('data:image/') || thumb.startsWith('http') ? (
                               <img src={thumb} alt={`Thumb ${tIdx + 1}`} className="w-full h-full object-cover" />
@@ -1589,7 +1626,7 @@ export default function ReportsFeedView({
                   </span>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   setEditingIntegration(null);
                   setEditingReport(null);
@@ -1710,11 +1747,18 @@ export default function ReportsFeedView({
                     {t.pricePerSlotField} *
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     required
-                    min={0}
-                    value={pricePerSlot}
-                    onChange={(e) => setPricePerSlot(Number(e.target.value))}
+                    value={formatPrice(pricePerSlot)}
+                    placeholder="0"
+                    onFocus={(e) => {
+                      if (e.target.value === '0') e.target.select();
+                    }}
+                    onChange={(e) => {
+                      const val = parsePrice(e.target.value);
+                      handlePricePerSlotChange(val);
+                    }}
                     className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150 font-bold text-black"
                   />
                 </div>
@@ -1728,20 +1772,29 @@ export default function ReportsFeedView({
                     required
                     min={1}
                     value={slotsCount}
-                    onChange={(e) => setSlotsCount(Number(e.target.value))}
+                    onChange={(e) => handleSlotsCountChange(Number(e.target.value))}
                     className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150 font-bold text-black"
                   />
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-bold text-black uppercase tracking-wider mb-1.5">
-                    {t.totalSumField}
+                    {t.totalSumField} *
                   </label>
                   <input
                     type="text"
-                    disabled
-                    value={calculatedTotal.toLocaleString('ru-RU')}
-                    className="w-full px-4 py-2 bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-black select-none"
+                    inputMode="numeric"
+                    required
+                    value={formatPrice(calculatedTotal)}
+                    placeholder="0"
+                    onFocus={(e) => {
+                      if (e.target.value === '0') e.target.select();
+                    }}
+                    onChange={(e) => {
+                      const val = parsePrice(e.target.value);
+                      handleTotalAmountChange(val);
+                    }}
+                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-bold text-black focus:outline-none transition duration-150"
                   />
                 </div>
               </div>
@@ -1777,7 +1830,7 @@ export default function ReportsFeedView({
                       {slotGroups.reduce((acc, g) => acc + g.quantity, 0)} / {slotsCount}
                     </span>
                   </div>
-                  
+
                   <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                     {slotGroups.map((group, index) => (
                       <div key={index} className="flex items-center gap-1.5 p-1.5 bg-white border border-neutral-150 rounded-lg text-xs">
@@ -1791,11 +1844,11 @@ export default function ReportsFeedView({
                             const val = Math.max(1, Number(e.target.value));
                             const otherSum = slotGroups.reduce((acc, g, idx) => idx === index ? acc : acc + g.quantity, 0);
                             if (otherSum + val > slotsCount) {
-                              alert(lang === 'ru' 
-                                ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!` 
-                                : lang === 'uz' 
-                                ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!` 
-                                : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                              alert(lang === 'ru'
+                                ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!`
+                                : lang === 'uz'
+                                  ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!`
+                                  : `Configured slots count cannot exceed total slots count (${slotsCount})!`
                               );
                               return;
                             }
@@ -1882,11 +1935,11 @@ export default function ReportsFeedView({
                     onClick={() => {
                       const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
                       if (currentSum + 1 > slotsCount) {
-                        alert(lang === 'ru' 
-                          ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!` 
-                          : lang === 'uz' 
-                          ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!` 
-                          : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                        alert(lang === 'ru'
+                          ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!`
+                          : lang === 'uz'
+                            ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!`
+                            : `Configured slots count cannot exceed total slots count (${slotsCount})!`
                         );
                         return;
                       }
@@ -1930,7 +1983,7 @@ export default function ReportsFeedView({
               <h3 className="font-bold text-sm uppercase tracking-wider">
                 {lang === 'ru' ? 'Редактировать расход' : lang === 'uz' ? 'Xarajatni tahrirlash' : 'Edit Expense'}
               </h3>
-              <button 
+              <button
                 onClick={() => setEditingOtherReport(null)}
                 className="text-neutral-400 hover:text-black font-bold text-sm cursor-pointer"
               >

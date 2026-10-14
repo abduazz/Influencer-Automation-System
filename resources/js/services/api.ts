@@ -1,4 +1,4 @@
-import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase, KanbanColumn, BloggerRequisites, ChatMessage, ChatResponse } from '../data/mockData';
+import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase, KanbanColumn, BloggerRequisites, ChatMessage, ChatResponse, SubdomainItem } from '../data/mockData';
 
 // Fetch helper that handles errors
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -43,6 +43,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export interface BootstrapData {
   users: AllowedUser[];
   projects: Project[];
+  allProjects?: Project[];
+  subdomains?: SubdomainItem[];
+  activeSubdomain?: string | null;
   integrations: Integration[];
   reports: Report[];
   submissions: BloggerSubmission[];
@@ -112,18 +115,18 @@ export function fetchBootstrapData(): Promise<BootstrapData> {
 export function fetchProjects(): Promise<Project[]> {
   return request<Project[]>('/api/projects');
 }
-export function createProject(name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null): Promise<Project> {
+export function createProject(name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, subdomain?: string): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit }),
+    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit, subdomain }),
   });
 }
-export function updateProject(id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, userEmail?: string): Promise<Project> {
+export function updateProject(id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, userEmail?: string, subdomain?: string): Promise<Project> {
   const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
   return request<Project>(`/api/projects/${id}`, {
     method: 'PUT',
     headers,
-    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit }),
+    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit, subdomain }),
   });
 }
 export function deleteProject(id: string, userEmail?: string): Promise<void> {
@@ -261,25 +264,90 @@ export function loginApi(login: string, password: string): Promise<AllowedUser> 
 export function fetchAllowedUsers(): Promise<AllowedUser[]> {
   return request<AllowedUser[]>('/api/allowed-users');
 }
-export function createAllowedUser(name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[], password?: string): Promise<AllowedUser> {
+export function createAllowedUser(
+  name: string,
+  email: string,
+  role: AllowedUser['role'],
+  allowedMetrics?: string[],
+  allowedPages?: string[],
+  allowedProjects?: string[],
+  password?: string,
+  allowedSubdomains?: string[]
+): Promise<AllowedUser> {
   return request<AllowedUser>('/api/allowed-users', {
     method: 'POST',
-    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages, allowedProjects, password }),
+    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains }),
   });
 }
 export function deleteAllowedUser(id: string): Promise<void> {
   return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
 }
-export function updateAllowedUser(id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]): Promise<AllowedUser> {
+export function updateAllowedUser(
+  id: string,
+  name: string,
+  role: AllowedUser['role'],
+  allowedMetrics?: string[],
+  allowedPages?: string[],
+  allowedProjects?: string[],
+  allowedSubdomains?: string[]
+): Promise<AllowedUser> {
   return request<AllowedUser>(`/api/allowed-users/${id}`, {
     method: 'PUT',
-    body: JSON.stringify({ name, role, allowedMetrics, allowedPages, allowedProjects }),
+    body: JSON.stringify({ name, role, allowedMetrics, allowedPages, allowedProjects, allowedSubdomains }),
   });
 }
 export function updateUserPassword(id: string, password: string): Promise<{ success: boolean; message: string }> {
   return request<{ success: boolean; message: string }>(`/api/allowed-users/${id}/password`, {
     method: 'PUT',
     body: JSON.stringify({ password }),
+  });
+}
+
+// Subdomains API
+export function fetchSubdomains(): Promise<SubdomainItem[]> {
+  return request<SubdomainItem[]>('/api/subdomains');
+}
+
+export function createSubdomain(data: {
+  slug: string;
+  name: string;
+  description?: string;
+  projectIds?: (number | string)[];
+}): Promise<SubdomainItem> {
+  return request<SubdomainItem>('/api/subdomains', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateSubdomain(
+  id: string,
+  data: {
+    slug?: string;
+    name: string;
+    description?: string;
+    projectIds?: (number | string)[];
+  }
+): Promise<SubdomainItem> {
+  return request<SubdomainItem>(`/api/subdomains/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteSubdomain(id: string): Promise<{ success: boolean; message: string }> {
+  return request<{ success: boolean; message: string }>(`/api/subdomains/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function moveProjectSubdomain(
+  projectId: number | string,
+  targetSubdomain: string
+): Promise<{ success: boolean; message: string; project: any }> {
+  return request<{ success: boolean; message: string; project: any }>('/api/subdomains/move-project', {
+    method: 'POST',
+    body: JSON.stringify({ projectId, targetSubdomain }),
   });
 }
 
@@ -493,6 +561,22 @@ export function startTelegramGatewayQr(): Promise<{
 
 export function logoutTelegramGateway(): Promise<{ success: boolean }> {
   return request<{ success: boolean }>('/api/telegram-gateway/logout', { method: 'POST' });
+}
+
+export function downloadDatabaseBackupUrl(): string {
+  return '/api/database/backup/download';
+}
+
+export function sendDatabaseBackupToTelegram(): Promise<{
+  success: boolean;
+  message: string;
+  data?: any;
+}> {
+  return request<{
+    success: boolean;
+    message: string;
+    data?: any;
+  }>('/api/database/backup/telegram', { method: 'POST' });
 }
 
 

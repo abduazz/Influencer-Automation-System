@@ -57,6 +57,7 @@ class UserController extends Controller
             'allowedMetrics' => $user->allowed_metrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
             'allowedPages' => $user->allowed_pages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
             'allowedProjects' => $user->allowed_projects ?? [],
+            'allowedSubdomains' => $user->allowed_subdomains ?? [],
             'createdAt' => $user->created_at->format('Y-m-d'),
         ]);
     }
@@ -72,6 +73,7 @@ class UserController extends Controller
                 'allowedMetrics' => $user->allowed_metrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
                 'allowedPages' => $user->allowed_pages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
                 'allowedProjects' => $user->allowed_projects ?? [],
+                'allowedSubdomains' => $user->allowed_subdomains ?? [],
                 'createdAt' => $user->created_at->format('Y-m-d'),
             ];
         }));
@@ -87,6 +89,7 @@ class UserController extends Controller
             'allowedMetrics' => 'nullable|array',
             'allowedPages' => 'nullable|array',
             'allowedProjects' => 'nullable|array',
+            'allowedSubdomains' => 'nullable|array',
         ]);
 
         $plainPassword = $request->input('password') ?: 'password';
@@ -99,6 +102,7 @@ class UserController extends Controller
             'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
             'allowed_pages' => $request->allowedPages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
             'allowed_projects' => $request->allowedProjects ?? [],
+            'allowed_subdomains' => $request->allowedSubdomains ?? [],
         ]);
 
         return response()->json([
@@ -109,6 +113,7 @@ class UserController extends Controller
             'allowedMetrics' => $user->allowed_metrics,
             'allowedPages' => $user->allowed_pages,
             'allowedProjects' => $user->allowed_projects,
+            'allowedSubdomains' => $user->allowed_subdomains,
             'createdAt' => $user->created_at->format('Y-m-d'),
         ], 201);
     }
@@ -121,6 +126,7 @@ class UserController extends Controller
             'allowedMetrics' => 'nullable|array',
             'allowedPages' => 'nullable|array',
             'allowedProjects' => 'nullable|array',
+            'allowedSubdomains' => 'nullable|array',
         ]);
 
         $user->update([
@@ -129,6 +135,7 @@ class UserController extends Controller
             'allowed_metrics' => $request->has('allowedMetrics') ? $request->allowedMetrics : $user->allowed_metrics,
             'allowed_pages' => $request->has('allowedPages') ? $request->allowedPages : $user->allowed_pages,
             'allowed_projects' => $request->has('allowedProjects') ? $request->allowedProjects : $user->allowed_projects,
+            'allowed_subdomains' => $request->has('allowedSubdomains') ? $request->allowedSubdomains : $user->allowed_subdomains,
         ]);
 
         return response()->json([
@@ -139,6 +146,7 @@ class UserController extends Controller
             'allowedMetrics' => $user->allowed_metrics,
             'allowedPages' => $user->allowed_pages,
             'allowedProjects' => $user->allowed_projects,
+            'allowedSubdomains' => $user->allowed_subdomains,
             'createdAt' => $user->created_at->format('Y-m-d'),
         ]);
     }

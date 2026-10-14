@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\KanbanColumnController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\SubdomainController;
 use App\Http\Controllers\Api\TelegramChatController;
 use App\Http\Controllers\Api\TelegramGatewayController;
 use App\Http\Controllers\Api\UserController;
@@ -19,6 +20,12 @@ Route::post('/allowed-users', [UserController::class, 'store']);
 Route::put('/allowed-users/{user}', [UserController::class, 'update']);
 Route::put('/allowed-users/{user}/password', [UserController::class, 'updatePassword']);
 Route::delete('/allowed-users/{user}', [UserController::class, 'destroy']);
+
+Route::get('/subdomains', [SubdomainController::class, 'index']);
+Route::post('/subdomains', [SubdomainController::class, 'store']);
+Route::put('/subdomains/{subdomain}', [SubdomainController::class, 'update']);
+Route::delete('/subdomains/{subdomain}', [SubdomainController::class, 'destroy']);
+Route::post('/subdomains/move-project', [SubdomainController::class, 'moveProject']);
 
 Route::get('/projects', [ProjectController::class, 'index']);
 Route::post('/projects', [ProjectController::class, 'store']);
@@ -72,6 +79,9 @@ Route::post('/bulk-purchases/{bulkPurchase}/allocate', [\App\Http\Controllers\Ap
 Route::delete('/bulk-purchases/{bulkPurchase}', [\App\Http\Controllers\Api\BulkPurchaseController::class, 'destroy']);
 
 
+
+Route::get('/database/backup/download', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'download']);
+Route::post('/database/backup/telegram', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'sendToTelegram']);
 
 Route::get('/shorten-url', function (\Illuminate\Http\Request $request) {
     $url = $request->query('url');

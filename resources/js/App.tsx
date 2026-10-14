@@ -59,6 +59,11 @@ import {
   saveBootstrapCache,
   clearBootstrapCache,
   BootstrapData,
+  fetchSubdomains,
+  createSubdomain,
+  updateSubdomain,
+  deleteSubdomain,
+  moveProjectSubdomain,
 } from './services/api';
 
 import {
@@ -68,6 +73,7 @@ import {
   BloggerSubmission,
   AllowedUser,
   BulkPurchase,
+  SubdomainItem,
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
@@ -200,13 +206,30 @@ export default function App() {
   const requisitesToken = new URLSearchParams(window.location.search).get('token') || undefined;
 
 
-  const handleAddUser = async (name: string, email: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[], password?: string) => {
-    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects, password);
+  const handleAddUser = async (
+    name: string,
+    email: string,
+    role: AllowedUser['role'],
+    allowedMetrics?: string[],
+    allowedPages?: string[],
+    allowedProjects?: string[],
+    password?: string,
+    allowedSubdomains?: string[]
+  ) => {
+    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains);
     setAllowedUsers((prev) => [...prev, newUser]);
   };
 
-  const handleEditUser = async (id: string, name: string, role: AllowedUser['role'], allowedMetrics?: string[], allowedPages?: string[], allowedProjects?: string[]) => {
-    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics, allowedPages, allowedProjects);
+  const handleEditUser = async (
+    id: string,
+    name: string,
+    role: AllowedUser['role'],
+    allowedMetrics?: string[],
+    allowedPages?: string[],
+    allowedProjects?: string[],
+    allowedSubdomains?: string[]
+  ) => {
+    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics, allowedPages, allowedProjects, allowedSubdomains);
     setAllowedUsers((prev) => prev.map((u) => u.id === id ? updatedUser : u));
   };
 
@@ -259,6 +282,8 @@ export default function App() {
 
   // Core Persistent State Hook (Hydrated synchronously from instant cache / preload)
   const [projects, setProjects] = useState<Project[]>(() => initialBootstrap?.projects || []);
+  const [allProjects, setAllProjects] = useState<Project[]>(() => initialBootstrap?.allProjects || initialBootstrap?.projects || []);
+  const [subdomains, setSubdomains] = useState<SubdomainItem[]>(() => initialBootstrap?.subdomains || []);
   const [integrations, setIntegrations] = useState<Integration[]>(() => initialBootstrap?.integrations || []);
   const [reports, setReports] = useState<Report[]>(() => initialBootstrap?.reports || []);
   const [submissions, setSubmissions] = useState<BloggerSubmission[]>(() => initialBootstrap?.submissions || []);
@@ -269,10 +294,53 @@ export default function App() {
       : INITIAL_KANBAN_COLUMNS
   );
 
+  // Subdomain manipulation handlers
+  const handleAddSubdomain = async (data: { slug: string; name: string; description?: string; projectIds?: (number | string)[] }) => {
+    const created = await createSubdomain(data);
+    setSubdomains((prev) => [...prev, created]);
+    const pRes = await fetchProjects();
+    setProjects(pRes);
+    setAllProjects(pRes);
+  };
+
+  const handleUpdateSubdomain = async (id: string, data: { slug?: string; name: string; description?: string; projectIds?: (number | string)[] }) => {
+    const updated = await updateSubdomain(id, data);
+    setSubdomains((prev) => prev.map((s) => s.id === id ? updated : s));
+    const pRes = await fetchProjects();
+    setProjects(pRes);
+    setAllProjects(pRes);
+  };
+
+  const handleDeleteSubdomain = async (id: string) => {
+    await deleteSubdomain(id);
+    setSubdomains((prev) => prev.filter((s) => s.id !== id));
+    const pRes = await fetchProjects();
+    setProjects(pRes);
+    setAllProjects(pRes);
+  };
+
+  const handleMoveProjectSubdomain = async (projectId: number | string, targetSubdomain: string) => {
+    await moveProjectSubdomain(projectId, targetSubdomain);
+    setProjects((prev) => prev.map((p) => p.id === String(projectId) ? { ...p, subdomain: targetSubdomain } : p));
+    setAllProjects((prev) => prev.map((p) => p.id === String(projectId) ? { ...p, subdomain: targetSubdomain } : p));
+    const subs = await fetchSubdomains();
+    setSubdomains(subs);
+  };
+
+  const handleCreateProjectInSubdomain = async (name: string, description: string, subdomain: string, monthlyLimit?: number | null) => {
+    const project = await createProject(name, description, undefined, monthlyLimit, subdomain);
+    setProjects((prev) => [...prev, project]);
+    setAllProjects((prev) => [...prev, project]);
+    const subs = await fetchSubdomains();
+    setSubdomains(subs);
+  };
+
   const handleRefreshAllData = async () => {
     try {
       const data = await fetchBootstrapData();
       if (data.projects) setProjects(data.projects);
+      if (data.allProjects) setAllProjects(data.allProjects);
+      if (data.subdomains) setSubdomains(data.subdomains);
       if (data.integrations) setIntegrations(data.integrations);
       if (data.reports) setReports(data.reports);
       if (data.bulkPurchases) setBulkPurchases(data.bulkPurchases);
@@ -314,6 +382,8 @@ export default function App() {
         if (!cancelled) {
           if (data.users) setAllowedUsers(data.users);
           if (data.projects) setProjects(data.projects);
+          if (data.allProjects) setAllProjects(data.allProjects);
+          if (data.subdomains) setSubdomains(data.subdomains);
           if (data.integrations) setIntegrations(data.integrations);
           if (data.reports) setReports(data.reports);
           if (data.submissions) setSubmissions(data.submissions);
@@ -325,7 +395,7 @@ export default function App() {
       } catch (bootstrapErr) {
         console.warn("Bootstrap endpoint failed, falling back to parallel fetch:", bootstrapErr);
         try {
-          const [users, projs, ints, reps, subs, bulks, cols, reqs] = await Promise.all([
+          const [users, projs, ints, reps, subs, bulks, cols, reqs, sdomains] = await Promise.all([
             fetchAllowedUsers(),
             fetchProjects(),
             fetchIntegrations(),
@@ -334,11 +404,14 @@ export default function App() {
             fetchBulkPurchases(),
             fetchKanbanColumns(),
             fetchBloggerRequisites(),
+            fetchSubdomains(),
           ]);
 
           if (!cancelled) {
             setAllowedUsers(users);
             setProjects(projs);
+            setAllProjects(projs);
+            if (sdomains) setSubdomains(sdomains);
             setIntegrations(ints);
             setReports(reps);
             setSubmissions(subs);
@@ -401,12 +474,12 @@ export default function App() {
 
   // State manipulation handlers
   const handleAddProject = async (newProj: Omit<Project, 'id' | 'createdAt'>) => {
-    const project = await createProject(newProj.name, newProj.description, newProj.telegramThreadId, newProj.monthlyLimit);
+    const project = await createProject(newProj.name, newProj.description, newProj.telegramThreadId, newProj.monthlyLimit, newProj.subdomain);
     setProjects((prev) => [...prev, project]);
   };
 
-  const handleEditProject = async (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null) => {
-    const updated = await updateProject(id, name, description, telegramThreadId, monthlyLimit, currentUserEmail || undefined);
+  const handleEditProject = async (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, subdomain?: string) => {
+    const updated = await updateProject(id, name, description, telegramThreadId, monthlyLimit, currentUserEmail || undefined, subdomain);
     setProjects((prev) => prev.map(p => p.id === id ? updated : p));
   };
 
@@ -1201,9 +1274,16 @@ export default function App() {
               <AccessManagementView
                 allowedUsers={allowedUsers}
                 projects={projects}
+                allProjects={allProjects}
+                subdomains={subdomains}
                 onAddUser={handleAddUser}
                 onEditUser={handleEditUser}
                 onRemoveUser={handleRemoveUser}
+                onAddSubdomain={handleAddSubdomain}
+                onUpdateSubdomain={handleUpdateSubdomain}
+                onDeleteSubdomain={handleDeleteSubdomain}
+                onMoveProjectSubdomain={handleMoveProjectSubdomain}
+                onCreateProjectInSubdomain={handleCreateProjectInSubdomain}
                 currentUserEmail={currentUserEmail}
                 lang={lang}
               />

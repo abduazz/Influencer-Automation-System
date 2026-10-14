@@ -46,7 +46,7 @@ import {
 import BloggerAudienceCard from './BloggerAudienceCard';
 import BloggerTelegramChat from './BloggerTelegramChat';
 import TelegramGatewayModal from './TelegramGatewayModal';
-import { fetchTelegramGatewayStatus, TelegramGatewayStatus } from '../services/api';
+import { fetchTelegramGatewayStatus, TelegramGatewayStatus, updateIntegrationChatSettings } from '../services/api';
 
 interface KanbanViewProps {
   projects: Project[];
@@ -280,6 +280,7 @@ export default function KanbanView({
   const [editTelegramUsername, setEditTelegramUsername] = useState('');
   const [telegramContacts, setTelegramContacts] = useState<string[]>(['']);
   const [isTgFocused, setIsTgFocused] = useState(false);
+  const [isOpeningChat, setIsOpeningChat] = useState(false);
   const tgBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isPhoneLike = (val: string | null | undefined): boolean => {
@@ -335,6 +336,58 @@ export default function KanbanView({
       setEditTelegramUsername(combined);
       return finalList;
     });
+  };
+
+  const handleOpenChatTab = async () => {
+    if (isCreateMode || !selectedDeal) return;
+
+    const currentTg = editTelegramUsername.trim();
+    const oldTg = (selectedDeal.telegramUsername || '').trim();
+    const isTgChanged = currentTg !== oldTg;
+    const currentName = editBloggerName.trim() || selectedDeal.bloggerName;
+
+    if (isTgChanged || currentName !== selectedDeal.bloggerName) {
+      setIsOpeningChat(true);
+      const isUnlinking = !currentTg;
+      const newTelegramUsername = isUnlinking ? undefined : currentTg;
+      // If contact was unlinked or changed to another person, reset chat ID
+      const newTelegramChatId = isTgChanged ? undefined : selectedDeal.telegramChatId;
+
+      const updatedDeal: Integration = {
+        ...selectedDeal,
+        bloggerName: currentName,
+        telegramUsername: newTelegramUsername,
+        telegramChatId: newTelegramChatId,
+      };
+      setSelectedDeal(updatedDeal);
+
+      try {
+        if (isUnlinking) {
+          await updateIntegrationChatSettings(selectedDeal.id, null, null);
+        } else {
+          const res = await updateIntegrationChatSettings(selectedDeal.id, null, currentTg);
+          if (res && res.telegramUsername !== undefined) {
+            const resolvedUser = res.telegramUsername || currentTg;
+            updatedDeal.telegramUsername = resolvedUser;
+            setEditTelegramUsername(resolvedUser);
+            setTelegramContacts(parseTelegramContacts(resolvedUser));
+          }
+        }
+        if (onEditIntegration) {
+          onEditIntegration(selectedDeal.id, {
+            bloggerName: currentName,
+            telegramUsername: newTelegramUsername,
+            telegramChatId: newTelegramChatId,
+          });
+        }
+      } catch (err: any) {
+        console.error('Failed to sync telegram contact before opening chat:', err);
+      } finally {
+        setIsOpeningChat(false);
+      }
+    }
+
+    setModalActiveTab('chat');
   };
   const [editPlatform, setEditPlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Instagram');
   const [editProjectId, setEditProjectId] = useState('');
@@ -704,6 +757,7 @@ export default function KanbanView({
     setIsQuickMoving(false);
     setSaveSuccess(false);
     setModalActiveTab('details');
+    setIsOpeningChat(false);
   };
 
   // Quick Move & Save directly to payment column ("Готов к оплате")
@@ -911,10 +965,14 @@ export default function KanbanView({
           requisites: requisitesPayload,
         });
       } else if (selectedDeal) {
+        const currentTg = editTelegramUsername.trim();
+        const oldTg = (selectedDeal.telegramUsername || '').trim();
+        const isTgChanged = currentTg !== oldTg;
+
         const updatedFields: Partial<Integration> = {
           bloggerName: editBloggerName.trim(),
           bloggerPageLink: editBloggerLink.trim(),
-          telegramUsername: editTelegramUsername.trim(),
+          telegramUsername: currentTg ? currentTg : (null as any),
           platform: editPlatform,
           projectId: targetProjectId,
           pricePerSlot: Number(editPricePerSlot) || 0,
@@ -931,6 +989,10 @@ export default function KanbanView({
           subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
           requisites: requisitesPayload,
         };
+
+        if (isTgChanged) {
+          updatedFields.telegramChatId = null as any;
+        }
 
         if (isChannelChangedInModal) {
           updatedFields.subscribersHistory = [];
@@ -2044,7 +2106,14 @@ export default function KanbanView({
 
                 <button
                   type="button"
-                  onClick={() => setModalActiveTab(modalActiveTab === 'chat' ? 'details' : 'chat')}
+                  onClick={() => {
+                    if (modalActiveTab === 'chat') {
+                      setModalActiveTab('details');
+                    } else {
+                      handleOpenChatTab();
+                    }
+                  }}
+                  disabled={isOpeningChat}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition cursor-pointer ${
                     modalActiveTab === 'chat'
                       ? 'bg-[#229ED9] text-white border-[#229ED9] shadow-xs'
@@ -2052,9 +2121,13 @@ export default function KanbanView({
                   }`}
                   title="Открыть онлайн Telegram-чат прямо в карточке"
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
+                  {isOpeningChat ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  )}
                   <span>{lang === 'uz' ? 'Telegram Chat' : lang === 'en' ? 'Telegram Chat' : 'Telegram Чат'}</span>
-                  {(selectedDeal.telegramChatId || selectedDeal.telegramUsername) && (
+                  {Boolean(editTelegramUsername.trim() || selectedDeal.telegramChatId || selectedDeal.telegramUsername) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                   )}
                 </button>
@@ -2073,6 +2146,8 @@ export default function KanbanView({
                   isInline={true}
                   onIntegrationUpdated={(updated) => {
                     setSelectedDeal(updated);
+                    setEditTelegramUsername(updated.telegramUsername || '');
+                    setTelegramContacts(parseTelegramContacts(updated.telegramUsername));
                     if (onEditIntegration) onEditIntegration(updated.id, updated);
                   }}
                 />
@@ -2199,12 +2274,8 @@ export default function KanbanView({
                             <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (!isCreateMode && selectedDeal) {
-                                    setModalActiveTab('chat');
-                                  }
-                                }}
-                                disabled={isCreateMode || !selectedDeal}
+                                onClick={handleOpenChatTab}
+                                disabled={isCreateMode || !selectedDeal || isOpeningChat}
                                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition shadow-xs cursor-pointer ${
                                   isCreateMode || !selectedDeal
                                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
@@ -2216,9 +2287,13 @@ export default function KanbanView({
                                     : (lang === 'uz' ? 'Platformada Telegram chatni ochish' : lang === 'en' ? 'Open Telegram chat in platform' : 'Открыть онлайн Telegram-чат прямо в платформе')
                                 }
                               >
-                                <MessageSquare className="w-3.5 h-3.5 text-white" />
+                                {isOpeningChat ? (
+                                  <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                                ) : (
+                                  <MessageSquare className="w-3.5 h-3.5 text-white" />
+                                )}
                                 <span>{t.kanbanChatInPlatform || 'Чат в платформе'}</span>
-                                {selectedDeal && (selectedDeal.telegramChatId || selectedDeal.telegramUsername) && (
+                                {Boolean(editTelegramUsername.trim() || selectedDeal?.telegramChatId) && (
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 ring-1 ring-white/50 shrink-0" />
                                 )}
                               </button>

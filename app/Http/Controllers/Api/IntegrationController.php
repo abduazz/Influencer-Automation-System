@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ChatMessage;
 use App\Models\Integration;
 use App\Models\Report;
 use App\Services\InstagramApiService;
 use App\Services\TelegramService;
+use App\Services\SubdomainService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class IntegrationController extends Controller
@@ -43,13 +46,20 @@ class IntegrationController extends Controller
         ];
     }
 
-    public function index()
+    public function index(?Request $request = null)
     {
+        $request = $request ?? request();
+        $scopedProjectIds = SubdomainService::getScopedProjectIds($request);
+
+        $query = Integration::orderBy('start_date', 'desc')
+            ->orderBy('id', 'desc');
+
+        if ($scopedProjectIds !== null) {
+            $query->whereIn('project_id', $scopedProjectIds);
+        }
+
         return response()->json(
-            Integration::orderBy('start_date', 'desc')
-                ->orderBy('id', 'desc')
-                ->get()
-                ->map(fn($integration) => $this->formatIntegration($integration))
+            $query->get()->map(fn($integration) => $this->formatIntegration($integration))
         );
     }
 
@@ -97,11 +107,30 @@ class IntegrationController extends Controller
             $subscribersHistory = InstagramApiService::generateInitialHistory((int) $subscribersCount);
         }
 
+        $rawTg = trim($request->input('telegramUsername') ?? '');
+        $tgClean = null;
+        if ($rawTg !== '') {
+            $parts = preg_split('/[,;\n]+/', $rawTg);
+            $cleanedParts = [];
+            foreach ($parts as $part) {
+                $part = trim($part);
+                if ($part === '') continue;
+                if (preg_match('#(?:t\.me|telegram\.me)/(?:s/)?([a-zA-Z0-9_]+)#i', $part, $m)) {
+                    $part = $m[1];
+                }
+                $part = ltrim($part, '@');
+                if ($part !== '') {
+                    $cleanedParts[] = $part;
+                }
+            }
+            $tgClean = implode(', ', $cleanedParts) ?: null;
+        }
+
         $integration = Integration::create([
             'project_id' => $request->projectId,
             'blogger_name' => $request->bloggerName,
             'blogger_page_link' => $request->bloggerPageLink,
-            'telegram_username' => $request->input('telegramUsername'),
+            'telegram_username' => $tgClean,
             'telegram_chat_id' => $request->input('telegramChatId') ?? $request->input('telegram_chat_id'),
             'start_date' => $request->startDate ?? now()->format('Y-m-d'),
             'platform' => $request->platform,
@@ -180,9 +209,41 @@ class IntegrationController extends Controller
                 $updateData['platform'] = $detectedPlat;
             }
         }
-        if ($request->has('telegramUsername')) $updateData['telegram_username'] = $request->input('telegramUsername');
-        if ($request->has('telegramChatId')) $updateData['telegram_chat_id'] = $request->input('telegramChatId');
-        if ($request->has('telegram_chat_id')) $updateData['telegram_chat_id'] = $request->input('telegram_chat_id');
+        if ($request->has('telegramUsername')) {
+            $rawTg = trim($request->input('telegramUsername') ?? '');
+            $parts = preg_split('/[,;\n]+/', $rawTg);
+            $cleanedParts = [];
+            foreach ($parts as $part) {
+                $part = trim($part);
+                if ($part === '') continue;
+                if (preg_match('#(?:t\.me|telegram\.me)/(?:s/)?([a-zA-Z0-9_]+)#i', $part, $m)) {
+                    $part = $m[1];
+                }
+                $part = ltrim($part, '@');
+                if ($part !== '') {
+                    $cleanedParts[] = $part;
+                }
+            }
+            $cleanTg = implode(', ', $cleanedParts);
+            $updateData['telegram_username'] = $cleanTg ?: null;
+
+            $oldTg = $integration->telegram_username ? strtolower(trim(preg_replace('/[@\s]+/', '', $integration->telegram_username))) : '';
+            $newTg = !empty($updateData['telegram_username']) ? strtolower(trim(preg_replace('/[@\s]+/', '', $updateData['telegram_username']))) : '';
+
+            // If contact is cleared (unlinked) or changed to another contact, reset telegram_chat_id and clear old messages
+            if ($newTg === '') {
+                $updateData['telegram_chat_id'] = null;
+                $updateData['telegram_username'] = null;
+                ChatMessage::where('integration_id', $integration->id)->delete();
+                Cache::forget('tg_history_sync_' . $integration->id);
+            } elseif ($oldTg !== '' && $oldTg !== $newTg) {
+                $updateData['telegram_chat_id'] = null;
+                ChatMessage::where('integration_id', $integration->id)->delete();
+                Cache::forget('tg_history_sync_' . $integration->id);
+            }
+        }
+        if ($request->has('telegramChatId')) $updateData['telegram_chat_id'] = $request->input('telegramChatId') ?: null;
+        if ($request->has('telegram_chat_id')) $updateData['telegram_chat_id'] = $request->input('telegram_chat_id') ?: null;
         if ($request->filled('startDate')) $updateData['start_date'] = $request->startDate;
         if ($request->has('platform') && !isset($updateData['platform'])) $updateData['platform'] = $request->platform;
         if ($request->has('referralLink')) $updateData['referral_link'] = $request->referralLink;

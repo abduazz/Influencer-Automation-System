@@ -148,6 +148,14 @@ class BulkPurchaseController extends Controller
             'created_by' => $createdByName,
         ]);
 
+        \App\Services\ActivityLogger::bulk('CREATED', "Создана оптовая закупка #{$bp->id} блогера '{$bp->blogger_name}' (слотов: {$bp->total_slots}, сумма: {$bp->total_amount})", [
+            'bulk_purchase_id' => $bp->id,
+            'blogger_name' => $bp->blogger_name,
+            'platform' => $bp->platform,
+            'total_slots' => $bp->total_slots,
+            'total_amount' => $bp->total_amount,
+        ]);
+
         return response()->json([
             'id' => (string) $bp->id,
             'bloggerName' => $bp->blogger_name,
@@ -265,6 +273,14 @@ class BulkPurchaseController extends Controller
         }
         $remainingCount = max(0, $bulkPurchase->total_slots - $allocatedCount);
 
+        \App\Services\ActivityLogger::bulk('ALLOCATED', "Выделено {$slotsToAllocate} слотов из пакета #{$bulkPurchase->id} ({$bulkPurchase->blogger_name}) в проект ID {$projectId}", [
+            'bulk_purchase_id' => $bulkPurchase->id,
+            'blogger_name' => $bulkPurchase->blogger_name,
+            'project_id' => $projectId,
+            'slots_allocated' => $slotsToAllocate,
+            'remaining_slots' => $remainingCount,
+        ]);
+
         return response()->json([
             'id' => (string) $bulkPurchase->id,
             'bloggerName' => $bulkPurchase->blogger_name,
@@ -286,7 +302,16 @@ class BulkPurchaseController extends Controller
 
     public function destroy(BulkPurchase $bulkPurchase)
     {
+        $delId = $bulkPurchase->id;
+        $delBlogger = $bulkPurchase->blogger_name;
+
         $bulkPurchase->delete();
+
+        \App\Services\ActivityLogger::bulk('DELETED', "Удален пакет оптовой закупки #{$delId} ({$delBlogger})", [
+            'bulk_purchase_id' => $delId,
+            'blogger_name' => $delBlogger,
+        ]);
+
         return response()->json(['success' => true]);
     }
 }

@@ -60,6 +60,13 @@ class ProjectController extends Controller
             'subdomain' => $targetSubdomain,
         ]);
 
+        \App\Services\ActivityLogger::project('CREATED', "Создан проект '{$project->name}' (ID: {$project->id}, субдомен: {$project->subdomain})", [
+            'project_id' => $project->id,
+            'name' => $project->name,
+            'subdomain' => $project->subdomain,
+            'monthly_limit' => $project->monthly_limit,
+        ]);
+
         return response()->json([
             'id' => (string) $project->id,
             'name' => $project->name,
@@ -109,6 +116,13 @@ class ProjectController extends Controller
 
         $project->update($dataToUpdate);
 
+        \App\Services\ActivityLogger::project('UPDATED', "Обновлен проект '{$project->name}' (ID: {$project->id}, субдомен: {$project->subdomain})", [
+            'project_id' => $project->id,
+            'name' => $project->name,
+            'subdomain' => $project->subdomain,
+            'monthly_limit' => $project->monthly_limit,
+        ]);
+
         return response()->json([
             'id' => (string) $project->id,
             'name' => $project->name,
@@ -137,7 +151,18 @@ class ProjectController extends Controller
             ], 403);
         }
 
+        $projectName = $project->name;
+        $projectId = $project->id;
+        $projectSub = $project->subdomain;
+
         $project->delete();
+
+        \App\Services\ActivityLogger::project('DELETED', "Удален проект '{$projectName}' (ID: {$projectId}, субдомен: {$projectSub})", [
+            'project_id' => $projectId,
+            'name' => $projectName,
+            'subdomain' => $projectSub,
+        ]);
+
         return response()->noContent();
     }
 }

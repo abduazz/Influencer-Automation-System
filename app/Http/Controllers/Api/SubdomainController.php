@@ -86,6 +86,13 @@ class SubdomainController extends Controller
             ]);
         }
 
+        \App\Services\ActivityLogger::subdomain('CREATED', "Создан субдомен '{$subdomain->slug}' ({$subdomain->name})", [
+            'subdomain_id' => $subdomain->id,
+            'slug' => $subdomain->slug,
+            'name' => $subdomain->name,
+            'assigned_project_ids' => $request->projectIds ?? [],
+        ]);
+
         $allProjects = Project::where('subdomain', $cleanSlug)->get();
 
         return response()->json([
@@ -149,6 +156,13 @@ class SubdomainController extends Controller
             Project::whereIn('id', $request->projectIds)->update(['subdomain' => $newSlug]);
         }
 
+        \App\Services\ActivityLogger::subdomain('UPDATED', "Обновлен субдомен '{$subdomain->slug}' ({$subdomain->name})", [
+            'subdomain_id' => $subdomain->id,
+            'slug' => $subdomain->slug,
+            'name' => $subdomain->name,
+            'old_slug' => $oldSlug,
+        ]);
+
         $allProjects = Project::where('subdomain', $newSlug)->get();
 
         return response()->json([
@@ -177,8 +191,18 @@ class SubdomainController extends Controller
         ]);
 
         $project = Project::findOrFail($request->projectId);
+        $oldSubdomain = $project->subdomain ?? '1';
+        $newSubdomain = strtolower(trim($request->targetSubdomain));
+
         $project->update([
-            'subdomain' => strtolower(trim($request->targetSubdomain)),
+            'subdomain' => $newSubdomain,
+        ]);
+
+        \App\Services\ActivityLogger::subdomain('MOVE_PROJECT', "Проект '{$project->name}' (ID: {$project->id}) перемещен из '{$oldSubdomain}' в '{$newSubdomain}'", [
+            'project_id' => $project->id,
+            'project_name' => $project->name,
+            'old_subdomain' => $oldSubdomain,
+            'new_subdomain' => $newSubdomain,
         ]);
 
         return response()->json([
@@ -203,12 +227,21 @@ class SubdomainController extends Controller
             ], 422);
         }
 
+        $deletedSlug = $subdomain->slug;
+        $deletedName = $subdomain->name;
+
         // Reassign all projects in this subdomain safely back to '1'
-        Project::where('subdomain', $subdomain->slug)->update([
+        $reassignedCount = Project::where('subdomain', $subdomain->slug)->update([
             'subdomain' => '1',
         ]);
 
         $subdomain->delete();
+
+        \App\Services\ActivityLogger::subdomain('DELETED', "Удален субдомен '{$deletedSlug}' ({$deletedName}). Перемещено проектов в '1': {$reassignedCount}", [
+            'slug' => $deletedSlug,
+            'name' => $deletedName,
+            'reassigned_projects_count' => $reassignedCount,
+        ]);
 
         return response()->json([
             'success' => true,

@@ -129,6 +129,7 @@ export interface Integration {
   paidSlotsCount?: number;
   paidAmount?: number;
   totalAmount: number; // calculated: pricePerSlot * slotsCount
+  currency?: 'UZS' | 'USD' | 'RUB' | 'TJS' | 'KGS' | 'KZT' | string;
   endDate?: string;
   status: 'active' | 'completed' | 'paused';
   kanbanStage?: KanbanStage;

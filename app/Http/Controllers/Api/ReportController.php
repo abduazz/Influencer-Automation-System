@@ -363,6 +363,15 @@ class ReportController extends Controller
             }
         })->afterResponse();
  
+        \App\Services\ActivityLogger::report('CREATED', "Создан финансовый отчет #{$report->id} ({$report->channel_blogger}, сумма: {$report->paid_amount})", [
+            'report_id' => $report->id,
+            'channel_blogger' => $report->channel_blogger,
+            'platform' => $report->platform,
+            'payment_type' => $report->payment_type,
+            'paid_amount' => $report->paid_amount,
+            'total_amount' => $report->total_amount,
+        ]);
+
         return response()->json([
             'id' => (string) $report->id,
             'date' => $report->date->format('Y-m-d'),
@@ -513,6 +522,12 @@ class ReportController extends Controller
                 }
             })->afterResponse();
 
+            \App\Services\ActivityLogger::report('UPDATED', "Обновлен финансовый отчет #{$report->id} ({$report->channel_blogger}, сумма: {$report->paid_amount})", [
+                'report_id' => $report->id,
+                'channel_blogger' => $report->channel_blogger,
+                'paid_amount' => $report->paid_amount,
+            ]);
+
             return response()->json([
                 'id' => (string) $report->id,
                 'date' => $report->date->format('Y-m-d'),
@@ -543,6 +558,7 @@ class ReportController extends Controller
 
     public function destroy(Report $report)
     {
+        $reportId = $report->id;
         $projectId = $report->project_id;
         $platform = $report->platform;
         $channelBlogger = $report->channel_blogger;
@@ -556,6 +572,12 @@ class ReportController extends Controller
         }
 
         $report->delete();
+
+        \App\Services\ActivityLogger::report('DELETED', "Удален финансовый отчет #{$reportId} ({$channelBlogger})", [
+            'report_id' => $reportId,
+            'channel_blogger' => $channelBlogger,
+            'project_id' => $projectId,
+        ]);
 
         if ($paymentType !== 'other' && $projectId !== null && $channelBlogger !== null && $platform !== null) {
             $cleanBloggerName = trim(str_replace(['@', '#'], '', $channelBlogger));

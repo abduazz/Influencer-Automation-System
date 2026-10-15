@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -36,6 +37,10 @@ class UserController extends Controller
         }
 
         if (!$user || !Hash::check($request->password, $user->password)) {
+            ActivityLogger::auth('LOGIN_FAILED', "Неудачная попытка входа с логином '{$request->login}'", [
+                'login' => $request->login,
+            ], 'warning');
+
             return response()->json([
                 'message' => 'Неверный логин/email или пароль.',
             ], 401);
@@ -49,6 +54,12 @@ class UserController extends Controller
             $request->session()->regenerate();
         }
 
+        ActivityLogger::auth('LOGIN_SUCCESS', "Успешный вход пользователя: {$user->email} ({$user->name}, роль: {$user->role->value})", [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'role' => $user->role->value,
+        ]);
+
         return response()->json([
             'id' => (string) $user->id,
             'name' => $user->name,
@@ -59,7 +70,8 @@ class UserController extends Controller
             'allowedProjects' => $user->allowed_projects ?? [],
             'allowedSubdomains' => $user->allowed_subdomains ?? [],
             'createdAt' => $user->created_at->format('Y-m-d'),
-        ]);
+        ])->withCookie(cookie('ff_user_role', $user->role->value, 43200, '/', null, false, false))
+          ->withCookie(cookie('ff_user_email', $user->email, 43200, '/', null, false, false));
     }
 
     public function index()
@@ -105,6 +117,14 @@ class UserController extends Controller
             'allowed_subdomains' => $request->allowedSubdomains ?? [],
         ]);
 
+        ActivityLogger::user('CREATED', "Создан новый сотрудник: {$user->name} ({$user->email}, роль: {$user->role->value})", [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'role' => $user->role->value,
+            'allowedPages' => $user->allowed_pages,
+            'allowedSubdomains' => $user->allowed_subdomains,
+        ]);
+
         return response()->json([
             'id' => (string) $user->id,
             'name' => $user->name,
@@ -138,6 +158,14 @@ class UserController extends Controller
             'allowed_subdomains' => $request->has('allowedSubdomains') ? $request->allowedSubdomains : $user->allowed_subdomains,
         ]);
 
+        ActivityLogger::user('UPDATED', "Обновлены права сотрудника: {$user->name} ({$user->email}, роль: {$user->role->value})", [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'role' => $user->role->value,
+            'allowedPages' => $user->allowed_pages,
+            'allowedSubdomains' => $user->allowed_subdomains,
+        ]);
+
         return response()->json([
             'id' => (string) $user->id,
             'name' => $user->name,
@@ -161,6 +189,11 @@ class UserController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
+        ActivityLogger::user('PASSWORD_CHANGED', "Изменен пароль сотрудника {$user->name} ({$user->email})", [
+            'user_id' => $user->id,
+            'email' => $user->email,
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => 'Пароль успешно обновлен!',
@@ -169,7 +202,14 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
+        $userInfo = "{$user->name} ({$user->email}, ID: {$user->id})";
         $user->delete();
+
+        ActivityLogger::user('DELETED', "Удален сотрудник {$userInfo}", [
+            'deleted_user_id' => $user->id,
+            'email' => $user->email,
+        ]);
+
         return response()->noContent();
     }
 }

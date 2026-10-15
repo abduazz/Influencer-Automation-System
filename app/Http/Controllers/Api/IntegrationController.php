@@ -32,6 +32,7 @@ class IntegrationController extends Controller
             'paidSlotsCount' => $integration->paid_slots_count,
             'paidAmount' => (float) $integration->paid_amount,
             'totalAmount' => (float) $integration->total_amount,
+            'currency' => $integration->currency ?: 'UZS',
             'endDate' => $integration->end_date ? $integration->end_date->format('Y-m-d') : '',
             'status' => $integration->status,
             'kanbanStage' => $integration->kanban_stage,
@@ -76,6 +77,7 @@ class IntegrationController extends Controller
             'pricePerSlot' => 'required|numeric|min:0',
             'slotsCount' => 'required|integer|min:1',
             'paidSlotsCount' => 'nullable|integer|min:0',
+            'currency' => 'nullable|string|in:UZS,USD,RUB,TJS,KGS,KZT',
             'endDate' => 'nullable|date',
             'status' => 'nullable|in:active,completed,paused',
             'kanbanStage' => 'nullable|string',
@@ -138,6 +140,7 @@ class IntegrationController extends Controller
             'price_per_slot' => $request->pricePerSlot,
             'slots_count' => $request->slotsCount,
             'paid_slots_count' => $request->paidSlotsCount ?? $request->slotsCount,
+            'currency' => $request->input('currency') ?: 'UZS',
             'end_date' => $request->endDate ?? now()->addDays(30)->format('Y-m-d'),
             'status' => $request->status ?? 'active',
             'kanban_stage' => $request->input('kanbanStage'),
@@ -171,6 +174,15 @@ class IntegrationController extends Controller
 
         $integration->refresh();
 
+        \App\Services\ActivityLogger::integration('CREATED', "Создана интеграция #{$integration->id} блогера '{$integration->blogger_name}' (платформа: {$integration->platform}, слотов: {$integration->slots_count})", [
+            'integration_id' => $integration->id,
+            'blogger_name' => $integration->blogger_name,
+            'platform' => $integration->platform,
+            'project_id' => $integration->project_id,
+            'price_per_slot' => $integration->price_per_slot,
+            'slots_count' => $integration->slots_count,
+        ]);
+
         return response()->json($this->formatIntegration($integration), 201);
     }
 
@@ -188,6 +200,7 @@ class IntegrationController extends Controller
             'slotsCount' => 'sometimes|required|integer|min:1',
             'paidSlotsCount' => 'nullable|integer|min:0',
             'paidAmount' => 'nullable|numeric|min:0',
+            'currency' => 'nullable|string|in:UZS,USD,RUB,TJS,KGS,KZT',
             'endDate' => 'nullable|date',
             'status' => 'sometimes|required|in:active,completed,paused',
             'kanbanStage' => 'nullable|string',
@@ -251,6 +264,7 @@ class IntegrationController extends Controller
         if ($request->has('slotsCount')) $updateData['slots_count'] = $request->slotsCount;
         if ($request->has('paidSlotsCount')) $updateData['paid_slots_count'] = $request->paidSlotsCount;
         if ($request->has('paidAmount')) $updateData['paid_amount'] = $request->paidAmount;
+        if ($request->has('currency')) $updateData['currency'] = $request->input('currency') ?: 'UZS';
         if ($request->filled('endDate')) $updateData['end_date'] = $request->endDate;
         if ($request->has('status')) $updateData['status'] = $request->status;
         if ($request->has('kanbanStage')) $updateData['kanban_stage'] = $request->kanbanStage;
@@ -350,6 +364,19 @@ class IntegrationController extends Controller
             }
         }
 
+        $integration->refresh();
+
+        \App\Services\ActivityLogger::integration('UPDATED', "Обновлена интеграция #{$integration->id} блогера '{$integration->blogger_name}' (этап: '{$integration->kanban_stage}', статус: '{$integration->status}')", [
+            'integration_id' => $integration->id,
+            'blogger_name' => $integration->blogger_name,
+            'platform' => $integration->platform,
+            'project_id' => $integration->project_id,
+            'kanban_stage' => $integration->kanban_stage,
+            'status' => $integration->status,
+            'price_per_slot' => $integration->price_per_slot,
+            'slots_count' => $integration->slots_count,
+        ]);
+
         return response()->json($this->formatIntegration($integration));
     }
 
@@ -388,7 +415,19 @@ class IntegrationController extends Controller
             }
         }
 
+        $delId = $integration->id;
+        $delBlogger = $integration->blogger_name;
+        $delPlatform = $integration->platform;
+
         $integration->delete();
+
+        \App\Services\ActivityLogger::integration('DELETED', "Удалена интеграция #{$delId} блогера '{$delBlogger}' (платформа: {$delPlatform})", [
+            'integration_id' => $delId,
+            'blogger_name' => $delBlogger,
+            'platform' => $delPlatform,
+            'project_id' => $projectId,
+        ]);
+
         return response()->noContent();
     }
 
@@ -725,6 +764,13 @@ class IntegrationController extends Controller
         }
 
         $integration->update($updateData);
+
+        \App\Services\ActivityLogger::requisites('SAVED', "Сохранены реквизиты блогера '{$integration->blogger_name}' (интеграция #{$integration->id}, получатель: {$requisitesRecord['recipientName']})", [
+            'integration_id' => $integration->id,
+            'blogger_name' => $integration->blogger_name,
+            'recipient' => $requisitesRecord['recipientName'],
+            'tax_status' => $requisitesRecord['taxStatus'],
+        ]);
 
         dispatch(function () use ($integration, $requisitesRecord) {
             try {

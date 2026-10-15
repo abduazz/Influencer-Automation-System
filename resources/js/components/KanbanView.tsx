@@ -395,6 +395,7 @@ export default function KanbanView({
   const [initialKanbanStage, setInitialKanbanStage] = useState('');
   const [isQuickMoving, setIsQuickMoving] = useState(false);
   const [editPricePerSlot, setEditPricePerSlot] = useState<number | ''>(0);
+  const [editCurrency, setEditCurrency] = useState<'UZS' | 'USD' | 'RUB' | 'TJS' | 'KGS' | 'KZT'>('UZS');
   const [editSlotsCount, setEditSlotsCount] = useState<number | ''>(1);
   const [editPaidAmount, setEditPaidAmount] = useState<number | ''>(0);
   const [editPaidSlotsCount, setEditPaidSlotsCount] = useState<number>(0);
@@ -695,6 +696,7 @@ export default function KanbanView({
     setEditKanbanStage(startStage);
     setInitialKanbanStage(startStage);
     setEditPricePerSlot(0);
+    setEditCurrency('UZS');
     setEditSlotsCount(1);
     setEditPaidAmount(0);
     setEditPaidSlotsCount(0);
@@ -728,6 +730,11 @@ export default function KanbanView({
     setEditKanbanStage(startStage);
     setInitialKanbanStage(startStage);
     setEditPricePerSlot(deal.pricePerSlot ?? 0);
+    const validCurrencies = ['UZS', 'USD', 'RUB', 'TJS', 'KGS', 'KZT'];
+    const cur = (deal.currency && validCurrencies.includes(String(deal.currency).toUpperCase()))
+      ? (String(deal.currency).toUpperCase() as 'UZS' | 'USD' | 'RUB' | 'TJS' | 'KGS' | 'KZT')
+      : 'UZS';
+    setEditCurrency(cur);
     setEditSlotsCount(deal.slotsCount || 1);
     setEditPaidAmount(deal.paidAmount || 0);
     setEditPaidSlotsCount(deal.paidSlotsCount ?? (deal.paidAmount && deal.pricePerSlot ? Math.min(deal.slotsCount, Math.floor(deal.paidAmount / deal.pricePerSlot)) : 0));
@@ -831,6 +838,7 @@ export default function KanbanView({
           totalAmount: calculatedTotal,
           paidAmount: Number(editPaidAmount) || 0,
           paidSlotsCount: Number(editPaidSlotsCount) || 0,
+          currency: editCurrency,
           startDate: selectedDeal.startDate || editStartDate || new Date().toISOString().split('T')[0],
           endDate: selectedDeal.endDate || editEndDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
           referralLink: editReferralLink.trim(),
@@ -954,6 +962,7 @@ export default function KanbanView({
           slotsCount: Number(editSlotsCount) || 1,
           paidSlotsCount: Number(editPaidSlotsCount) || 0,
           paidAmount: Number(editPaidAmount) || 0,
+          currency: editCurrency,
           startDate: editStartDate || new Date().toISOString().split('T')[0],
           endDate: editEndDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
           referralLink: editReferralLink.trim() || '',
@@ -980,6 +989,7 @@ export default function KanbanView({
           totalAmount: calculatedTotal,
           paidAmount: Number(editPaidAmount) || 0,
           paidSlotsCount: Number(editPaidSlotsCount) || 0,
+          currency: editCurrency,
           startDate: selectedDeal.startDate || editStartDate || new Date().toISOString().split('T')[0],
           endDate: selectedDeal.endDate || editEndDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
           referralLink: editReferralLink.trim(),
@@ -1643,7 +1653,7 @@ export default function KanbanView({
                             <span className="font-black text-slate-900">
                               {(deal.totalAmount || (deal.pricePerSlot * deal.slotsCount)).toLocaleString()}
                             </span>
-                            <span className="text-[9px] font-bold text-slate-400">UZS</span>
+                            <span className="text-[9px] font-bold text-slate-400">{deal.currency || 'UZS'}</span>
                           </div>
 
                           {/* Requisites Status & Quick Copy */}
@@ -2444,12 +2454,30 @@ export default function KanbanView({
                   <div className="text-xs font-bold text-slate-500">
                     {t.kanbanTotalPayable || 'Итого к оплате:'}{' '}
                     <span className="font-black text-slate-900">
-                      {(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)).toLocaleString()} UZS
+                      {(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)).toLocaleString()} {editCurrency}
                     </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      {t.kanbanCurrencyLabel || 'Валюта'}
+                    </label>
+                    <select
+                      value={editCurrency}
+                      onChange={(e) => setEditCurrency(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black cursor-pointer"
+                    >
+                      <option value="UZS">{t.currencyUZS || 'UZS (Сум)'}</option>
+                      <option value="USD">{t.currencyUSD || 'USD ($ Доллар)'}</option>
+                      <option value="RUB">{t.currencyRUB || 'RUB (₽ Рубль)'}</option>
+                      <option value="TJS">{t.currencyTJS || 'TJS (Сомони)'}</option>
+                      <option value="KGS">{t.currencyKGS || 'KGS (Сом)'}</option>
+                      <option value="KZT">{t.currencyKZT || 'KZT (₸ Тенге)'}</option>
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                       {t.kanbanSlotsCountLabel || 'Количество слотов'}
@@ -2466,28 +2494,51 @@ export default function KanbanView({
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                      {t.kanbanPricePerSlotLabel || 'Цена за слот (UZS)'}
+                      {lang === 'uz' ? `Slot narxi (${editCurrency})` : lang === 'en' ? `Price per Slot (${editCurrency})` : `Цена за слот (${editCurrency})`}
                     </label>
                     <input
                       type="number"
                       min="0"
                       required
+                      placeholder="0"
                       value={editPricePerSlot}
-                      onChange={(e) => setEditPricePerSlot(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                      onFocus={(e) => {
+                        if (editPricePerSlot === 0 || editPricePerSlot === '0' as any) {
+                          setEditPricePerSlot('');
+                        } else {
+                          e.target.select();
+                        }
+                      }}
+                      onBlur={() => {
+                        if (editPricePerSlot === '') {
+                          setEditPricePerSlot(0);
+                        }
+                      }}
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        if (val === '') {
+                          setEditPricePerSlot('');
+                          return;
+                        }
+                        if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                          val = val.replace(/^0+/, '');
+                        }
+                        setEditPricePerSlot(val === '' ? '' : parseFloat(val) || 0);
+                      }}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                      {t.kanbanPaidAmountLabel || 'Оплаченная сумма (UZS)'}
+                      {lang === 'uz' ? `Jami (${editCurrency})` : lang === 'en' ? `Total (${editCurrency})` : `Итого (${editCurrency})`}
                     </label>
                     <input
-                      type="number"
-                      min="0"
-                      value={editPaidAmount}
-                      onChange={(e) => setEditPaidAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black"
+                      type="text"
+                      readOnly
+                      tabIndex={-1}
+                      value={`${(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)).toLocaleString()}`}
+                      className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 cursor-default focus:outline-none select-none"
                     />
                   </div>
                 </div>
@@ -2728,7 +2779,7 @@ export default function KanbanView({
                     <p className="text-[11px] text-slate-500 leading-snug">
                       {editSubscribersCount && Number(editSubscribersCount) > 0 && Number(editPricePerSlot || 0) > 0 ? (
                         <span>
-                          {t.kanbanApproxCostPer1k || 'Ориентировочно:'} <strong className="text-slate-900 font-bold">~{Math.round((Number(editPricePerSlot) / Number(editSubscribersCount)) * 1000).toLocaleString()} UZS</strong> {t.kanbanPer1kReach || 'за 1K охвата'}
+                          {t.kanbanApproxCostPer1k || 'Ориентировочно:'} <strong className="text-slate-900 font-bold">~{Math.round((Number(editPricePerSlot) / Number(editSubscribersCount)) * 1000).toLocaleString()} {editCurrency}</strong> {t.kanbanPer1kReach || 'за 1K охвата'}
                         </span>
                       ) : (
                         t.kanbanEnterSubscribersHint || 'Укажите подписчиков для расчета ориентировочной стоимости за 1,000 охвата'

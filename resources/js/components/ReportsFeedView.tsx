@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calendar, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send, FolderKanban, Edit3, User, Receipt, ArrowRight, Filter, Check } from 'lucide-react';
+import { Calendar, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send, FolderKanban, Edit3, User, Receipt, ArrowRight, Filter, Check, Wallet } from 'lucide-react';
 import { Project, Report, Integration, SlotConfig } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
@@ -10,6 +10,8 @@ interface ReportsFeedViewProps {
   projects: Project[];
   integrations: Integration[];
   reports: Report[];
+  otherExpensesReports?: Report[];
+  allReports?: Report[];
   lang: Language;
   userRole?: string | null;
   currentUserName?: string | null;
@@ -130,6 +132,8 @@ export default function ReportsFeedView({
   projects,
   integrations,
   reports,
+  otherExpensesReports,
+  allReports,
   lang,
   userRole,
   currentUserName,
@@ -442,6 +446,139 @@ export default function ReportsFeedView({
     });
   }, [reports, projects, searchQuery, filterStartDate, filterEndDate, selectedProjectId, selectedProject]);
 
+  // Date and period calculation helpers
+  const now = useMemo(() => new Date(), []);
+  const currentYearStr = String(now.getFullYear());
+  const currentMonthNum = now.getMonth() + 1;
+  const currentMonthStr = String(currentMonthNum).padStart(2, '0');
+  const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
+  const lastDayOfCurrentMonth = new Date(now.getFullYear(), currentMonthNum, 0).getDate();
+  const currentMonthStart = `${currentYMPrefix}-01`;
+  const currentMonthEnd = `${currentYMPrefix}-${String(lastDayOfCurrentMonth).padStart(2, '0')}`;
+
+  const prevMonthDate = useMemo(() => new Date(now.getFullYear(), now.getMonth() - 1, 1), [now]);
+  const prevMonthYear = prevMonthDate.getFullYear();
+  const prevMonthNum = prevMonthDate.getMonth() + 1;
+  const prevMonthYMPrefix = `${prevMonthYear}-${String(prevMonthNum).padStart(2, '0')}`;
+  const lastDayOfPrevMonth = new Date(prevMonthYear, prevMonthNum, 0).getDate();
+  const prevMonthStart = `${prevMonthYMPrefix}-01`;
+  const prevMonthEnd = `${prevMonthYMPrefix}-${String(lastDayOfPrevMonth).padStart(2, '0')}`;
+
+  const isPeriodFiltered = Boolean(filterStartDate || filterEndDate);
+  const isCurrentMonthPreset = (
+    (!filterStartDate && !filterEndDate) ||
+    (filterStartDate === currentMonthStart && filterEndDate === currentMonthEnd)
+  );
+
+  const formatDisplayDate = (d: string) => {
+    if (!d) return '';
+    const parts = d.split('-');
+    if (parts.length === 3) return `${parts[2]}.${parts[1]}.${parts[0]}`;
+    return d;
+  };
+
+  const activePeriodLabel = useMemo(() => {
+    if (filterStartDate && filterEndDate) {
+      return `${formatDisplayDate(filterStartDate)} — ${formatDisplayDate(filterEndDate)}`;
+    }
+    if (filterStartDate && !filterEndDate) {
+      return lang === 'ru' ? `с ${formatDisplayDate(filterStartDate)}` : lang === 'uz' ? `${formatDisplayDate(filterStartDate)} dan` : `from ${formatDisplayDate(filterStartDate)}`;
+    }
+    if (!filterStartDate && filterEndDate) {
+      return lang === 'ru' ? `до ${formatDisplayDate(filterEndDate)}` : lang === 'uz' ? `${formatDisplayDate(filterEndDate)} gacha` : `until ${formatDisplayDate(filterEndDate)}`;
+    }
+
+    const monthNamesRu = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    const monthNamesUz = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+    const monthNamesEn = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthName = lang === 'uz' ? monthNamesUz[now.getMonth()] : lang === 'ru' ? monthNamesRu[now.getMonth()] : monthNamesEn[now.getMonth()];
+    return `${monthName} ${currentYearStr}`;
+  }, [filterStartDate, filterEndDate, lang, now, currentYearStr]);
+
+  // Combined dataset for calculating total expenses (blogger + other expenses)
+  const allAvailableReports = useMemo(() => {
+    if (allReports && allReports.length > 0) return allReports;
+    const map = new Map<string, Report>();
+    reports.forEach(r => map.set(String(r.id), r));
+    (otherExpensesReports || []).forEach(r => map.set(String(r.id), r));
+    return Array.from(map.values());
+  }, [allReports, reports, otherExpensesReports]);
+
+  // Financial KPI metrics: Blogger expenses & Total with other expenses
+  const expenseMetrics = useMemo(() => {
+    let bloggerTotal = 0;
+    let bloggerCount = 0;
+    let otherTotal = 0;
+    let otherCount = 0;
+
+    const matchesDateRange = (repDate?: string | null) => {
+      if (!repDate) return false;
+      if (isPeriodFiltered) {
+        if (filterStartDate && repDate < filterStartDate) return false;
+        if (filterEndDate && repDate > filterEndDate) return false;
+        return true;
+      }
+      return repDate.startsWith(currentYMPrefix) || (repDate >= currentMonthStart && repDate <= currentMonthEnd);
+    };
+
+    const getReportCost = (rep: Report): number => {
+      const fullAmount = Number(rep.totalAmount || rep.paidAmount || (Number(rep.pricePerSlot || 0) * Number(rep.slotsCount || 0)) || rep.amount || 0);
+      if (selectedProjectId === 'all') return fullAmount;
+
+      if (rep.projectId && String(rep.projectId) === String(selectedProjectId)) {
+        return fullAmount;
+      }
+
+      if (Array.isArray(rep.slotsConfig) && rep.slotsConfig.length > 0) {
+        const matchingSlots = rep.slotsConfig.filter(s => s.projectId && String(s.projectId) === String(selectedProjectId)).length;
+        if (matchingSlots > 0) {
+          if (rep.pricePerSlot && Number(rep.pricePerSlot) > 0) {
+            return matchingSlots * Number(rep.pricePerSlot);
+          }
+          return (matchingSlots / rep.slotsConfig.length) * fullAmount;
+        }
+        return 0;
+      }
+
+      if (selectedProject && rep.projectName && rep.projectName.trim().toLowerCase() === selectedProject.name.trim().toLowerCase()) {
+        return fullAmount;
+      }
+
+      return 0;
+    };
+
+    const matchesProj = (rep: Report) => {
+      if (selectedProjectId === 'all') return true;
+      if (rep.projectId && String(rep.projectId) === String(selectedProjectId)) return true;
+      if (Array.isArray(rep.slotsConfig) && rep.slotsConfig.some(s => s.projectId && String(s.projectId) === String(selectedProjectId))) return true;
+      if (selectedProject && rep.projectName && rep.projectName.trim().toLowerCase() === selectedProject.name.trim().toLowerCase()) return true;
+      return false;
+    };
+
+    allAvailableReports.forEach(rep => {
+      if (!matchesDateRange(rep.date)) return;
+      if (!matchesProj(rep)) return;
+
+      const cost = getReportCost(rep);
+      if (rep.paymentType === 'other') {
+        otherTotal += cost;
+        otherCount++;
+      } else {
+        bloggerTotal += cost;
+        bloggerCount++;
+      }
+    });
+
+    return {
+      bloggerTotal,
+      bloggerCount,
+      otherTotal,
+      otherCount,
+      grandTotal: bloggerTotal + otherTotal,
+      totalCount: bloggerCount + otherCount,
+    };
+  }, [allAvailableReports, isPeriodFiltered, filterStartDate, filterEndDate, selectedProjectId, selectedProject, currentYMPrefix, currentMonthStart, currentMonthEnd]);
+
   const handleExportExcel = async () => {
     if (filteredReports.length === 0) {
       alert(
@@ -662,17 +799,16 @@ export default function ReportsFeedView({
   };
 
   return (
-    <div className="space-y-3 md:space-y-4 max-w-7xl mx-auto text-neutral-900">
+    <div className="space-y-2.5 max-w-7xl mx-auto text-neutral-900">
       {/* Top Action Bar (Clean button to navigate to other expenses / reports feed) */}
       {(onNavigateToOtherExpenses || onNavigateToReportsFeed) && (
-        <div className="flex items-center justify-end gap-2 pt-0.5">
-
+        <div className="flex items-center justify-end gap-2">
           <div className="flex items-center gap-1.5">
             {onNavigateToOtherExpenses && (
               <button
                 type="button"
                 onClick={onNavigateToOtherExpenses}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-900 border border-amber-200 rounded-xl text-[11px] font-bold transition shadow-3xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-900 border border-amber-200/90 rounded-lg text-[11px] font-bold transition shadow-3xs cursor-pointer"
               >
                 <Receipt className="w-3.5 h-3.5 text-amber-700" />
                 <span>{lang === 'ru' ? 'Прочие расходы' : lang === 'uz' ? 'Boshqa xarajatlar' : 'Other Expenses'}</span>
@@ -684,7 +820,7 @@ export default function ReportsFeedView({
               <button
                 type="button"
                 onClick={onNavigateToReportsFeed}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 active:bg-neutral-300 text-neutral-800 border border-neutral-200 rounded-xl text-[11px] font-bold transition shadow-3xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 active:bg-neutral-300 text-neutral-800 border border-neutral-200 rounded-lg text-[11px] font-bold transition shadow-3xs cursor-pointer"
               >
                 <FileText className="w-3.5 h-3.5 text-neutral-700" />
                 <span>{lang === 'ru' ? 'Лента отчетов' : lang === 'uz' ? 'Hisobotlar tasmasi' : 'Reports Feed'}</span>
@@ -694,6 +830,92 @@ export default function ReportsFeedView({
           </div>
         </div>
       )}
+
+      {/* Financial KPI Indicator Cards (Compact & Ergonomic) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
+        {/* Card 1: Blogger Expenses */}
+        <div className="bg-white border border-neutral-200/90 hover:border-neutral-300 rounded-xl px-3.5 py-2 shadow-3xs transition flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center text-neutral-700 shrink-0">
+              <Wallet className="w-3.5 h-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
+                  {isCurrentMonthPreset ? t.expensesCurrentMonth : t.expensesPeriod}
+                </span>
+                <span className="text-[9px] font-extrabold text-neutral-600 bg-neutral-100 px-1.5 py-0.2 rounded-full shrink-0" title={t.bloggerReportsCount}>
+                  {expenseMetrics.bloggerCount}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <span className="text-base sm:text-lg font-black text-neutral-900 tracking-tight">
+                  {formatPrice(expenseMetrics.bloggerTotal)}
+                </span>
+                <span className="text-[10px] font-bold text-neutral-400">UZS</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0 text-right">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200/60">
+              <Calendar className="w-2.5 h-2.5 text-neutral-400" />
+              {activePeriodLabel}
+            </span>
+            {selectedProject && (
+              <div className="text-[9px] font-semibold text-neutral-400 truncate max-w-[120px] mt-0.5">
+                {selectedProject.name}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 2: Total with Other Expenses */}
+        <div className="bg-amber-50/40 hover:bg-amber-50/60 border border-amber-200/80 hover:border-amber-300 rounded-xl px-3.5 py-2 shadow-3xs transition flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-amber-100/90 flex items-center justify-center text-amber-800 shrink-0">
+              <Receipt className="w-3.5 h-3.5 text-amber-700" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-amber-900/80 uppercase tracking-wider truncate">
+                  {isCurrentMonthPreset ? t.expensesCurrentMonthWithOther : t.expensesPeriodWithOther}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <span className="text-base sm:text-lg font-black text-amber-950 tracking-tight">
+                  {formatPrice(expenseMetrics.grandTotal)}
+                </span>
+                <span className="text-[10px] font-bold text-amber-700/70">UZS</span>
+                <span className="text-[10px] font-medium text-amber-800/80 ml-1.5 hidden lg:inline">
+                  ({lang === 'ru' ? 'прочие:' : lang === 'uz' ? 'boshqa:' : 'other:'} {formatPrice(expenseMetrics.otherTotal)})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0 text-right flex flex-col items-end">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-semibold bg-amber-100/90 text-amber-900 border border-amber-200/80">
+              <Calendar className="w-2.5 h-2.5 text-amber-600" />
+              {activePeriodLabel}
+            </span>
+            <div className="text-[9px] font-medium text-amber-900/80 mt-0.5 flex items-center gap-1">
+              <span className="lg:hidden">{lang === 'ru' ? 'Прочие:' : 'Other:'} {formatPrice(expenseMetrics.otherTotal)}</span>
+              {onNavigateToOtherExpenses && expenseMetrics.otherCount > 0 && (
+                <button
+                  type="button"
+                  onClick={onNavigateToOtherExpenses}
+                  className="text-amber-900 hover:text-black font-bold cursor-pointer inline-flex items-center gap-0.5 transition"
+                  title={lang === 'ru' ? 'Перейти к прочим расходам' : 'Go to other expenses'}
+                >
+                  <span>{lang === 'ru' ? 'Прочие' : lang === 'uz' ? 'Boshqa' : 'Other'}</span>
+                  <ArrowRight className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Toolbar */}
       <div className="border-b border-neutral-200 pb-3 md:pb-5 text-left flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -819,6 +1041,50 @@ export default function ReportsFeedView({
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
+          </div>
+
+          {/* Quick Period Presets */}
+          <div className="flex items-center gap-0.5 bg-white md:bg-neutral-50 p-0.5 rounded-xl border border-neutral-200 shadow-3xs shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (filterStartDate === currentMonthStart && filterEndDate === currentMonthEnd) {
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                } else {
+                  setFilterStartDate(currentMonthStart);
+                  setFilterEndDate(currentMonthEnd);
+                }
+              }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                filterStartDate === currentMonthStart && filterEndDate === currentMonthEnd
+                  ? 'bg-black text-white shadow-3xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+              }`}
+              title={t.currentMonthLabel}
+            >
+              {lang === 'ru' ? 'Этот месяц' : lang === 'uz' ? 'Shu oy' : 'This Month'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (filterStartDate === prevMonthStart && filterEndDate === prevMonthEnd) {
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                } else {
+                  setFilterStartDate(prevMonthStart);
+                  setFilterEndDate(prevMonthEnd);
+                }
+              }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                filterStartDate === prevMonthStart && filterEndDate === prevMonthEnd
+                  ? 'bg-black text-white shadow-3xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+              }`}
+              title={t.prevMonthLabel}
+            >
+              {lang === 'ru' ? 'Прошлый' : lang === 'uz' ? 'O‘tgan' : 'Last Month'}
+            </button>
           </div>
 
           {/* Export to Excel & Reset button on Mobile */}

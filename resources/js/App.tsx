@@ -162,7 +162,7 @@ export default function App() {
     }
     const pageParam = params.get('page');
     if (pageParam === 'logs') {
-      window.location.replace('/log-viewer');
+      window.open('/log-viewer', '_blank');
       return 'projects';
     }
     if (pageParam && ALL_VALID_TABS.includes(pageParam as AppTab)) {
@@ -865,7 +865,8 @@ export default function App() {
         });
         setActiveTab('blogger');
       } else if (page === 'logs') {
-        window.location.replace('/log-viewer');
+        window.open('/log-viewer', '_blank');
+        setActiveTab('projects');
         return;
       } else if (page && ALL_VALID_TABS.includes(page as any)) {
         setActiveTab(page as any);
@@ -1212,6 +1213,8 @@ export default function App() {
                 projects={projects}
                 integrations={integrations}
                 reports={reports.filter((r) => r.paymentType !== 'other')}
+                otherExpensesReports={reports.filter((r) => r.paymentType === 'other')}
+                allReports={reports}
                 lang={lang}
                 userRole={currentUserRole}
                 currentUserName={currentUserName}
@@ -1239,6 +1242,8 @@ export default function App() {
                 projects={projects}
                 integrations={integrations}
                 reports={reports.filter((r) => r.paymentType === 'other')}
+                otherExpensesReports={reports.filter((r) => r.paymentType === 'other')}
+                allReports={reports}
                 lang={lang}
                 userRole={currentUserRole}
                 currentUserName={currentUserName}
@@ -1429,7 +1434,10 @@ export default function App() {
             {currentUserRole === 'super_admin' && (
               <a
                 href="/log-viewer"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 text-neutral-400 hover:text-black"
+                title="Log Viewer"
               >
                 <ScrollText className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">

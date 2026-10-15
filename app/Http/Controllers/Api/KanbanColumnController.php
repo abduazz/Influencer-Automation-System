@@ -109,6 +109,10 @@ class KanbanColumnController extends Controller
 
         $updated = KanbanColumn::orderBy('position', 'asc')->get();
 
+        \App\Services\ActivityLogger::kanban('SYNC', "Синхронизированы колонки Канбан доски (всего: " . count($columnsData) . ")", [
+            'columns_count' => count($columnsData),
+        ]);
+
         return response()->json($updated->map(function ($col) {
             return [
                 'id' => $col->column_id,
@@ -122,8 +126,14 @@ class KanbanColumnController extends Controller
     public function clearStage(Request $request)
     {
         $stage = $request->input('stage');
+        $clearedCount = 0;
         if ($stage) {
-            \App\Models\Integration::where('kanban_stage', $stage)->update(['kanban_stage' => null]);
+            $clearedCount = \App\Models\Integration::where('kanban_stage', $stage)->update(['kanban_stage' => null]);
+
+            \App\Services\ActivityLogger::kanban('CLEAR_STAGE', "Очищен этап '{$stage}' на Канбан доске (затронуто интеграций: {$clearedCount})", [
+                'stage' => $stage,
+                'cleared_count' => $clearedCount,
+            ]);
         }
         return response()->json(['success' => true]);
     }

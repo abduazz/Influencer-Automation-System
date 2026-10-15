@@ -38,6 +38,7 @@ import {
   Building2,
   Briefcase,
   X,
+  ScrollText,
 } from 'lucide-react';
 import { updateUserPassword, downloadDatabaseBackupUrl, sendDatabaseBackupToTelegram } from '../services/api';
 
@@ -1635,6 +1636,18 @@ export default function AccessManagementView({
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          <a
+            href="/log-viewer"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+            title={lang === 'ru' ? 'Открыть Log Viewer в новой вкладке' : 'Log Viewerni yangi oynada ochish'}
+          >
+            <ScrollText className="w-4 h-4 text-emerald-400" />
+            <span>Log Viewer</span>
+            <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
+          </a>
+
           <button
             type="button"
             onClick={handleDownloadBackup}

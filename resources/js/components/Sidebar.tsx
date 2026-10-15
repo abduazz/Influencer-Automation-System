@@ -21,7 +21,8 @@ import {
   ChevronRight,
   Terminal,
   Receipt,
-  ScrollText
+  ScrollText,
+  ExternalLink
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
@@ -264,13 +265,18 @@ export default function Sidebar({
               <a
                 id="nav-logs-btn"
                 href="/log-viewer"
+                target="_blank"
+                rel="noopener noreferrer"
                 className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group hover:bg-neutral-100 text-neutral-600 hover:text-black`}
-                title="Log Viewer"
+                title={lang === 'ru' ? 'Логи системы (открыть в новой вкладке)' : lang === 'uz' ? 'Tizim loglari (yangi oynada ochish)' : 'Log Viewer (open in new tab)'}
               >
                 <div className="flex items-center gap-3.5">
                   <ScrollText className="w-4 h-4 text-black group-hover:text-black" />
                   {!isCollapsed && <span>Log Viewer</span>}
                 </div>
+                {!isCollapsed && (
+                  <ExternalLink className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black transition-colors" />
+                )}
               </a>
             </>
           )}

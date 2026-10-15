@@ -26,6 +26,7 @@ class Integration extends Model
         'paid_slots_count',
         'paid_amount',
         'total_amount',
+        'currency',
         'end_date',
         'status',
         'blogger_cabinet_token',

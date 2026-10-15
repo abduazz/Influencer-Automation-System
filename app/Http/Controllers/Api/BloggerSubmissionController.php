@@ -236,6 +236,13 @@ class BloggerSubmissionController extends Controller
             }
         })->afterResponse();
 
+        \App\Services\ActivityLogger::submission('RECEIVED', "Получен отчет от блогера '{$integration->blogger_name}' (интеграция #{$integration->id})", [
+            'submission_id' => $sub->id,
+            'integration_id' => $integration->id,
+            'blogger_name' => $integration->blogger_name,
+            'filled_keys' => $newlyFilledKeys,
+        ]);
+
         return response()->json([
             'id' => (string) $sub->id,
             'integrationId' => (string) $sub->integration_id,
@@ -248,7 +255,16 @@ class BloggerSubmissionController extends Controller
     public function destroy($id)
     {
         $sub = BloggerSubmission::findOrFail($id);
+        $subId = $sub->id;
+        $integrationId = $sub->integration_id;
+
         $sub->delete();
+
+        \App\Services\ActivityLogger::submission('DELETED', "Удален отчет блогера ID #{$subId} (интеграция #{$integrationId})", [
+            'submission_id' => $subId,
+            'integration_id' => $integrationId,
+        ]);
+
         return response()->json(null, 204);
     }
 }

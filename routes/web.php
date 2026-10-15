@@ -12,11 +12,99 @@ Route::get('/{any}', function (Request $request) {
     $path = $request->path();
     $bootstrapData = null;
 
-    // Only preload for main platform views (bypass for guest blogger cabinet & external requisites)
     $isCabinetRoute = str_starts_with($path, 'c/') || $request->has('cabinet');
     $isRequisitesRoute = str_starts_with($path, 'requisites') || $request->get('view') === 'requisites';
 
-    if (!$isCabinetRoute && !$isRequisitesRoute) {
+    if ($isCabinetRoute) {
+        $token = null;
+        if (str_starts_with($path, 'c/')) {
+            $token = substr($path, 2);
+        } elseif ($request->has('integrationId')) {
+            $token = $request->query('integrationId');
+        } elseif ($request->has('id')) {
+            $token = $request->query('id');
+        }
+
+        try {
+            $integration = null;
+            if ($token) {
+                $integration = \App\Models\Integration::where('blogger_cabinet_token', $token)
+                    ->orWhere('id', $token)
+                    ->first();
+            }
+
+            if ($integration) {
+                $intCtrl = app(\App\Http\Controllers\Api\IntegrationController::class);
+                $project = $integration->project;
+                $submissions = \App\Models\BloggerSubmission::where('integration_id', $integration->id)->get()->map(function ($sub) {
+                    return [
+                        'id' => (string) $sub->id,
+                        'integrationId' => (string) $sub->integration_id,
+                        'submittedAt' => $sub->submitted_at ? $sub->submitted_at->toISOString() : now()->toISOString(),
+                        'status' => $sub->status,
+                        'data' => $sub->data ?? [],
+                    ];
+                })->toArray();
+
+                $bootstrapData = [
+                    'users' => [],
+                    'projects' => $project ? [[
+                        'id' => (string) $project->id,
+                        'name' => $project->name,
+                        'description' => $project->description ?? '',
+                        'telegramThreadId' => $project->telegram_thread_id ?? '',
+                        'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
+                        'subdomain' => $project->subdomain ?? '1',
+                        'createdAt' => $project->created_at ? $project->created_at->format('Y-m-d') : '',
+                    ]] : [],
+                    'allProjects' => [],
+                    'subdomains' => [],
+                    'integrations' => [$intCtrl->formatIntegration($integration)],
+                    'reports' => [],
+                    'submissions' => $submissions,
+                    'bulkPurchases' => [],
+                    'kanbanColumns' => [],
+                    'bloggerRequisites' => [],
+                    'activeSubdomain' => '1',
+                ];
+            } else {
+                $bootstrapData = app(BootstrapController::class)->getBootstrapData($request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Cabinet bootstrap preload in Blade failed: ' . $e->getMessage());
+        }
+    } elseif ($isRequisitesRoute) {
+        $token = $request->query('token') ?: (str_starts_with($path, 'requisites/') ? substr($path, 11) : null);
+        try {
+            $integration = null;
+            if ($token) {
+                $integration = \App\Models\Integration::where('blogger_cabinet_token', $token)
+                    ->orWhere('id', $token)
+                    ->first();
+            }
+
+            if ($integration) {
+                $intCtrl = app(\App\Http\Controllers\Api\IntegrationController::class);
+                $bootstrapData = [
+                    'users' => [],
+                    'projects' => [],
+                    'allProjects' => [],
+                    'subdomains' => [],
+                    'integrations' => [$intCtrl->formatIntegration($integration)],
+                    'reports' => [],
+                    'submissions' => [],
+                    'bulkPurchases' => [],
+                    'kanbanColumns' => [],
+                    'bloggerRequisites' => $integration->requisites ? [$integration->requisites] : [],
+                    'activeSubdomain' => '1',
+                ];
+            } else {
+                $bootstrapData = app(BootstrapController::class)->getBootstrapData($request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Requisites bootstrap preload in Blade failed: ' . $e->getMessage());
+        }
+    } else {
         try {
             $bootstrapData = app(BootstrapController::class)->getBootstrapData($request);
         } catch (\Throwable $e) {

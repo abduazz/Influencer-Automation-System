@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 
 class IntegrationController extends Controller
 {
-    private function formatIntegration(Integration $integration): array
+    public function formatIntegration(Integration $integration): array
     {
         return [
             'id' => (string) $integration->id,

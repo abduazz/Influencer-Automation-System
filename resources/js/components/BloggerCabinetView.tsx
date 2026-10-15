@@ -95,13 +95,34 @@ export default function BloggerCabinetView({
 }: BloggerCabinetViewProps) {
   const t = translations[lang];
 
+  // Resolve initial integration synchronously from URL parameters or first available item
+  const initialMatched = React.useMemo(() => {
+    if (urlParams?.integrationId) {
+      const found = integrations.find(i => 
+        String(i.id) === String(urlParams.integrationId) || 
+        i.bloggerCabinetToken === urlParams.integrationId
+      );
+      if (found) return found;
+    }
+    return integrations[0];
+  }, [integrations, urlParams?.integrationId]);
+
   // Controller State (allows interactive configuration in the preview)
-  const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>('Instagram');
-  const [activeSlotsCount, setActiveSlotsCount] = useState<number>(4);
-  const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>('int-2');
+  const [activePlatform, setActivePlatform] = useState<'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok'>(
+    () => (urlParams?.platform as any) || initialMatched?.platform || 'Instagram'
+  );
+  const [activeSlotsCount, setActiveSlotsCount] = useState<number>(() => {
+    if (urlParams?.slotsCount) {
+      const s = parseInt(urlParams.slotsCount);
+      if (s >= 1 && s <= 10) return s;
+    }
+    return initialMatched?.slotsCount || 4;
+  });
+  const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>(
+    () => initialMatched?.id || 'int-2'
+  );
 
-
-  const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId);
+  const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId) || initialMatched;
   const resolvedProject = projects.find(p => p.id === selectedIntegration?.projectId);
   const projectName = resolvedProject?.name || '';
 
@@ -127,7 +148,7 @@ export default function BloggerCabinetView({
   useEffect(() => {
     if (urlParams?.integrationId) {
       const matched = integrations.find(i => String(i.id) === String(urlParams.integrationId) || i.bloggerCabinetToken === urlParams.integrationId);
-      if (matched) {
+      if (matched && matched.id !== selectedIntegrationId) {
         setSelectedIntegrationId(matched.id);
         setActivePlatform(matched.platform);
         setActiveSlotsCount(matched.slotsCount);
@@ -162,13 +183,57 @@ export default function BloggerCabinetView({
   }, [integrations, selectedIntegrationId, urlParams]);
 
   // Form Field States
-  // Dynamic state object mapping slot keys (e.g. "slot_1") to text link or mock file name
-  const [formData, setFormData] = useState<Record<string, string>>({});
-  const [filePreviews, setFilePreviews] = useState<Record<string, string>>({});
+  const [formData, setFormData] = useState<Record<string, string>>(() => {
+    const initialData: Record<string, string> = {};
+    const effId = initialMatched?.id || 'int-2';
+    const effSlots = (urlParams?.slotsCount && parseInt(urlParams.slotsCount) >= 1 && parseInt(urlParams.slotsCount) <= 10)
+      ? parseInt(urlParams.slotsCount)
+      : (initialMatched?.slotsCount || 4);
+    const existingSub = submissions.find(s => String(s.integrationId) === String(effId));
+    const submittedData = existingSub?.data || {};
+    for (let i = 1; i <= effSlots; i++) {
+      const key = `slot_${i}`;
+      initialData[key] = submittedData[key] || '';
+    }
+    return initialData;
+  });
+
+  const [filePreviews, setFilePreviews] = useState<Record<string, string>>(() => {
+    const initialPreviews: Record<string, string> = {};
+    const effId = initialMatched?.id || 'int-2';
+    const effSlots = (urlParams?.slotsCount && parseInt(urlParams.slotsCount) >= 1 && parseInt(urlParams.slotsCount) <= 10)
+      ? parseInt(urlParams.slotsCount)
+      : (initialMatched?.slotsCount || 4);
+    const existingSub = submissions.find(s => String(s.integrationId) === String(effId));
+    const submittedData = existingSub?.data || {};
+    for (let i = 1; i <= effSlots; i++) {
+      const key = `slot_${i}`;
+      if (submittedData[key] && submittedData[key].startsWith('data:image/')) {
+        initialPreviews[key] = submittedData[key];
+      } else if (submittedData[key] && !submittedData[key].startsWith('http')) {
+        initialPreviews[key] = 'mock-file-url';
+      }
+    }
+    return initialPreviews;
+  });
+
   const [slotInputModes, setSlotInputModes] = useState<Record<string, 'link' | 'screenshot'>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [formSubmitted, setFormSubmitted] = useState(false);
+  const [formSubmitted, setFormSubmitted] = useState<boolean>(() => {
+    const effId = initialMatched?.id || 'int-2';
+    const effSlots = (urlParams?.slotsCount && parseInt(urlParams.slotsCount) >= 1 && parseInt(urlParams.slotsCount) <= 10)
+      ? parseInt(urlParams.slotsCount)
+      : (initialMatched?.slotsCount || 4);
+    const existingSub = submissions.find(s => String(s.integrationId) === String(effId));
+    if (!existingSub) return false;
+    const submittedData = existingSub.data || {};
+    for (let i = 1; i <= effSlots; i++) {
+      if (!submittedData[`slot_${i}`]) return false;
+    }
+    return true;
+  });
+
   const [showConfirm, setShowConfirm] = useState(false);
   const [copiedCabinetLink, setCopiedCabinetLink] = useState(false);
   const [copiedReferralLink, setCopiedReferralLink] = useState(false);
@@ -420,6 +485,21 @@ export default function BloggerCabinetView({
       setIsSubmitting(false);
     }
   };
+
+  if (integrations.length === 0) {
+    return (
+      <div className="max-w-xl mx-auto p-8 space-y-4 text-center">
+        <div className="animate-pulse space-y-4">
+          <div className="h-6 bg-neutral-200 rounded-md w-1/3 mx-auto"></div>
+          <div className="h-4 bg-neutral-100 rounded-md w-1/2 mx-auto"></div>
+          <div className="pt-6 space-y-3">
+            <div className="h-28 bg-white border border-neutral-200 rounded-xl"></div>
+            <div className="h-28 bg-white border border-neutral-200 rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-3xl mx-auto text-neutral-900 w-full pb-12">

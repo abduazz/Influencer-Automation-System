@@ -273,7 +273,19 @@ export default function App() {
     platform?: string;
     slotsCount?: string;
     integrationId?: string;
-  }>({});
+  }>(() => {
+    if (typeof window === 'undefined') return {};
+    const params = new URLSearchParams(window.location.search);
+    let integrationId = params.get('integrationId') || params.get('id') || undefined;
+    if (window.location.pathname.startsWith('/c/')) {
+      integrationId = window.location.pathname.substring(3);
+    }
+    return {
+      platform: params.get('platform') || undefined,
+      slotsCount: params.get('slots_count') || undefined,
+      integrationId
+    };
+  });
 
   // Check if current URL route matches a blogger cabinet guest access pattern (and user is not logged in)
   const isBloggerCabinetRoute = (new URLSearchParams(window.location.search).get('cabinet') === 'true' ||
@@ -375,6 +387,15 @@ export default function App() {
     let cancelled = false;
 
     async function loadData() {
+      // If guest route already has preloaded data, skip downloading the whole CRM database
+      if ((isBloggerCabinetRoute || isRequisitesRoute) && integrations.length > 0) {
+        if (!cancelled) {
+          setAllowedUsersLoading(false);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         // Fast path: Load all core data in a single unified HTTP request
         const data = await fetchBootstrapData();

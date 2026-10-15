@@ -113,13 +113,11 @@ class TelegramChatController extends Controller
     }
 
     /**
-     * Redirect to blogger Telegram chat bot with deeplink
+     * Redirect to manager Telegram chat (@globalpr_admin)
      */
     public function redirectToTelegram($integrationId)
     {
-        $integration = Integration::findOrFail($integrationId);
-        $url = TelegramService::getBloggerChatUrl($integration->id, $integration->blogger_cabinet_token);
-        return redirect()->away($url);
+        return redirect()->away('https://t.me/globalpr_admin');
     }
 
     /**

@@ -13,7 +13,8 @@ import {
   FileText, 
   ExternalLink,
   AlertCircle,
-  Check
+  Check,
+  Copy
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
@@ -170,6 +171,7 @@ export default function BloggerCabinetView({
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [copiedCabinetLink, setCopiedCabinetLink] = useState(false);
+  const [copiedReferralLink, setCopiedReferralLink] = useState(false);
 
   // Re-initialize form data state when platform or slots count changes
   useEffect(() => {
@@ -598,34 +600,64 @@ export default function BloggerCabinetView({
                         <span>{t.bloggerCabinetTitle} {projectName ? `— ${projectName}` : ''}</span>
                       </h2>
                       {selectedIntegration && (
-                        <div className="flex items-center gap-2 mt-1 text-xs font-bold text-neutral-700">
+                        <div className="flex items-center gap-2 mt-1 text-xs font-bold text-neutral-700 flex-wrap">
                           {selectedIntegration.bloggerName && (
-                            <span>👤 {selectedIntegration.bloggerName}</span>
+                            <span className="shrink-0">👤 {selectedIntegration.bloggerName}</span>
                           )}
-                          {selectedIntegration.bloggerPageLink && (
-                            <a
-                              href={selectedIntegration.bloggerPageLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200 text-[10px] text-blue-600 font-extrabold hover:underline"
-                            >
-                              <span>{lang === 'ru' ? 'Страница блогера' : lang === 'uz' ? 'Blogger sahifasi' : 'Blogger Page'}</span>
-                              <ExternalLink className="w-3 h-3 text-blue-500" />
-                            </a>
-                          )}
-                          {selectedIntegration && (
-                            <a
-                              href={`/api/integrations/${selectedIntegration.id}/chat-redirect`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-[10px] text-sky-700 font-extrabold hover:bg-sky-500 hover:text-white transition group"
-                              title={lang === 'ru' ? 'Открыть диалог с менеджером в Telegram' : lang === 'uz' ? 'Telegramda menejer bilan bog‘lanish' : 'Open Telegram chat with manager'}
-                            >
-                              <Send className="w-2.5 h-2.5 text-sky-500 group-hover:text-white" />
-                              <span>{lang === 'ru' ? 'Чат с менеджером в Telegram' : lang === 'uz' ? 'Menejer bilan Telegram chat' : 'Telegram chat with manager'}</span>
-                              <ExternalLink className="w-2.5 h-2.5 text-sky-400 group-hover:text-white" />
-                            </a>
-                          )}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const refLink = selectedIntegration.referralLink?.trim();
+                              if (!refLink) {
+                                alert(
+                                  lang === 'ru' 
+                                    ? 'Реферальная ссылка пока не указана' 
+                                    : lang === 'uz' 
+                                    ? 'Referal havola hali ko‘rsatilmagan' 
+                                    : 'Referral link is not specified yet'
+                                );
+                                return;
+                              }
+                              const ok = await copyToClipboard(refLink);
+                              if (ok) {
+                                setCopiedReferralLink(true);
+                                setTimeout(() => setCopiedReferralLink(false), 2000);
+                              }
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-extrabold transition cursor-pointer select-none ${
+                              copiedReferralLink
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-200 text-neutral-800'
+                            }`}
+                            title={
+                              selectedIntegration.referralLink
+                                ? selectedIntegration.referralLink
+                                : (lang === 'ru' ? 'Реферальная ссылка не указана' : lang === 'uz' ? 'Referal havola ko‘rsatilmagan' : 'Referral link not set')
+                            }
+                          >
+                            {copiedReferralLink ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>{lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3 text-neutral-500" />
+                                <span>{lang === 'ru' ? 'Копировать реферальную ссылку' : lang === 'uz' ? 'Referal havolani nusxalash' : 'Copy referral link'}</span>
+                              </>
+                            )}
+                          </button>
+                          <a
+                            href="https://t.me/globalpr_admin"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-[10px] text-sky-700 font-extrabold hover:bg-sky-500 hover:text-white transition group cursor-pointer"
+                            title={lang === 'ru' ? 'Открыть диалог с менеджером в Telegram (@globalpr_admin)' : lang === 'uz' ? 'Telegramda menejer bilan bog‘lanish (@globalpr_admin)' : 'Open Telegram chat with manager (@globalpr_admin)'}
+                          >
+                            <Send className="w-2.5 h-2.5 text-sky-500 group-hover:text-white" />
+                            <span>{lang === 'ru' ? 'Чат с менеджером' : lang === 'uz' ? 'Menejer bilan Telegram chat' : 'Telegram chat with manager'}</span>
+                            <ExternalLink className="w-2.5 h-2.5 text-sky-400 group-hover:text-white" />
+                          </a>
                         </div>
                       )}
                       <p className="text-[10px] text-neutral-500 mt-1">

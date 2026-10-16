@@ -45,7 +45,8 @@ if (fs.existsSync(ENV_FILE)) {
 // Configuration
 const API_ID = parseInt(process.env.TELEGRAM_API_ID || '34747233', 10);
 const API_HASH = process.env.TELEGRAM_API_HASH || '22e627a9308edd6aabb1371ad5c0057b';
-const PORT = parseInt(process.env.TELEGRAM_GATEWAY_PORT || '5005', 10);
+const rawPort = process.env.TELEGRAM_GATEWAY_PORT;
+const PORT = (rawPort === '5005' || !rawPort) ? 5006 : parseInt(rawPort, 10);
 
 const appUrlWebhook = process.env.APP_URL 
   ? `${process.env.APP_URL.replace(/\/+$/, '')}/api/telegram-gateway/webhook` 

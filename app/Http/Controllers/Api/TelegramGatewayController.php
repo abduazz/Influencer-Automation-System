@@ -20,7 +20,10 @@ class TelegramGatewayController extends Controller
         if ($envUrl = env('TELEGRAM_GATEWAY_URL')) {
             return rtrim($envUrl, '/');
         }
-        $port = config('services.telegram.gateway_port', 5005);
+        $port = config('services.telegram.gateway_port');
+        if (!$port || $port == 5005) {
+            $port = 5006;
+        }
         return "http://127.0.0.1:{$port}";
     }
 
@@ -34,11 +37,14 @@ class TelegramGatewayController extends Controller
         try {
             $response = Http::timeout(1)->get($url);
             if ($response->successful()) {
-                return true;
+                $data = $response->json();
+                if (!empty($data['version']) && version_compare($data['version'], '2.1.0', '>=')) {
+                    return true;
+                }
             }
         } catch (\Throwable $e) {}
 
-        return $this->launchGatewayProcess();
+        return $this->restartGateway();
     }
 
     /**
@@ -46,7 +52,10 @@ class TelegramGatewayController extends Controller
      */
     public function restartGateway(): bool
     {
-        $port = config('services.telegram.gateway_port', 5005);
+        $port = config('services.telegram.gateway_port');
+        if (!$port || $port == 5005) {
+            $port = 5006;
+        }
         $url = $this->getGatewayUrl();
 
         // 1. Try graceful restart via HTTP endpoint first
@@ -120,18 +129,23 @@ class TelegramGatewayController extends Controller
             }
         }
 
+        $port = config('services.telegram.gateway_port');
+        if (!$port || $port == 5005) {
+            $port = 5006;
+        }
+
         // Check if PM2 is active for telegram-gateway
         $pm2Check = @shell_exec('command -v pm2 2>/dev/null');
         if ($pm2Check && trim($pm2Check)) {
             $pm2List = @shell_exec('pm2 list 2>/dev/null');
             if ($pm2List && str_contains($pm2List, 'telegram-gateway')) {
-                @shell_exec('pm2 restart telegram-gateway 2>/dev/null');
+                @shell_exec("export TELEGRAM_GATEWAY_PORT={$port} && pm2 restart telegram-gateway --update-env 2>/dev/null");
             } else {
-                $cmd = "cd {$cwd} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
+                $cmd = "cd {$cwd} && export TELEGRAM_GATEWAY_PORT={$port} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
                 @pclose(@popen($cmd, 'r'));
             }
         } else {
-            $cmd = "cd {$cwd} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
+            $cmd = "cd {$cwd} && export TELEGRAM_GATEWAY_PORT={$port} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
             @pclose(@popen($cmd, 'r'));
         }
 
@@ -190,6 +204,15 @@ class TelegramGatewayController extends Controller
             $response = Http::timeout(2)->get($url);
             if ($response->successful()) {
                 $data = $response->json();
+                if (empty($data['version']) || version_compare($data['version'], '2.1.0', '<')) {
+                    $this->restartGateway();
+                    try {
+                        $response = Http::timeout(2)->get($url);
+                        if ($response->successful()) {
+                            $data = $response->json();
+                        }
+                    } catch (\Throwable $e) {}
+                }
                 $isAuthorized = (bool) ($data['isAuthorized'] ?? false);
                 $wasAuthorized = (bool) Cache::get('telegram_gateway_was_authorized', false);
 

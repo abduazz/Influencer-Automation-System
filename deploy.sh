@@ -57,15 +57,22 @@ if command -v npm &> /dev/null || [ -x "$NPM_CMD" ]; then
     $NPM_CMD run build || true
 
     echo "🤖 Starting Telegram Gateway microservice..."
+    sed -i 's/TELEGRAM_GATEWAY_PORT=5005/TELEGRAM_GATEWAY_PORT=5006/g' .env 2>/dev/null || true
+
     if command -v pm2 &> /dev/null; then
         pm2 stop telegram-gateway 2>/dev/null || true
         pm2 delete telegram-gateway 2>/dev/null || true
     fi
 
-    # Terminate any process currently holding port 5005
+    # Terminate any process currently holding ports 5005 or 5006
     fuser -k -9 5005/tcp 2>/dev/null || true
+    fuser -k -9 5006/tcp 2>/dev/null || true
     pkill -9 -f "telegram-gateway/server.js" 2>/dev/null || true
     sleep 1
+
+    # Ensure storage permissions for www-data
+    chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
+    chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 
     if command -v pm2 &> /dev/null; then
         pm2 start telegram-gateway/server.js --name "telegram-gateway" --cwd "$(pwd)" --update-env
@@ -76,7 +83,7 @@ if command -v npm &> /dev/null || [ -x "$NPM_CMD" ]; then
 
     # Quick health check for gateway
     sleep 2
-    curl -s -m 3 http://127.0.0.1:5005/status || echo "⚠️ Gateway starting in background..."
+    curl -s -m 3 http://127.0.0.1:5006/status || echo "⚠️ Gateway starting in background..."
 else
     echo "⚠️ Node.js runtime could not be started."
 fi

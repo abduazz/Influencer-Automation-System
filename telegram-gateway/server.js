@@ -79,8 +79,19 @@ if (fs.existsSync(SESSION_FILE)) {
 
 const stringSession = new StringSession(savedSessionString);
 const client = new TelegramClient(stringSession, API_ID, API_HASH, {
-  connectionRetries: 5,
+  connectionRetries: 3,
+  requestRetries: 1,
+  timeout: 8,
+  autoReconnect: true,
 });
+
+function withTimeout(promise, ms, errorMsg = 'Operation timed out') {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
 
 let isAuthorized = false;
 let currentUser = null;
@@ -161,9 +172,13 @@ async function resolvePhoneUser(phone, contactName = 'Blogger') {
       lastName: '',
     });
 
-    const res = await client.invoke(new Api.contacts.ImportContacts({
-      contacts: [contact],
-    }));
+    const res = await withTimeout(
+      client.invoke(new Api.contacts.ImportContacts({
+        contacts: [contact],
+      })),
+      7000,
+      'Поиск контакта в Telegram превысил таймаут (7 сек).'
+    );
 
     if (res && res.users && res.users.length > 0) {
       const user = res.users[0];
@@ -334,7 +349,11 @@ async function verifyAuthorization() {
   lastAuthCheckTime = now;
 
   try {
-    const authValid = await client.isUserAuthorized();
+    const authValid = await withTimeout(
+      client.isUserAuthorized(),
+      4000,
+      'Auth check timed out'
+    );
     if (!authValid) {
       await handleSessionLost('client.isUserAuthorized() returned false (session invalidated)');
       return false;
@@ -573,7 +592,11 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const result = await client.sendMessage(resolvedPeer, { message: text });
+        const result = await withTimeout(
+          client.sendMessage(resolvedPeer, { message: text }),
+          10000,
+          'Отправка в Telegram превысила лимит ожидания (10 сек). Telegram-сервер не ответил.'
+        );
         let peerId = null;
         if (result.peerId) {
           peerId = (result.peerId.userId || result.peerId.chatId || result.peerId.channelId || '').toString();
@@ -603,6 +626,11 @@ const server = http.createServer(async (req, res) => {
             error: isPhoneTarget
               ? `Номер ${detectedPhone} не зарегистрирован в Telegram (или скрыт настройками приватности). Пожалуйста, укажите публичный @username блогера.`
               : 'Пользователь не найден в вашей сессии Telegram. Для первого сообщения укажите публичный @username блогера (например, @nickname), либо собеседник должен первым написать вам в Telegram.'
+          });
+        }
+        if (errMsg.includes('превысила лимит ожидания') || errMsg.includes('timed out') || errMsg.includes('TIMEOUT')) {
+          return sendJson(504, {
+            error: 'Шлюз Telegram не получил ответ от серверов Telegram (таймаут 10 сек). Возможно, рабочий аккаунт переподключается к сети. Попробуйте повторить отправку через несколько секунд.'
           });
         }
         return sendJson(500, { error: err.message || 'Failed to send message via Telegram' });

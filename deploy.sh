@@ -57,15 +57,18 @@ if command -v npm &> /dev/null || [ -x "$NPM_CMD" ]; then
     $NPM_CMD run build || true
 
     echo "🤖 Starting Telegram Gateway microservice..."
+    if command -v pm2 &> /dev/null; then
+        pm2 stop telegram-gateway 2>/dev/null || true
+        pm2 delete telegram-gateway 2>/dev/null || true
+    fi
+
+    # Terminate any process currently holding port 5005
     fuser -k -9 5005/tcp 2>/dev/null || true
     pkill -9 -f "telegram-gateway/server.js" 2>/dev/null || true
     sleep 1
 
-    if command -v pm2 &> /dev/null && pm2 list 2>/dev/null | grep -q "telegram-gateway"; then
-        pm2 restart telegram-gateway
-        pm2 save
-    elif command -v pm2 &> /dev/null; then
-        pm2 start telegram-gateway/server.js --name "telegram-gateway"
+    if command -v pm2 &> /dev/null; then
+        pm2 start telegram-gateway/server.js --name "telegram-gateway" --cwd "$(pwd)" --update-env
         pm2 save
     else
         nohup $NODE_CMD telegram-gateway/server.js > storage/logs/telegram-gateway.log 2>&1 < /dev/null &

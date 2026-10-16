@@ -11,7 +11,9 @@ import QRCode from 'qrcode';
 import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 import { NewMessage } from 'telegram/events/index.js';
+import { ConnectionTCPObfuscated } from 'telegram/network/index.js';
 
+const GATEWAY_VERSION = '2.1.0';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -79,9 +81,10 @@ if (fs.existsSync(SESSION_FILE)) {
 
 const stringSession = new StringSession(savedSessionString);
 const client = new TelegramClient(stringSession, API_ID, API_HASH, {
-  connectionRetries: 3,
-  requestRetries: 1,
-  timeout: 8,
+  connection: ConnectionTCPObfuscated,
+  connectionRetries: 5,
+  requestRetries: 2,
+  timeout: 10,
   autoReconnect: true,
 });
 
@@ -487,16 +490,40 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(data));
   };
 
-  const readBody = () => {
+  const readBody = (timeoutMs = 5000) => {
     return new Promise((resolve) => {
       let body = '';
-      req.on('data', (chunk) => (body += chunk));
-      req.on('end', () => {
+      const timer = setTimeout(() => {
+        console.warn(`[GATEWAY] readBody timeout reached (${timeoutMs}ms)`);
         try {
           resolve(body ? JSON.parse(body) : {});
         } catch {
           resolve({});
         }
+      }, timeoutMs);
+
+      req.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 2 * 1024 * 1024) {
+          clearTimeout(timer);
+          req.destroy();
+          resolve({});
+        }
+      });
+
+      req.on('end', () => {
+        clearTimeout(timer);
+        try {
+          resolve(body ? JSON.parse(body) : {});
+        } catch {
+          resolve({});
+        }
+      });
+
+      req.on('error', (err) => {
+        clearTimeout(timer);
+        console.error('[GATEWAY] req socket error in readBody:', err.message);
+        resolve({});
       });
     });
   };
@@ -505,9 +532,12 @@ const server = http.createServer(async (req, res) => {
     // 1. GET /status
     if (url.pathname === '/status' && req.method === 'GET') {
       if (isAuthorized) {
-        await verifyAuthorization();
+        verifyAuthorization().catch(() => {});
       }
       return sendJson(200, {
+        version: GATEWAY_VERSION,
+        uptime: Math.floor(process.uptime()),
+        connectionType: 'ConnectionTCPObfuscated',
         isAuthorized,
         user: currentUser,
         qr: currentQr,
@@ -530,18 +560,42 @@ const server = http.createServer(async (req, res) => {
       return sendJson(200, { success: true, message: 'Logged out successfully' });
     }
 
+    // 3.1 POST /restart - Gracefully restart microservice
+    if (url.pathname === '/restart' && req.method === 'POST') {
+      console.log('[GATEWAY] Restart request received. Exiting for process manager restart...');
+      sendJson(200, { success: true, message: 'Telegram Gateway restarting...' });
+      setTimeout(() => {
+        process.exit(0);
+      }, 200);
+      return;
+    }
+
     // 4. POST /send
     if (url.pathname === '/send' && req.method === 'POST') {
+      const startTime = Date.now();
+      console.log('[GATEWAY] 📨 Incoming POST /send request');
+
       if (!isAuthorized) {
+        console.warn('[GATEWAY] /send rejected: gateway not authorized');
         return sendJson(401, { error: 'Telegram gateway is not authorized. Scan QR code first.' });
       }
 
-      const body = await readBody();
-      let target = body.to || body.chatId || body.username;
+      const body = await readBody(5000);
+      let target = body.to || body.chatId || body.username || body.phone;
       const text = body.text;
       const bloggerName = body.bloggerName || body.senderName || 'Blogger';
 
-      // If a valid public username is provided, prioritize it over raw numeric target
+      console.log(`[GATEWAY] /send payload:`, {
+        to: body.to,
+        username: body.username,
+        phone: body.phone,
+        chatId: body.chatId,
+        target: target,
+        bloggerName: bloggerName,
+        textLen: text ? text.length : 0,
+      });
+
+      // 1. If an explicit valid public username is provided, prioritize it
       if (body.username && typeof body.username === 'string') {
         const u = body.username.trim();
         if (/[a-zA-Z]/.test(u) && !u.startsWith('+')) {
@@ -556,10 +610,11 @@ const server = http.createServer(async (req, res) => {
       let resolvedPeer = null;
       let resolvedUsername = null;
       let isPhoneTarget = false;
-      const detectedPhone = extractPhoneNumber(target);
+      const detectedPhone = extractPhoneNumber(body.phone || target);
 
-      // If target is a phone number, resolve via MTProto ImportContacts
-      if (detectedPhone && !body.chatId) {
+      // 2. If target or phone field is a phone number, resolve via MTProto ImportContacts
+      // Phone resolution is authoritative, so resolve regardless of whether chatId was passed!
+      if (detectedPhone) {
         isPhoneTarget = true;
         console.log(`[GATEWAY] Target is phone (${detectedPhone}). Resolving via MTProto ImportContacts...`);
         const phoneResult = await resolvePhoneUser(detectedPhone, bloggerName);
@@ -569,16 +624,23 @@ const server = http.createServer(async (req, res) => {
           resolvedUsername = phoneResult.username;
         } else {
           console.warn(`[GATEWAY] Phone ${detectedPhone} not registered in Telegram or hidden by user privacy.`);
-          return sendJson(404, {
-            error: `Номер ${detectedPhone} не зарегистрирован в Telegram (или пользователь скрыл аккаунт в настройках приватности). Проверьте правильность номера или укажите публичный @username блогера.`,
-            notFound: true,
-            phone: detectedPhone,
-          });
+          // If we also have a public username, fallback to username instead of failing!
+          if (body.username && typeof body.username === 'string' && /[a-zA-Z]/.test(body.username)) {
+            const u = body.username.trim();
+            target = u.startsWith('@') ? u : `@${u}`;
+            console.log(`[GATEWAY] Falling back to username: ${target}`);
+          } else {
+            return sendJson(404, {
+              error: `Номер ${detectedPhone} не зарегистрирован в Telegram (или пользователь скрыл аккаунт в настройках приватности). Проверьте правильность номера или укажите публичный @username блогера.`,
+              notFound: true,
+              phone: detectedPhone,
+            });
+          }
         }
       }
 
+      // 3. Format username or peer if not resolved by phone
       if (!resolvedPeer) {
-        // Format username or ID (strip t.me/ links)
         if (typeof target === 'string') {
           target = target.trim();
           target = target.replace(/^(https?:\/\/)?(t\.me\/)/i, '');
@@ -591,16 +653,22 @@ const server = http.createServer(async (req, res) => {
         resolvedPeer = target;
       }
 
+      console.log(`[GATEWAY] Final resolvedPeer to send to:`, typeof resolvedPeer === 'object' ? `User(${resolvedPeer.id})` : resolvedPeer);
+
       try {
         const result = await withTimeout(
           client.sendMessage(resolvedPeer, { message: text }),
-          25000,
-          'Отправка в Telegram превысила лимит ожидания (25 сек). Telegram-сервер не ответил.'
+          12000,
+          'Отправка в Telegram превысила лимит ожидания (12 сек). Telegram-сервер не ответил.'
         );
+
         let peerId = null;
         if (result.peerId) {
           peerId = (result.peerId.userId || result.peerId.chatId || result.peerId.channelId || '').toString();
         }
+
+        console.log(`[GATEWAY] ✅ Message sent successfully in ${Date.now() - startTime}ms! msgId: ${result.id}, peerId: ${peerId}`);
+
         return sendJson(200, {
           success: true,
           messageId: result.id,
@@ -610,8 +678,10 @@ const server = http.createServer(async (req, res) => {
           phone: detectedPhone,
         });
       } catch (err) {
-        console.error('Send error:', err);
+        const elapsed = Date.now() - startTime;
+        console.error(`[GATEWAY] ❌ Send error after ${elapsed}ms:`, err.message);
         const errMsg = String(err?.message || '');
+
         if (
           errMsg.includes('AUTH_KEY_UNREGISTERED') ||
           errMsg.includes('SESSION_REVOKED') ||
@@ -621,6 +691,7 @@ const server = http.createServer(async (req, res) => {
         ) {
           handleSessionLost(`Send failed with auth error: ${errMsg}`).catch(() => {});
         }
+
         if (errMsg.includes('Could not find the input entity') || errMsg.includes('PeerUser')) {
           return sendJson(400, {
             error: isPhoneTarget
@@ -628,11 +699,32 @@ const server = http.createServer(async (req, res) => {
               : 'Пользователь не найден в вашей сессии Telegram. Для первого сообщения укажите публичный @username блогера (например, @nickname), либо собеседник должен первым написать вам в Telegram.'
           });
         }
+
         if (errMsg.includes('превысила лимит ожидания') || errMsg.includes('timed out') || errMsg.includes('TIMEOUT')) {
           return sendJson(504, {
-            error: 'Шлюз Telegram не получил ответ от серверов Telegram (таймаут 25 сек). Возможно, рабочий аккаунт переподключается к сети. Попробуйте повторить отправку через несколько секунд.'
+            error: 'Шлюз Telegram не получил ответ от серверов Telegram (таймаут 12 сек). Возможно, рабочий аккаунт переподключается к сети. Попробуйте повторить отправку через несколько секунд.'
           });
         }
+
+        if (errMsg.includes('FLOOD_WAIT_')) {
+          const seconds = errMsg.match(/\d+/) ? errMsg.match(/\d+/)[0] : 'несколько';
+          return sendJson(429, {
+            error: `Telegram временно ограничил отправку сообщений (Flood Wait на ${seconds} сек). Пожалуйста, подождите перед следующей отправкой.`
+          });
+        }
+
+        if (errMsg.includes('PEER_FLOOD')) {
+          return sendJson(429, {
+            error: 'Telegram временно заблокировал отправку новым контактам с этого аккаунта (ограничение спам-фильтра Telegram). Попробуйте написать позже или дождитесь ответа блогера.'
+          });
+        }
+
+        if (errMsg.includes('USER_IS_BLOCKED')) {
+          return sendJson(403, {
+            error: 'Этот пользователь заблокировал ваш рабочий Telegram-аккаунт.'
+          });
+        }
+
         return sendJson(500, { error: err.message || 'Failed to send message via Telegram' });
       }
     }
@@ -671,7 +763,7 @@ const server = http.createServer(async (req, res) => {
 
       let resolvedPeer = null;
       const detectedPhone = extractPhoneNumber(target);
-      if (detectedPhone && !body.chatId) {
+      if (detectedPhone) {
         const phoneResult = await resolvePhoneUser(detectedPhone);
         if (phoneResult.found && phoneResult.user) {
           resolvedPeer = phoneResult.user;
@@ -694,7 +786,11 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const messages = await client.getMessages(resolvedPeer, { limit: 25 });
+        const messages = await withTimeout(
+          client.getMessages(resolvedPeer, { limit: 25 }),
+          8000,
+          'History request timed out'
+        );
         const list = [];
         for (const m of messages) {
           if (!m || !m.id) continue;
@@ -734,7 +830,7 @@ const server = http.createServer(async (req, res) => {
       if (!isAuthorized) {
         return sendJson(401, { error: 'Telegram gateway is not authorized.' });
       }
-      const body = await readBody();
+      const body = await readBody(5000);
       const target = body.target || body.to || body.username || body.phone;
       if (!target) {
         return sendJson(400, { error: 'Target is required' });
@@ -765,7 +861,11 @@ const server = http.createServer(async (req, res) => {
       try {
         let cleanUser = String(target).trim().replace(/^(https?:\/\/)?(t\.me\/)/i, '');
         if (!cleanUser.startsWith('@')) cleanUser = `@${cleanUser}`;
-        const entity = await client.getEntity(cleanUser);
+        const entity = await withTimeout(
+          client.getEntity(cleanUser),
+          6000,
+          'Entity resolution timed out'
+        );
         if (entity) {
           return sendJson(200, {
             found: true,
@@ -790,7 +890,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(401, { error: 'Telegram gateway is not authorized.' });
       }
 
-      const body = await readBody();
+      const body = await readBody(5000);
       let rawTarget = body.target || body.username || body.chatId || body.to;
       const messageId = parseInt(body.messageId, 10);
       const text = body.text;
@@ -810,10 +910,14 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const result = await client.editMessage(target, {
-          message: messageId,
-          text: text,
-        });
+        const result = await withTimeout(
+          client.editMessage(target, {
+            message: messageId,
+            text: text,
+          }),
+          10000,
+          'Edit message timed out'
+        );
 
         // Update in-memory updates queue if present
         const cached = recentUpdates.find(u => u.messageId === messageId);
@@ -846,7 +950,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(401, { error: 'Telegram gateway is not authorized.' });
       }
 
-      const body = await readBody();
+      const body = await readBody(5000);
       let rawTarget = body.target || body.username || body.chatId || body.to;
       const messageId = parseInt(body.messageId, 10);
       const revoke = body.revoke === true || body.revoke === 'true' || body.revoke === 1 || body.revoke === '1';
@@ -866,7 +970,11 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        await client.deleteMessages(target, [messageId], { revoke: revoke });
+        await withTimeout(
+          client.deleteMessages(target, [messageId], { revoke: revoke }),
+          10000,
+          'Delete messages timed out'
+        );
 
         // Remove from in-memory updates queue if present
         recentUpdates = recentUpdates.filter(u => u.messageId !== messageId);

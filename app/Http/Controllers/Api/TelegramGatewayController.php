@@ -38,6 +38,37 @@ class TelegramGatewayController extends Controller
             }
         } catch (\Throwable $e) {}
 
+        return $this->launchGatewayProcess();
+    }
+
+    /**
+     * Cleanly and forcefully restart the gateway microservice.
+     */
+    public function restartGateway(): bool
+    {
+        $port = config('services.telegram.gateway_port', 5005);
+        $url = $this->getGatewayUrl();
+
+        // 1. Try graceful restart via HTTP endpoint first
+        try {
+            Http::timeout(1)->post("{$url}/restart");
+            usleep(200000); // 200ms
+        } catch (\Throwable $e) {}
+
+        // 2. Kill any lingering process holding the gateway port
+        @shell_exec("fuser -k -9 {$port}/tcp 2>/dev/null || pkill -9 -f 'telegram-gateway/server.js' 2>/dev/null || true");
+        usleep(400000); // 400ms for OS to release socket
+
+        return $this->launchGatewayProcess();
+    }
+
+    /**
+     * Launch fresh instance of Telegram Gateway process.
+     */
+    public function launchGatewayProcess(): bool
+    {
+        $url = $this->getGatewayUrl() . '/status';
+
         // Locate node or auto-install portable node runtime
         $portableNode = base_path('storage/node-runtime/bin/node');
         $nodePath = null;
@@ -89,11 +120,23 @@ class TelegramGatewayController extends Controller
             }
         }
 
-        $cmd = "cd {$cwd} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
-        @pclose(@popen($cmd, 'r'));
+        // Check if PM2 is active for telegram-gateway
+        $pm2Check = @shell_exec('command -v pm2 2>/dev/null');
+        if ($pm2Check && trim($pm2Check)) {
+            $pm2List = @shell_exec('pm2 list 2>/dev/null');
+            if ($pm2List && str_contains($pm2List, 'telegram-gateway')) {
+                @shell_exec('pm2 restart telegram-gateway 2>/dev/null');
+            } else {
+                $cmd = "cd {$cwd} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
+                @pclose(@popen($cmd, 'r'));
+            }
+        } else {
+            $cmd = "cd {$cwd} && nohup {$nodePath} {$scriptPath} > {$logPath} 2>&1 < /dev/null &";
+            @pclose(@popen($cmd, 'r'));
+        }
 
-        // Wait up to 2.5 seconds for it to bind
-        for ($i = 0; $i < 10; $i++) {
+        // Wait up to 3 seconds for it to bind
+        for ($i = 0; $i < 12; $i++) {
             usleep(250000); // 250ms
             try {
                 $response = Http::timeout(1)->get($url);
@@ -177,6 +220,9 @@ class TelegramGatewayController extends Controller
                 return response()->json([
                     'isRunning' => true,
                     'isAuthorized' => $isAuthorized,
+                    'version' => $data['version'] ?? null,
+                    'connectionType' => $data['connectionType'] ?? null,
+                    'uptime' => $data['uptime'] ?? null,
                     'user' => $data['user'] ?? null,
                     'qr' => $data['qr'] ?? null,
                     'qrLoginActive' => (bool) ($data['qrLoginActive'] ?? false),
@@ -194,6 +240,9 @@ class TelegramGatewayController extends Controller
                         return response()->json([
                             'isRunning' => true,
                             'isAuthorized' => $isAuthorized,
+                            'version' => $data['version'] ?? null,
+                            'connectionType' => $data['connectionType'] ?? null,
+                            'uptime' => $data['uptime'] ?? null,
                             'user' => $data['user'] ?? null,
                             'qr' => $data['qr'] ?? null,
                             'qrLoginActive' => (bool) ($data['qrLoginActive'] ?? false),
@@ -211,6 +260,24 @@ class TelegramGatewayController extends Controller
             'qr' => null,
             'qrLoginActive' => false,
             'sessionLost' => (bool) Cache::get('telegram_gateway_session_lost_active', false),
+        ]);
+    }
+
+    /**
+     * Restart the gateway microservice on request (Super Admin only)
+     */
+    public function restart(Request $request): JsonResponse
+    {
+        if (!$this->checkSuperAdmin($request)) {
+            return response()->json([
+                'error' => 'Доступ запрещён. Перезапускать шлюз может только супер-администратор.'
+            ], 403);
+        }
+
+        $success = $this->restartGateway();
+        return response()->json([
+            'success' => $success,
+            'message' => $success ? 'Шлюз Telegram успешно перезапущен' : 'Не удалось перезапустить микросервис шлюза',
         ]);
     }
 
@@ -342,7 +409,9 @@ class TelegramGatewayController extends Controller
         // Send via Gateway
         $url = $this->getGatewayUrl() . '/send';
         try {
-            $response = Http::timeout(35)->post($url, [
+            $response = Http::withHeaders([
+                'Accept' => 'application/json',
+            ])->timeout(20)->post($url, [
                 'to' => $target,
                 'chatId' => $integration->telegram_chat_id ? (string) $integration->telegram_chat_id : null,
                 'username' => $validUsername,
@@ -414,8 +483,8 @@ class TelegramGatewayController extends Controller
             $chatMessage->update(['status' => 'failed']);
             $msg = $e->getMessage();
             if (stripos($msg, 'cURL error 28') !== false || stripos($msg, 'timed out') !== false) {
-                $msg = 'Шлюз Telegram не ответил в течение 35 секунд (таймаут соединения). Микросервис перезапускается. Пожалуйста, повторите попытку через несколько секунд.';
-                $this->ensureGatewayRunning();
+                $msg = 'Шлюз Telegram не ответил вовремя (таймаут 20 сек). Микросервис перезапускается. Пожалуйста, повторите попытку через несколько секунд.';
+                $this->restartGateway();
             } elseif (stripos($msg, 'Could not find the input entity') !== false || stripos($msg, 'PeerUser') !== false) {
                 $msg = 'Пользователь не найден в вашей сессии Telegram. Для первого сообщения укажите публичный @username блогера (например, @nickname), либо блогер должен первым написать вам в Telegram.';
             }

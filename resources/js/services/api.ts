@@ -563,6 +563,10 @@ export function logoutTelegramGateway(): Promise<{ success: boolean }> {
   return request<{ success: boolean }>('/api/telegram-gateway/logout', { method: 'POST' });
 }
 
+export function restartTelegramGateway(): Promise<{ success: boolean; message?: string }> {
+  return request<{ success: boolean; message?: string }>('/api/telegram-gateway/restart', { method: 'POST' });
+}
+
 export function downloadDatabaseBackupUrl(): string {
   return '/api/database/backup/download';
 }

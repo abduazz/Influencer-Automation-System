@@ -54,6 +54,7 @@ Route::post('/telegram/setup-webhook', [TelegramChatController::class, 'setupWeb
 Route::get('/telegram-gateway/status', [TelegramGatewayController::class, 'getStatus']);
 Route::post('/telegram-gateway/qr', [TelegramGatewayController::class, 'startQr']);
 Route::post('/telegram-gateway/logout', [TelegramGatewayController::class, 'logout']);
+Route::post('/telegram-gateway/restart', [TelegramGatewayController::class, 'restart']);
 Route::post('/telegram-gateway/send/{integration}', [TelegramGatewayController::class, 'send']);
 Route::post('/telegram-gateway/webhook', [TelegramGatewayController::class, 'webhook']);
 

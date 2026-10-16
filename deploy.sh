@@ -57,13 +57,23 @@ if command -v npm &> /dev/null || [ -x "$NPM_CMD" ]; then
     $NPM_CMD run build || true
 
     echo "🤖 Starting Telegram Gateway microservice..."
-    if command -v pm2 &> /dev/null; then
-        pm2 restart telegram-gateway 2>/dev/null || pm2 start telegram-gateway/server.js --name "telegram-gateway"
+    fuser -k -9 5005/tcp 2>/dev/null || true
+    pkill -9 -f "telegram-gateway/server.js" 2>/dev/null || true
+    sleep 1
+
+    if command -v pm2 &> /dev/null && pm2 list 2>/dev/null | grep -q "telegram-gateway"; then
+        pm2 restart telegram-gateway
+        pm2 save
+    elif command -v pm2 &> /dev/null; then
+        pm2 start telegram-gateway/server.js --name "telegram-gateway"
         pm2 save
     else
-        pkill -f "telegram-gateway/server.js" || true
         nohup $NODE_CMD telegram-gateway/server.js > storage/logs/telegram-gateway.log 2>&1 < /dev/null &
     fi
+
+    # Quick health check for gateway
+    sleep 2
+    curl -s -m 3 http://127.0.0.1:5005/status || echo "⚠️ Gateway starting in background..."
 else
     echo "⚠️ Node.js runtime could not be started."
 fi

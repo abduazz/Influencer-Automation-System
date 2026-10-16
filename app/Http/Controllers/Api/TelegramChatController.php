@@ -138,11 +138,6 @@ class TelegramChatController extends Controller
         $text = trim($request->input('text'));
         $senderName = $request->input('senderName') ?: 'Super Admin';
 
-        // Check if personal MTProto Gateway is configured / session exists
-        $hasPersonalSession = file_exists(storage_path('app/telegram_user_session.json'));
-        $gatewayController = app(TelegramGatewayController::class);
-        $gatewayStatus = $gatewayController->getStatus()->getData(true);
-
         if (empty($integration->telegram_username) && empty($integration->telegram_chat_id)) {
             return response()->json([
                 'error' => 'У блогера не указан контакт Telegram. Укажите @username или номер телефона блогера в карточке для отправки сообщения.',

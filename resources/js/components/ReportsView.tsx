@@ -25,6 +25,7 @@ import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses } from '../utils/platform';
+import { cleanAmount, formatPrice, parsePrice } from '../utils/format';
 
 interface StepperInputProps {
   value: number;
@@ -98,21 +99,6 @@ interface ReportsViewProps {
   currentUserEmail?: string;
 }
 
-const formatPrice = (val: number | ''): string => {
-  if (val === '' || val === undefined || val === null) return '';
-  return new Intl.NumberFormat('ru-RU').format(val);
-};
-
-const parsePrice = (str: string): number | '' => {
-  const clean = str.replace(/\s/g, '').replace(/ /g, ''); // strip regular spaces and non-breaking spaces
-  if (clean === '') return '';
-  const digitsOnly = clean.replace(/[^\d]/g, '');
-  if (digitsOnly === '') return '';
-  // Strip leading zeroes before digits (e.g. "0123" -> "123")
-  const sanitized = digitsOnly.replace(/^0+(?=\d)/, '');
-  const num = Number(sanitized);
-  return isNaN(num) ? '' : num;
-};
 
 const compressImage = (file: File, maxWidth = 1000, maxHeight = 1000, quality = 0.65): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -666,8 +652,8 @@ export default function ReportsView({
       return;
     }
     const p = newPrice;
-    setTotalAmount(slotsCount * p);
-    setPaidAmount(paidSlotsCount * p);
+    setTotalAmount(cleanAmount(slotsCount * p));
+    setPaidAmount(cleanAmount(paidSlotsCount * p));
   };
 
   const handleTotalAmountChange = (newTotal: number | '') => {
@@ -682,7 +668,11 @@ export default function ReportsView({
     const computedPrice = slotsCount > 0 ? (t / slotsCount) : 0;
     const roundedPrice = Math.round(computedPrice * 100) / 100;
     setPricePerSlot(roundedPrice);
-    setPaidAmount(Math.round(paidSlotsCount * roundedPrice * 100) / 100);
+    if (paidSlotsCount === slotsCount) {
+      setPaidAmount(newTotal);
+    } else {
+      setPaidAmount(cleanAmount(paidSlotsCount * computedPrice));
+    }
   };
 
   const handleSlotsCountChange = (newSlots: number) => {
@@ -693,7 +683,7 @@ export default function ReportsView({
       return;
     }
     const p = pricePerSlot;
-    setTotalAmount(newSlots * p);
+    setTotalAmount(cleanAmount(newSlots * p));
 
     let nextPaidSlots = paidSlotsCount;
     if (paymentType === 'full') {
@@ -703,7 +693,7 @@ export default function ReportsView({
       nextPaidSlots = newSlots;
       setPaidSlotsCount(newSlots);
     }
-    setPaidAmount(nextPaidSlots * p);
+    setPaidAmount(cleanAmount(nextPaidSlots * p));
   };
 
   const handlePaidSlotsCountChange = (newPaidSlots: number) => {
@@ -712,7 +702,11 @@ export default function ReportsView({
       setPaidAmount('');
       return;
     }
-    setPaidAmount(newPaidSlots * pricePerSlot);
+    if (newPaidSlots === slotsCount && totalAmount !== '') {
+      setPaidAmount(totalAmount);
+    } else {
+      setPaidAmount(cleanAmount(newPaidSlots * pricePerSlot));
+    }
   };
 
   // Ensure paid slots match when full payment or don't exceed total slots
@@ -817,6 +811,8 @@ export default function ReportsView({
       payload.slotsCount = slotsCount;
       payload.paidSlotsCount = paidSlotsCount;
       payload.pricePerSlot = pricePerSlot === '' ? 0 : pricePerSlot;
+      payload.totalAmount = totalAmount === '' ? undefined : cleanAmount(totalAmount);
+      payload.paidAmount = paidAmount === '' ? undefined : cleanAmount(paidAmount);
 
       let finalSlotsConfig = slotsConfig;
       if (customizeSlots) {
@@ -1692,7 +1688,7 @@ export default function ReportsView({
                               <input
                                 type="text"
                                 disabled
-                                value={pricePerSlot === '' ? '' : (paidSlotsCount * pricePerSlot).toLocaleString('ru-RU')}
+                                value={pricePerSlot === '' ? '' : formatPrice(cleanAmount(paidSlotsCount * pricePerSlot))}
                                 placeholder="0"
                                 className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
                               />
@@ -1707,7 +1703,7 @@ export default function ReportsView({
                                 <input
                                   type="text"
                                   disabled
-                                  value={paidAmount === '' ? '' : paidAmount.toLocaleString('ru-RU')}
+                                  value={paidAmount === '' ? '' : formatPrice(paidAmount)}
                                   placeholder="0"
                                   className="w-full px-2 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-[11px] font-bold text-black text-center select-none"
                                 />

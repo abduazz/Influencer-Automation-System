@@ -13,6 +13,7 @@ import {
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses, formatTelegramLink, formatTelegramHandle } from '../utils/platform';
+import { cleanAmount, formatPrice } from '../utils/format';
 import { 
   Plus, 
   Trash2, 
@@ -931,18 +932,18 @@ export default function DashboardView({
 
                           {/* Total Sum */}
                           <td className="py-3.5 px-4 font-extrabold text-black whitespace-nowrap">
-                            {item.totalAmount.toLocaleString('ru-RU')}
+                            {formatPrice(item.totalAmount)}
                           </td>
 
                           {/* Paid to Blogger */}
                           <td className="py-3.5 px-4 font-bold text-emerald-600 whitespace-nowrap">
-                            {(item.paidAmount || 0).toLocaleString('ru-RU')}
+                            {formatPrice(item.paidAmount || 0)}
                           </td>
 
                           {/* Remaining to Pay */}
                           <td className="py-3.5 px-4 font-bold text-rose-600 whitespace-nowrap">
                              <div className="flex items-center gap-1.5">
-                               <span>{Math.max(0, item.totalAmount - (item.paidAmount || 0)).toLocaleString('ru-RU')}</span>
+                               <span>{formatPrice(Math.max(0, cleanAmount(item.totalAmount) - cleanAmount(item.paidAmount || 0)))}</span>
                                {Math.max(0, item.totalAmount - (item.paidAmount || 0)) > 0 && (
                                  <button
                                    type="button"
@@ -1663,7 +1664,7 @@ export default function DashboardView({
                   <div className="flex justify-between py-0.5 border-t border-neutral-50 pt-1.5">
                     <span className="text-neutral-500">{t.totalSumColumn || 'Total Sum'}:</span>
                     <span className="font-black text-black">
-                      {Number(selectedIntegrationForDetails.totalAmount || 0).toLocaleString('ru-RU')} UZS
+                      {formatPrice(selectedIntegrationForDetails.totalAmount || 0)} UZS
                     </span>
                   </div>
                   {(allowedMetrics || []).includes('financial_metrics') && (
@@ -1671,14 +1672,14 @@ export default function DashboardView({
                       <div className="flex justify-between py-0.5">
                         <span className="text-neutral-500">{t.metricPaidToBlogger || 'Paid'}:</span>
                         <span className="font-extrabold text-emerald-600">
-                          {Number(selectedIntegrationForDetails.paidAmount || 0).toLocaleString('ru-RU')} UZS
+                          {formatPrice(selectedIntegrationForDetails.paidAmount || 0)} UZS
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-0.5 border-t border-neutral-50 pt-1.5">
                         <span className="text-neutral-500 font-bold">{t.metricRemainingToPay || 'Remaining'}:</span>
                         <div className="flex items-center gap-1.5">
                           <span className="font-black text-rose-600">
-                            {Math.max(0, Number(selectedIntegrationForDetails.totalAmount || 0) - Number(selectedIntegrationForDetails.paidAmount || 0)).toLocaleString('ru-RU')} UZS
+                            {formatPrice(Math.max(0, cleanAmount(selectedIntegrationForDetails.totalAmount || 0) - cleanAmount(selectedIntegrationForDetails.paidAmount || 0)))} UZS
                           </span>
                           {Math.max(0, Number(selectedIntegrationForDetails.totalAmount || 0) - Number(selectedIntegrationForDetails.paidAmount || 0)) > 0 && (
                             <button

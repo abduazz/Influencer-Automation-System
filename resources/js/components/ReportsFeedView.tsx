@@ -5,6 +5,7 @@ import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses } from '../utils/platform';
+import { cleanAmount, formatPrice, parsePrice } from '../utils/format';
 
 interface ReportsFeedViewProps {
   projects: Project[];
@@ -41,21 +42,6 @@ const findMatchingIntegration = (rep: Report, integrations: Integration[]): Inte
     ) ||
     null
   );
-};
-
-const formatPrice = (val: number | ''): string => {
-  if (val === '' || val === undefined || val === null) return '';
-  return new Intl.NumberFormat('ru-RU').format(val);
-};
-
-const parsePrice = (str: string): number | '' => {
-  const clean = str.replace(/\s/g, '').replace(/ /g, ''); // strip regular spaces and non-breaking spaces
-  if (clean === '') return '';
-  const digitsOnly = clean.replace(/[^\d]/g, '');
-  if (digitsOnly === '') return '';
-  const sanitized = digitsOnly.replace(/^0+(?=\d)/, '');
-  const num = Number(sanitized);
-  return isNaN(num) ? '' : num;
 };
 
 const getDefaultFormat = (plat: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok') => {
@@ -202,7 +188,7 @@ export default function ReportsFeedView({
       return;
     }
     const count = slotsCount > 0 ? slotsCount : 1;
-    setCalculatedTotal(Math.round(Number(newPrice) * count * 100) / 100);
+    setCalculatedTotal(cleanAmount(Number(newPrice) * count));
   };
 
   const handleTotalAmountChange = (newTotal: number | '') => {
@@ -220,7 +206,7 @@ export default function ReportsFeedView({
     setSlotsCount(newSlots);
     if (pricePerSlot !== '') {
       const count = newSlots > 0 ? newSlots : 0;
-      setCalculatedTotal(Math.round(Number(pricePerSlot) * count * 100) / 100);
+      setCalculatedTotal(cleanAmount(Number(pricePerSlot) * count));
     }
   };
 
@@ -248,7 +234,8 @@ export default function ReportsFeedView({
     const repSlotsCount = Number(rep.slotsCount) > 0 ? Number(rep.slotsCount) : 1;
     const repPricePerSlot = Number(rep.pricePerSlot) || (matching ? Number(matching.pricePerSlot) : 0);
 
-    const repTotalAmount = Number(rep.totalAmount) || (repPricePerSlot * repSlotsCount);
+    const rawTotal = Number(rep.totalAmount) || (repPricePerSlot * repSlotsCount);
+    const repTotalAmount = cleanAmount(rawTotal);
 
     setBloggerName(rep.channelBlogger || matching?.bloggerName || '');
     setBloggerPageLink(rep.bloggerPageLink || matching?.bloggerPageLink || '');
@@ -324,7 +311,7 @@ export default function ReportsFeedView({
 
     const finalPrice = Number(pricePerSlot) || 0;
     const finalSlots = Number(slotsCount) > 0 ? Number(slotsCount) : 1;
-    const finalTotal = calculatedTotal !== '' ? Number(calculatedTotal) : (finalPrice * finalSlots);
+    const finalTotal = cleanAmount(calculatedTotal !== '' ? Number(calculatedTotal) : (finalPrice * finalSlots));
 
     // 1. Update the Report itself
     if (editingReport && onEditReport) {
@@ -522,7 +509,7 @@ export default function ReportsFeedView({
     };
 
     const getReportCost = (rep: Report): number => {
-      const fullAmount = Number(rep.totalAmount || rep.paidAmount || (Number(rep.pricePerSlot || 0) * Number(rep.slotsCount || 0)) || rep.amount || 0);
+      const fullAmount = cleanAmount(Number(rep.totalAmount || rep.paidAmount || (Number(rep.pricePerSlot || 0) * Number(rep.slotsCount || 0)) || rep.amount || 0));
       if (selectedProjectId === 'all') return fullAmount;
 
       if (rep.projectId && String(rep.projectId) === String(selectedProjectId)) {
@@ -533,9 +520,9 @@ export default function ReportsFeedView({
         const matchingSlots = rep.slotsConfig.filter(s => s.projectId && String(s.projectId) === String(selectedProjectId)).length;
         if (matchingSlots > 0) {
           if (rep.pricePerSlot && Number(rep.pricePerSlot) > 0) {
-            return matchingSlots * Number(rep.pricePerSlot);
+            return cleanAmount(matchingSlots * Number(rep.pricePerSlot));
           }
-          return (matchingSlots / rep.slotsConfig.length) * fullAmount;
+          return cleanAmount((matchingSlots / rep.slotsConfig.length) * fullAmount);
         }
         return 0;
       }
@@ -617,7 +604,7 @@ export default function ReportsFeedView({
           rep.destination || '—',
           rep.channelBlogger || '—',
           '—',
-          Number(rep.totalAmount) || 0,
+          cleanAmount(Number(rep.totalAmount) || 0),
           rep.date,
           rep.comments || '',
           projName,
@@ -688,7 +675,7 @@ export default function ReportsFeedView({
           rep.destination || '—',
           rep.channelBlogger || '—',
           rep.platform || '—',
-          Number(rep.totalAmount) || 0,
+          cleanAmount(Number(rep.totalAmount) || 0),
           rep.date,
           rep.comments || '',
           projName,
@@ -696,7 +683,7 @@ export default function ReportsFeedView({
           Number(rep.slotsCount) || 0,
           Number(rep.paidSlotsCount) || 0,
           Number(rep.pricePerSlot) || 0,
-          Number(rep.paidAmount) || 0,
+          cleanAmount(rep.paidAmount ?? ((Number(rep.paidSlotsCount) * Number(rep.pricePerSlot)) || 0)),
           rep.createdBy || '—',
           cabinetUrl || '—'
         ];
@@ -1226,7 +1213,7 @@ export default function ReportsFeedView({
                           <span className="italic text-neutral-500">{rep.destination}</span>
                         ) : (
                           <span>
-                            {rep.slotsCount} slots × {Number(rep.pricePerSlot).toLocaleString('ru-RU')}
+                            {rep.slotsCount} slots × {formatPrice(Number(rep.pricePerSlot))}
                           </span>
                         )}
                       </td>
@@ -1238,7 +1225,7 @@ export default function ReportsFeedView({
 
                       {/* Total Sum */}
                       <td className="px-5 py-4 whitespace-nowrap text-right font-black text-black">
-                        {Number(rep.totalAmount).toLocaleString('ru-RU')} UZS
+                        {formatPrice(rep.totalAmount)} UZS
                       </td>
 
                       {/* Receipt */}
@@ -1437,7 +1424,7 @@ export default function ReportsFeedView({
                     {t.totalSumColumn}
                   </span>
                   <div className="text-sm sm:text-base font-black text-neutral-950 tracking-tight">
-                    {Number(rep.totalAmount).toLocaleString('ru-RU')} <span className="text-[10px] font-bold text-neutral-400">UZS</span>
+                    {formatPrice(rep.totalAmount)} <span className="text-[10px] font-bold text-neutral-400">UZS</span>
                   </div>
                 </div>
                 {!isOther && (
@@ -1446,7 +1433,7 @@ export default function ReportsFeedView({
                       {t.slotsColumn}
                     </span>
                     <span className="text-xs font-extrabold text-neutral-700">
-                      {rep.slotsCount} × {Number(rep.pricePerSlot).toLocaleString('ru-RU')}
+                      {rep.slotsCount} × {formatPrice(Number(rep.pricePerSlot))}
                     </span>
                   </div>
                 )}
@@ -1588,7 +1575,7 @@ export default function ReportsFeedView({
                   {t.totalSumColumn}
                 </span>
                 <div className="text-2xl font-black tracking-tight text-neutral-900 flex items-baseline gap-1.5">
-                  <span>{Number(selectedReport.totalAmount).toLocaleString('ru-RU')}</span>
+                  <span>{formatPrice(selectedReport.totalAmount)}</span>
                   <span className="text-xs font-bold text-neutral-400">UZS</span>
                 </div>
 
@@ -1607,7 +1594,7 @@ export default function ReportsFeedView({
                         {lang === 'ru' ? 'Цена за слот' : lang === 'uz' ? 'Slot narxi' : 'Price / Slot'}
                       </span>
                       <span className="text-xs font-extrabold text-neutral-900 mt-0.5 block">
-                        {Number(selectedReport.pricePerSlot).toLocaleString('ru-RU')}
+                        {formatPrice(Number(selectedReport.pricePerSlot))}
                       </span>
                     </div>
                     <div className="col-span-2 sm:col-span-1">
@@ -1615,7 +1602,7 @@ export default function ReportsFeedView({
                         {lang === 'ru' ? 'Оплачено' : lang === 'uz' ? 'To‘langan' : 'Paid'}
                       </span>
                       <span className="text-xs font-extrabold text-emerald-600 mt-0.5 block">
-                        {(Number(selectedReport.paidSlotsCount) * Number(selectedReport.pricePerSlot)).toLocaleString('ru-RU')} UZS
+                        {formatPrice(selectedReport.paidAmount ?? (Number(selectedReport.paidSlotsCount) * Number(selectedReport.pricePerSlot)))} UZS
                       </span>
                     </div>
                   </div>

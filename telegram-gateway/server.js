@@ -594,8 +594,8 @@ const server = http.createServer(async (req, res) => {
       try {
         const result = await withTimeout(
           client.sendMessage(resolvedPeer, { message: text }),
-          10000,
-          'Отправка в Telegram превысила лимит ожидания (10 сек). Telegram-сервер не ответил.'
+          25000,
+          'Отправка в Telegram превысила лимит ожидания (25 сек). Telegram-сервер не ответил.'
         );
         let peerId = null;
         if (result.peerId) {
@@ -630,7 +630,7 @@ const server = http.createServer(async (req, res) => {
         }
         if (errMsg.includes('превысила лимит ожидания') || errMsg.includes('timed out') || errMsg.includes('TIMEOUT')) {
           return sendJson(504, {
-            error: 'Шлюз Telegram не получил ответ от серверов Telegram (таймаут 10 сек). Возможно, рабочий аккаунт переподключается к сети. Попробуйте повторить отправку через несколько секунд.'
+            error: 'Шлюз Telegram не получил ответ от серверов Telegram (таймаут 25 сек). Возможно, рабочий аккаунт переподключается к сети. Попробуйте повторить отправку через несколько секунд.'
           });
         }
         return sendJson(500, { error: err.message || 'Failed to send message via Telegram' });

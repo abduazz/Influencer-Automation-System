@@ -3,6 +3,7 @@ import { Layers, Plus, Calendar, Search, Trash2, CheckCircle2, ArrowRight, Dolla
 import { Project, BulkPurchase, Integration } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { createBulkPurchase, allocateBulkPurchaseSlots, deleteBulkPurchase } from '../services/api';
+import { cleanAmount, formatPrice, parsePrice } from '../utils/format';
 
 interface BulkPurchasesViewProps {
   projects: Project[];
@@ -13,17 +14,7 @@ interface BulkPurchasesViewProps {
   userRole?: string | null;
 }
 
-const formatPrice = (val: number | ''): string => {
-  if (val === '' || val === undefined || val === null) return '';
-  return new Intl.NumberFormat('ru-RU').format(val);
-};
 
-const parsePrice = (str: string): number | '' => {
-  const clean = str.replace(/\s/g, '').replace(/ /g, '');
-  if (clean === '') return '';
-  const num = Number(clean);
-  return isNaN(num) ? '' : num;
-};
 
 export default function BulkPurchasesView({
   projects,
@@ -597,7 +588,7 @@ export default function BulkPurchasesView({
                 </div>
                 <div className="flex justify-between font-bold text-black border-t border-neutral-200 pt-1">
                   <span>Бюджет, выделяемый проекту:</span>
-                  <span className="font-black text-sm">{formatPrice(allocateSlotsCount * selectedAllocateBp.pricePerSlot)} UZS</span>
+                  <span className="font-black text-sm">{formatPrice(cleanAmount(allocateSlotsCount * selectedAllocateBp.pricePerSlot))} UZS</span>
                 </div>
               </div>
 

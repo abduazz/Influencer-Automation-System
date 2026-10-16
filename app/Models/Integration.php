@@ -163,8 +163,8 @@ class Integration extends Model
 
         $this->slots_count = $slotsCount;
         $this->paid_slots_count = $totalPaidSlots;
-        $this->paid_amount = $totalPaidAmount;
-        $this->total_amount = $totalAmount;
+        $this->paid_amount = (abs($totalPaidAmount - round($totalPaidAmount)) < 0.05) ? round($totalPaidAmount) : round($totalPaidAmount, 2);
+        $this->total_amount = (abs($totalAmount - round($totalAmount)) < 0.05) ? round($totalAmount) : round($totalAmount, 2);
         $this->price_per_slot = round($effectivePricePerSlot, 2);
         $this->slots_config = $finalSlotsConfig;
         if (!empty($latestBloggerPageLink)) {

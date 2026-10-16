@@ -9,6 +9,7 @@ import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses, formatTelegramLink } from '../utils/platform';
+import { cleanAmount, formatPrice } from '../utils/format';
 import { 
   Search, 
   Plus, 
@@ -781,7 +782,7 @@ export default function KanbanView({
     if (selectedDeal) {
       setIsQuickMoving(true);
       try {
-        const calculatedTotal = Number(editPricePerSlot || 0) * Number(editSlotsCount || 0);
+        const calculatedTotal = cleanAmount(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0));
 
         let finalComments = [...editCommentsList];
         if (newCommentInput.trim()) {
@@ -894,7 +895,7 @@ export default function KanbanView({
 
     setIsSavingEdit(true);
     try {
-      const calculatedTotal = Number(editPricePerSlot || 0) * Number(editSlotsCount || 0);
+      const calculatedTotal = cleanAmount(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0));
 
       // Append typed comment in input box if user didn't explicitly click "Отправить"
       let finalComments = [...editCommentsList];
@@ -1651,7 +1652,7 @@ export default function KanbanView({
                         <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-xs">
                           <div className="flex items-baseline gap-1">
                             <span className="font-black text-slate-900">
-                              {(deal.totalAmount || (deal.pricePerSlot * deal.slotsCount)).toLocaleString()}
+                              {formatPrice(deal.totalAmount || (deal.pricePerSlot * deal.slotsCount))}
                             </span>
                             <span className="text-[9px] font-bold text-slate-400">{deal.currency || 'UZS'}</span>
                           </div>
@@ -2454,7 +2455,7 @@ export default function KanbanView({
                   <div className="text-xs font-bold text-slate-500">
                     {t.kanbanTotalPayable || 'Итого к оплате:'}{' '}
                     <span className="font-black text-slate-900">
-                      {(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)).toLocaleString()} {editCurrency}
+                      {formatPrice(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0))} {editCurrency}
                     </span>
                   </div>
                 </div>
@@ -2537,7 +2538,7 @@ export default function KanbanView({
                       type="text"
                       readOnly
                       tabIndex={-1}
-                      value={`${(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)).toLocaleString()}`}
+                      value={formatPrice(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0))}
                       className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 cursor-default focus:outline-none select-none"
                     />
                   </div>

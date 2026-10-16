@@ -346,9 +346,10 @@ class IntegrationController extends Controller
                 if (isset($updateData['blogger_page_link'])) $repUpdate['blogger_page_link'] = $updateData['blogger_page_link'];
                 if (isset($updateData['referral_link'])) $repUpdate['destination'] = $updateData['referral_link'];
                 if (isset($updateData['price_per_slot'])) {
-                    $repUpdate['price_per_slot'] = $updateData['price_per_slot'];
-                    $repUpdate['total_amount'] = ($rep->slots_count ?: 1) * $updateData['price_per_slot'];
-                    $repUpdate['paid_amount'] = ($rep->paid_slots_count ?: $rep->slots_count ?: 1) * $updateData['price_per_slot'];
+                    $rawTot = ($rep->slots_count ?: 1) * $updateData['price_per_slot'];
+                    $rawPaid = ($rep->paid_slots_count ?: $rep->slots_count ?: 1) * $updateData['price_per_slot'];
+                    $repUpdate['total_amount'] = (abs($rawTot - round($rawTot)) < 0.05) ? round($rawTot) : round($rawTot, 2);
+                    $repUpdate['paid_amount'] = (abs($rawPaid - round($rawPaid)) < 0.05) ? round($rawPaid) : round($rawPaid, 2);
                 }
                 if (!empty($repUpdate)) {
                     $rep->update($repUpdate);

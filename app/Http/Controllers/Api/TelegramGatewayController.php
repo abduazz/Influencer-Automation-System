@@ -342,7 +342,7 @@ class TelegramGatewayController extends Controller
         // Send via Gateway
         $url = $this->getGatewayUrl() . '/send';
         try {
-            $response = Http::timeout(15)->post($url, [
+            $response = Http::timeout(35)->post($url, [
                 'to' => $target,
                 'chatId' => $integration->telegram_chat_id ? (string) $integration->telegram_chat_id : null,
                 'username' => $validUsername,
@@ -414,7 +414,7 @@ class TelegramGatewayController extends Controller
             $chatMessage->update(['status' => 'failed']);
             $msg = $e->getMessage();
             if (stripos($msg, 'cURL error 28') !== false || stripos($msg, 'timed out') !== false) {
-                $msg = 'Шлюз Telegram не ответил в течение 15 секунд (таймаут соединения). Микросервис перезапускается. Пожалуйста, повторите попытку через несколько секунд.';
+                $msg = 'Шлюз Telegram не ответил в течение 35 секунд (таймаут соединения). Микросервис перезапускается. Пожалуйста, повторите попытку через несколько секунд.';
                 $this->ensureGatewayRunning();
             } elseif (stripos($msg, 'Could not find the input entity') !== false || stripos($msg, 'PeerUser') !== false) {
                 $msg = 'Пользователь не найден в вашей сессии Telegram. Для первого сообщения укажите публичный @username блогера (например, @nickname), либо блогер должен первым написать вам в Telegram.';

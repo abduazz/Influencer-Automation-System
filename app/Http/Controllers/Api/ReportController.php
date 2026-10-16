@@ -162,6 +162,15 @@ class ReportController extends Controller
             $reportData['paid_slots_count'] = $request->paidSlotsCount;
             $reportData['price_per_slot'] = $request->pricePerSlot;
             $reportData['slots_config'] = $request->slotsConfig;
+
+            if ($request->has('totalAmount') && $request->totalAmount !== null && $request->totalAmount !== '') {
+                $raw = (float) $request->totalAmount;
+                $reportData['total_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
+            }
+            if ($request->has('paidAmount') && $request->paidAmount !== null && $request->paidAmount !== '') {
+                $raw = (float) $request->paidAmount;
+                $reportData['paid_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
+            }
         }
 
         $report = Report::create($reportData);
@@ -484,11 +493,21 @@ class ReportController extends Controller
                 $slots = $request->input('slotsCount', $report->slots_count) ?? 1;
                 $price = $request->input('pricePerSlot', $report->price_per_slot) ?? 0;
                 $paidSlots = $request->input('paidSlotsCount', $report->paid_slots_count) ?? $slots;
-                if ($request->has('pricePerSlot') || $request->has('slotsCount')) {
-                    $updateData['total_amount'] = $slots * $price;
+
+                if ($request->has('totalAmount') && $request->totalAmount !== null && $request->totalAmount !== '') {
+                    $raw = (float) $request->totalAmount;
+                    $updateData['total_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
+                } elseif ($request->has('pricePerSlot') || $request->has('slotsCount')) {
+                    $raw = $slots * $price;
+                    $updateData['total_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
                 }
-                if ($request->has('paidSlotsCount') || $request->has('pricePerSlot')) {
-                    $updateData['paid_amount'] = $paidSlots * $price;
+
+                if ($request->has('paidAmount') && $request->paidAmount !== null && $request->paidAmount !== '') {
+                    $raw = (float) $request->paidAmount;
+                    $updateData['paid_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
+                } elseif ($request->has('paidSlotsCount') || $request->has('pricePerSlot')) {
+                    $raw = $paidSlots * $price;
+                    $updateData['paid_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
                 }
             }
 

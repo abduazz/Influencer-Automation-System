@@ -5,15 +5,20 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('ff_user_role') : null;
   const cachedEmail = typeof window !== 'undefined' ? localStorage.getItem('ff_user_email') : null;
 
+  const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
+  const headers: Record<string, string> = {
+    'Accept': 'application/json',
+    ...(cachedRole ? { 'X-User-Role': cachedRole } : {}),
+    ...(cachedEmail ? { 'X-User-Email': cachedEmail } : {}),
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const res = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      ...(cachedRole ? { 'X-User-Role': cachedRole } : {}),
-      ...(cachedEmail ? { 'X-User-Email': cachedEmail } : {}),
-      ...(options?.headers || {}),
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -420,13 +425,44 @@ export function fetchChatMessages(integrationId: string, sinceId?: string, force
   return request<ChatResponse>(url);
 }
 
-export function sendChatMessage(integrationId: string, text: string, senderName?: string): Promise<{
+export function sendChatMessage(
+  integrationId: string, 
+  text: string, 
+  senderName?: string,
+  file?: File | Blob | null,
+  isVoice?: boolean
+): Promise<{
   message: ChatMessage;
   delivered: boolean;
   hasChatId: boolean;
   telegramError?: string | null;
   chatUrl: string;
 }> {
+  if (file) {
+    const formData = new FormData();
+    formData.append('text', text || '');
+    if (senderName) formData.append('senderName', senderName);
+    const fileName = isVoice 
+      ? 'voice_message.ogg' 
+      : ((file instanceof File && file.name) ? file.name : 'attachment.bin');
+    formData.append('file', file, fileName);
+    if (isVoice) {
+      formData.append('isVoice', '1');
+      formData.append('mediaType', 'voice');
+    }
+
+    return request<{
+      message: ChatMessage;
+      delivered: boolean;
+      hasChatId: boolean;
+      telegramError?: string | null;
+      chatUrl: string;
+    }>(`/api/integrations/${integrationId}/messages`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
   return request<{
     message: ChatMessage;
     delivered: boolean;

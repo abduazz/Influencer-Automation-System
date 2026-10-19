@@ -17,6 +17,11 @@ class IntegrationController extends Controller
 {
     public function formatIntegration(Integration $integration): array
     {
+        if (blank($integration->blogger_cabinet_token)) {
+            $integration->blogger_cabinet_token = Integration::generateCabinetToken($integration->blogger_name ?: 'blogger');
+            $integration->saveQuietly();
+        }
+
         return [
             'id' => (string) $integration->id,
             'projectId' => (string) $integration->project_id,
@@ -44,6 +49,8 @@ class IntegrationController extends Controller
             'subscribersUpdatedAt' => $integration->subscribers_updated_at ? $integration->subscribers_updated_at->toISOString() : null,
             'subscribersHistory' => $integration->subscribers_history ?? [],
             'requisites' => $integration->requisites,
+            'createdAt' => $integration->created_at ? $integration->created_at->toISOString() : null,
+            'updatedAt' => $integration->updated_at ? $integration->updated_at->toISOString() : null,
         ];
     }
 
@@ -52,7 +59,7 @@ class IntegrationController extends Controller
         $request = $request ?? request();
         $scopedProjectIds = SubdomainService::getScopedProjectIds($request);
 
-        $query = Integration::orderBy('start_date', 'desc')
+        $query = Integration::orderBy('updated_at', 'desc')
             ->orderBy('id', 'desc');
 
         if ($scopedProjectIds !== null) {
@@ -326,6 +333,7 @@ class IntegrationController extends Controller
         }
 
         $integration->update($updateData);
+        $integration->touch();
 
         // Sync changes to associated reports if key fields changed
         if ($oldBloggerName && $oldProjectId) {

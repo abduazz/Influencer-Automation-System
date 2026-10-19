@@ -841,15 +841,27 @@ export default function ReportsView({
       setIsSubmitting(true);
       const createdReport = await onAddReport(payload);
 
+      // Resolve cabinet token: prefer response from backend, then fallback to current integration
+      let effectiveCabinetToken = createdReport?.bloggerCabinetToken || null;
+      if (!effectiveCabinetToken && currentIntegrationId) {
+        const foundInt = integrations.find((i) => String(i.id) === String(currentIntegrationId));
+        if (foundInt?.bloggerCabinetToken) {
+          effectiveCabinetToken = foundInt.bloggerCabinetToken;
+        }
+      }
+
       if (createdReport) {
-        setCreatedReportResult(createdReport);
+        setCreatedReportResult({
+          ...createdReport,
+          bloggerCabinetToken: effectiveCabinetToken || createdReport.bloggerCabinetToken
+        });
       }
 
       // Flash Toast
       const toastSubject = paymentType === 'other' ? destination : channelBlogger;
       let cabinetLink: string | null = null;
-      if (createdReport?.bloggerCabinetToken) {
-        cabinetLink = getCabinetUrl(createdReport.bloggerCabinetToken);
+      if (effectiveCabinetToken) {
+        cabinetLink = getCabinetUrl(effectiveCabinetToken);
       }
 
       setSuccessToast({

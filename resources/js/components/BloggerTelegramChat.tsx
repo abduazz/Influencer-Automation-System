@@ -17,12 +17,14 @@ import {
   RefreshCw, 
   Settings, 
   MessageSquare,
-  Sparkles,
-  ChevronDown,
   Users,
   Pencil,
   Trash2,
-  AlertTriangle
+  Paperclip,
+  Mic,
+  FileText,
+  Image as ImageIcon,
+  Video
 } from 'lucide-react';
 import { fetchChatMessages, sendChatMessage, updateIntegrationChatSettings, editChatMessage, deleteChatMessage } from '../services/api';
 import { formatTelegramLink, formatTelegramHandle } from '../utils/platform';
@@ -55,6 +57,250 @@ const cleanTelegramUsernameInput = (val: string): string => {
   let clean = val.trim();
   clean = clean.replace(/^https?:\/\/(www\.)?(t\.me|telegram\.me)\/(?:s\/)?/i, '');
   return clean;
+};
+
+const MediaBubbleContent: React.FC<{
+  msg: ChatMessage;
+  isManager: boolean;
+  telegramLink?: string;
+  lang?: Language;
+}> = ({ msg, isManager, telegramLink, lang = 'ru' }) => {
+  const isVoice = msg.mediaType === 'voice' || msg.mediaType === 'audio' || msg.text?.includes('🎤 Голосовое') || msg.text?.includes('🎵 Аудио');
+  const isPhoto = msg.mediaType === 'photo' || msg.text?.includes('📷 Фото');
+  const isVideo = msg.mediaType === 'video' || msg.text?.includes('🎥 Видео');
+  const isDoc = (msg.mediaType === 'document' || msg.text?.startsWith('📄 ')) && !isVoice && !isPhoto && !isVideo;
+
+  const isMedia = isVoice || isPhoto || isVideo || isDoc;
+
+  if (!isMedia) {
+    return <div className="whitespace-pre-wrap leading-relaxed select-text">{msg.text}</div>;
+  }
+
+  // Extract clean caption if user attached extra text with media
+  let caption = (msg.text || '').trim();
+  if (
+    caption === '🎤 Голосовое сообщение' ||
+    caption.startsWith('🎤 Голосовое') ||
+    caption === '📷 Фотография' ||
+    caption.startsWith('📷 Фото') ||
+    caption === '🎥 Видеозапись' ||
+    caption.startsWith('🎥 Видео') ||
+    caption.startsWith('🎵 Аудио') ||
+    caption.startsWith('📄 ')
+  ) {
+    caption = '';
+  }
+
+  // Extract duration from text like "(0:35)" if present
+  const durationMatch = msg.text?.match(/\((\d{1,2}:\d{2})\)/);
+  const durationStr = durationMatch ? durationMatch[1] : null;
+
+  // Extract filename for documents
+  let docFilename = 'Документ';
+  if (isDoc) {
+    if (msg.text?.startsWith('📄 ')) {
+      docFilename = msg.text.replace(/^📄\s*/, '').trim() || 'Документ';
+    } else if (msg.mediaUrl) {
+      docFilename = msg.mediaUrl.split('/').pop() || 'Документ';
+    }
+  }
+
+  const tgBtnLabel = isVoice
+    ? (lang === 'uz' ? 'Telegramda tinglash' : lang === 'en' ? 'Listen in Telegram' : 'Слушать в Telegram')
+    : isPhoto
+    ? (lang === 'uz' ? 'Telegramda ko‘rish' : lang === 'en' ? 'View in Telegram' : 'Посмотреть в Telegram')
+    : isVideo
+    ? (lang === 'uz' ? 'Telegramda tomosha qilish' : lang === 'en' ? 'Watch in Telegram' : 'Смотреть в Telegram')
+    : (lang === 'uz' ? 'Telegramda ochish' : lang === 'en' ? 'Open in Telegram' : 'Открыть в Telegram');
+
+  return (
+    <div className="space-y-2">
+      {/* 1. Voice Note Card */}
+      {isVoice && (
+        <div className={`p-2.5 rounded-xl border flex flex-col gap-2.5 ${
+          isManager 
+            ? 'bg-white/10 border-white/20 text-white' 
+            : 'bg-neutral-50/90 border-neutral-200/90 text-neutral-900'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-xs ${
+              isManager ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+            }`}>
+              <Mic className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-xs flex items-center gap-1.5">
+                <span>{lang === 'uz' ? 'Ovozli xabar' : lang === 'en' ? 'Voice Message' : 'Голосовое сообщение'}</span>
+                {durationStr && (
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    isManager ? 'bg-white/20 text-white' : 'bg-neutral-200 text-neutral-800'
+                  }`}>
+                    {durationStr}
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] opacity-75 mt-0.5">
+                {lang === 'uz' ? 'Telegram audio xabari' : 'Аудиозапись в Telegram'}
+              </div>
+            </div>
+          </div>
+
+          {telegramLink && (
+            <a
+              href={telegramLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[11px] font-semibold transition active:scale-95 select-none shadow-2xs ${
+                isManager
+                  ? 'bg-[#229ED9] hover:bg-[#1f8ec4] text-white'
+                  : 'bg-[#229ED9]/10 hover:bg-[#229ED9]/20 text-[#0088cc] border border-[#229ED9]/30'
+              }`}
+            >
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+              <span>{tgBtnLabel}</span>
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* 2. Photo Card */}
+      {isPhoto && (
+        <div className={`p-2.5 rounded-xl border flex flex-col gap-2.5 ${
+          isManager 
+            ? 'bg-white/10 border-white/20 text-white' 
+            : 'bg-neutral-50/90 border-neutral-200/90 text-neutral-900'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-xs ${
+              isManager ? 'bg-sky-500 text-white' : 'bg-sky-50 text-sky-600 border border-sky-200'
+            }`}>
+              <ImageIcon className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-xs">
+                {lang === 'uz' ? 'Fotosurat' : lang === 'en' ? 'Photo' : 'Фотография'}
+              </div>
+              <div className="text-[10px] opacity-75 mt-0.5">
+                {lang === 'uz' ? 'Telegramdagi tasvir' : 'Изображение в Telegram'}
+              </div>
+            </div>
+          </div>
+
+          {telegramLink && (
+            <a
+              href={telegramLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[11px] font-semibold transition active:scale-95 select-none shadow-2xs ${
+                isManager
+                  ? 'bg-[#229ED9] hover:bg-[#1f8ec4] text-white'
+                  : 'bg-[#229ED9]/10 hover:bg-[#229ED9]/20 text-[#0088cc] border border-[#229ED9]/30'
+              }`}
+            >
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+              <span>{tgBtnLabel}</span>
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* 3. Video Card */}
+      {isVideo && (
+        <div className={`p-2.5 rounded-xl border flex flex-col gap-2.5 ${
+          isManager 
+            ? 'bg-white/10 border-white/20 text-white' 
+            : 'bg-neutral-50/90 border-neutral-200/90 text-neutral-900'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-xs ${
+              isManager ? 'bg-purple-500 text-white' : 'bg-purple-50 text-purple-600 border border-purple-200'
+            }`}>
+              <Video className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-xs flex items-center gap-1.5">
+                <span>{lang === 'uz' ? 'Video lavha' : lang === 'en' ? 'Video' : 'Видеозапись'}</span>
+                {durationStr && (
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    isManager ? 'bg-white/20 text-white' : 'bg-neutral-200 text-neutral-800'
+                  }`}>
+                    {durationStr}
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] opacity-75 mt-0.5">
+                {lang === 'uz' ? 'Telegramdagi video' : 'Видеофайл в Telegram'}
+              </div>
+            </div>
+          </div>
+
+          {telegramLink && (
+            <a
+              href={telegramLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[11px] font-semibold transition active:scale-95 select-none shadow-2xs ${
+                isManager
+                  ? 'bg-[#229ED9] hover:bg-[#1f8ec4] text-white'
+                  : 'bg-[#229ED9]/10 hover:bg-[#229ED9]/20 text-[#0088cc] border border-[#229ED9]/30'
+              }`}
+            >
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+              <span>{tgBtnLabel}</span>
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* 4. Document Card */}
+      {isDoc && (
+        <div className={`p-2.5 rounded-xl border flex flex-col gap-2.5 ${
+          isManager 
+            ? 'bg-white/10 border-white/20 text-white' 
+            : 'bg-neutral-50/90 border-neutral-200/90 text-neutral-900'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-xs ${
+              isManager ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-600 border border-amber-200'
+            }`}>
+              <FileText className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-xs truncate" title={docFilename}>
+                {docFilename}
+              </div>
+              <div className="text-[10px] opacity-75 mt-0.5">
+                {lang === 'uz' ? 'Fayl / Hujjat' : 'Файл / Документ в Telegram'}
+              </div>
+            </div>
+          </div>
+
+          {telegramLink && (
+            <a
+              href={telegramLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[11px] font-semibold transition active:scale-95 select-none shadow-2xs ${
+                isManager
+                  ? 'bg-[#229ED9] hover:bg-[#1f8ec4] text-white'
+                  : 'bg-[#229ED9]/10 hover:bg-[#229ED9]/20 text-[#0088cc] border border-[#229ED9]/30'
+              }`}
+            >
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+              <span>{tgBtnLabel}</span>
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Caption text */}
+      {caption && (
+        <div className="whitespace-pre-wrap leading-relaxed select-text text-xs pt-0.5">
+          {caption}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default function BloggerTelegramChat({
@@ -93,6 +339,24 @@ export default function BloggerTelegramChat({
   const [deletingMessage, setDeletingMessage] = useState<ChatMessage | null>(null);
   const [deleteRevoke, setDeleteRevoke] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Telegram Redirect Hint state
+  const [showTelegramRedirectHint, setShowTelegramRedirectHint] = useState(false);
+  const redirectHintTimerRef = useRef<any>(null);
+
+  const triggerTelegramRedirectHint = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setShowTelegramRedirectHint(true);
+    if (redirectHintTimerRef.current) {
+      clearTimeout(redirectHintTimerRef.current);
+    }
+    redirectHintTimerRef.current = setTimeout(() => {
+      setShowTelegramRedirectHint(false);
+    }, 7000);
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -155,6 +419,13 @@ export default function BloggerTelegramChat({
     scrollToBottom(false);
   }, [messages.length]);
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (e.clipboardData?.files && e.clipboardData.files.length > 0) {
+      e.preventDefault();
+      triggerTelegramRedirectHint();
+    }
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const textToSend = inputText.trim();
@@ -163,9 +434,9 @@ export default function BloggerTelegramChat({
     setSendError(null);
     setSending(true);
 
-    // Optimistic message append
     const tempId = `temp-${Date.now()}`;
     const nowIso = new Date().toISOString();
+
     const optimisticMessage: ChatMessage = {
       id: tempId,
       integrationId: integration.id,
@@ -182,11 +453,14 @@ export default function BloggerTelegramChat({
     setInputText('');
 
     try {
-      const res = await sendChatMessage(integration.id, textToSend, currentUserName || 'Super Admin');
+      const res = await sendChatMessage(
+        integration.id, 
+        textToSend, 
+        currentUserName || 'Super Admin'
+      );
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? res.message : m))
       );
-      // Reload chat/integration to pick up resolved telegramUsername / telegramChatId
       loadMessages(true);
     } catch (err: any) {
       setMessages((prev) =>
@@ -421,6 +695,14 @@ export default function BloggerTelegramChat({
     }
   };
 
+  const directTgLink = telegramUsername
+    ? formatTelegramLink(telegramUsername)
+    : (telegramChatId
+        ? (String(telegramChatId).startsWith('+') || /^\d{7,16}$/.test(String(telegramChatId).replace(/[\s\-\(\)]+/g, ''))
+            ? `https://t.me/${String(telegramChatId).replace(/[\s\-\(\)]+/g, '')}`
+            : `tg://user?id=${telegramChatId}`)
+        : undefined);
+
   return (
     <div className={`flex flex-col h-full bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-xs ${isInline ? 'min-h-[460px]' : 'h-[620px]'}`}>
       {/* Header */}
@@ -458,6 +740,72 @@ export default function BloggerTelegramChat({
 
         {/* Header Actions */}
         <div className="flex items-center gap-1 shrink-0">
+          <div className="relative">
+            {directTgLink && (
+              <a
+                href={directTgLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`px-2 py-1 text-[#229ED9] hover:bg-sky-50 rounded-lg transition cursor-pointer flex items-center gap-1 text-xs font-semibold ${
+                  showTelegramRedirectHint 
+                    ? 'ring-2 ring-[#229ED9] bg-sky-100 shadow-md animate-pulse scale-105' 
+                    : ''
+                }`}
+                title="Открыть диалог в Telegram"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[11px]">Telegram</span>
+              </a>
+            )}
+
+            {/* Alert / Popover pointing to this button */}
+            {showTelegramRedirectHint && (
+              <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 p-3 bg-neutral-900 text-white rounded-xl shadow-2xl z-50 text-xs border border-neutral-700 animate-in fade-in zoom-in-95 duration-150">
+                {/* Pointer arrow */}
+                <div className="absolute -top-1.5 right-6 w-3 h-3 bg-neutral-900 border-t border-l border-neutral-700 rotate-45" />
+
+                <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-1.5 font-bold text-sky-400 text-xs">
+                    <span>💡</span>
+                    <span>{lang === 'uz' ? 'Telegram orqali yuborish' : 'Отправка через Telegram'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowTelegramRedirectHint(false)}
+                    className="text-neutral-400 hover:text-white p-0.5 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-neutral-200 leading-relaxed mb-3">
+                  {lang === 'uz'
+                    ? 'Bunday xabarlarni yuborish uchun ushbu tugma orqali to‘g‘ridan-to‘g‘ri Telegramga o‘ting:'
+                    : 'Чтобы отправить такие сообщения, перейдите по этой кнопке в Telegram:'}
+                </p>
+
+                {directTgLink ? (
+                  <a
+                    href={directTgLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setShowTelegramRedirectHint(false)}
+                    className="inline-flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-lg bg-[#229ED9] hover:bg-[#1b8bc2] text-white font-semibold text-xs transition shadow-xs"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>{lang === 'uz' ? 'Telegramda ochish' : 'Перейти в Telegram'}</span>
+                  </a>
+                ) : (
+                  <div className="text-[10px] text-amber-300">
+                    {lang === 'uz'
+                      ? 'Avval blogerning @username yoki raqamini ulang.'
+                      : 'Сначала привяжите @username или номер блогера.'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => loadMessages(true, true)}
@@ -718,7 +1066,9 @@ export default function BloggerTelegramChat({
 
             const isManager = msg.senderType === 'manager';
             const sentAt = msg.sentAt || msg.createdAt;
-            const receivedAt = msg.receivedAt || (msg.senderType === 'blogger' ? (msg.createdAt || msg.sentAt) : (msg.status === 'delivered' || msg.status === 'read' ? (msg.updatedAt || msg.createdAt) : null));
+            const receivedAt = isManager ? sentAt : (msg.receivedAt || msg.createdAt || sentAt);
+            const isRead = msg.status === 'read' || !!msg.readAt;
+            const readAt = msg.readAt;
 
             return (
               <React.Fragment key={msg.id}>
@@ -777,66 +1127,77 @@ export default function BloggerTelegramChat({
                           : 'bg-white text-neutral-900 border border-neutral-200/90 rounded-bl-xs'
                       }`}
                     >
-                      <div className="whitespace-pre-wrap leading-relaxed select-text">
-                        {msg.text}
-                      </div>
+                      <MediaBubbleContent 
+                        msg={msg} 
+                        isManager={isManager} 
+                        telegramLink={directTgLink}
+                        lang={lang}
+                      />
 
-                      {/* Timestamps Section: Дата и время отправления и получения */}
-                      <div className={`mt-2 pt-1.5 border-t text-[10px] space-y-0.5 select-none ${
+                      {/* Timestamps Section */}
+                      <div className={`mt-2 pt-1.5 border-t text-[10px] space-y-1 select-none ${
                         isManager ? 'border-white/15 text-neutral-300' : 'border-neutral-200/80 text-neutral-600'
                       }`}>
-                        {/* Дата/время отправления */}
-                        <div className="flex items-center justify-between gap-3 text-[10px]">
-                          <span className="inline-flex items-center gap-1 font-semibold opacity-85">
-                            <Send className="w-2.5 h-2.5 shrink-0 opacity-70" />
-                            <span>{lang === 'uz' ? 'Yuborilgan' : lang === 'en' ? 'Sent' : 'Отправлено'}:</span>
-                          </span>
-                          <span className="font-mono font-medium whitespace-nowrap text-[9.5px]">
-                            {formatFullDateTime(sentAt)}
-                          </span>
-                        </div>
+                        {isManager ? (
+                          <>
+                            {/* 1. Отправлено (время отправки и доставки) */}
+                            <div className="flex items-center justify-between gap-3 text-[10px]">
+                              <span className="inline-flex items-center gap-1 font-semibold opacity-85">
+                                <Send className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                                <span>{lang === 'uz' ? 'Yuborilgan' : lang === 'en' ? 'Sent' : 'Отправлено'}:</span>
+                              </span>
+                              <span className="font-mono font-medium whitespace-nowrap text-[9.5px]">
+                                {formatFullDateTime(sentAt)}
+                              </span>
+                            </div>
 
-                        {/* Дата/время получения / доставки */}
-                        <div className="flex items-center justify-between gap-3 text-[10px]">
-                          <span className="inline-flex items-center gap-1 font-semibold opacity-85">
-                            <CheckCheck className="w-2.5 h-2.5 shrink-0 opacity-70" />
-                            <span>
-                              {isManager
-                                ? (lang === 'uz' ? 'Yetkazilgan' : lang === 'en' ? 'Delivered' : 'Доставлено')
-                                : (lang === 'uz' ? 'Qabul qilingan' : lang === 'en' ? 'Received' : 'Получено')}:
-                            </span>
-                          </span>
-                          <span className="font-mono font-medium whitespace-nowrap text-[9.5px] flex items-center gap-1">
-                            {receivedAt ? (
-                              <>
-                                <span>{formatFullDateTime(receivedAt)}</span>
-                                {isManager && (
-                                  <span>
-                                    {msg.status === 'delivered' || msg.status === 'read' ? (
-                                      <CheckCheck className="w-3 h-3 text-emerald-400 inline" />
-                                    ) : msg.status === 'sent' ? (
-                                      <Check className="w-3 h-3 text-neutral-300 inline" />
-                                    ) : (
-                                      <AlertCircle className="w-2.5 h-2.5 text-rose-400 inline" />
-                                    )}
+                            {/* 2. Прочитано блогером со статусом и галочками */}
+                            <div className="flex items-center justify-between gap-3 text-[10px]">
+                              <span className="inline-flex items-center gap-1 font-semibold opacity-85">
+                                {isRead ? (
+                                  <CheckCheck className="w-3 h-3 shrink-0 text-emerald-400" />
+                                ) : (
+                                  <Check className="w-3 h-3 shrink-0 opacity-60" />
+                                )}
+                                <span>{lang === 'uz' ? 'O‘qildi' : lang === 'en' ? 'Read' : 'Прочитано'}:</span>
+                              </span>
+                              <span className="font-mono font-medium whitespace-nowrap text-[9.5px] flex items-center gap-1.5">
+                                {isRead ? (
+                                  <>
+                                    <span>{formatFullDateTime(readAt || receivedAt || sentAt)}</span>
+                                    <CheckCheck className="w-3.5 h-3.5 text-emerald-400 inline shrink-0" />
+                                  </>
+                                ) : msg.status === 'pending' ? (
+                                  <span className="text-amber-300 italic flex items-center gap-1 font-sans text-[10px]">
+                                    <Clock className="w-2.5 h-2.5 animate-spin inline" />
+                                    <span>{lang === 'uz' ? 'Yuborilmoqda...' : lang === 'en' ? 'Sending...' : 'Отправка...'}</span>
+                                  </span>
+                                ) : msg.status === 'failed' ? (
+                                  <span className="text-rose-400 font-semibold flex items-center gap-1 font-sans text-[10px]">
+                                    <AlertCircle className="w-2.5 h-2.5 inline" />
+                                    <span>{lang === 'uz' ? 'Xatolik' : lang === 'en' ? 'Failed' : 'Не доставлено'}</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-neutral-400 flex items-center gap-1 font-sans text-[9.5px]">
+                                    <span>{lang === 'uz' ? 'O‘qilish kutilmoqda' : lang === 'en' ? 'Unread' : 'Ожидает прочтения'}</span>
+                                    <Check className="w-3 h-3 text-neutral-400 inline shrink-0" />
                                   </span>
                                 )}
-                              </>
-                            ) : isManager && msg.status === 'pending' ? (
-                              <span className="text-amber-300 italic flex items-center gap-1 font-sans text-[10px]">
-                                <Clock className="w-2.5 h-2.5 animate-spin inline" />
-                                <span>{lang === 'uz' ? 'Yuborilmoqda...' : lang === 'en' ? 'Sending...' : 'Отправка...'}</span>
                               </span>
-                            ) : isManager && msg.status === 'failed' ? (
-                              <span className="text-rose-400 font-semibold flex items-center gap-1 font-sans text-[10px]">
-                                <AlertCircle className="w-2.5 h-2.5 inline" />
-                                <span>{lang === 'uz' ? 'Xatolik' : lang === 'en' ? 'Failed' : 'Не доставлено'}</span>
-                              </span>
-                            ) : (
-                              <span>—</span>
-                            )}
-                          </span>
-                        </div>
+                            </div>
+                          </>
+                        ) : (
+                          /* Сообщение от блогера */
+                          <div className="flex items-center justify-between gap-3 text-[10px]">
+                            <span className="inline-flex items-center gap-1 font-semibold opacity-85">
+                              <CheckCheck className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                              <span>{lang === 'uz' ? 'Qabul qilingan' : lang === 'en' ? 'Received' : 'Получено'}:</span>
+                            </span>
+                            <span className="font-mono font-medium whitespace-nowrap text-[9.5px]">
+                              {formatFullDateTime(receivedAt)}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {msg.isEdited && (
@@ -891,11 +1252,25 @@ export default function BloggerTelegramChat({
 
       {/* Footer / Input Area */}
       <form onSubmit={editingMessage ? (e) => { e.preventDefault(); handleSaveEdit(); } : handleSend} className="p-2.5 sm:p-3 bg-white border-t border-neutral-200 shrink-0">
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-1.5 sm:gap-2">
+          {/* Attachment Button */}
+          {!editingMessage && (
+            <button
+              type="button"
+              onClick={triggerTelegramRedirectHint}
+              disabled={!telegramUsername && !telegramChatId}
+              className="h-[38px] w-[38px] rounded-xl flex items-center justify-center text-neutral-500 hover:text-sky-600 hover:bg-sky-50 disabled:opacity-30 disabled:cursor-not-allowed transition shrink-0 cursor-pointer"
+              title={lang === 'uz' ? 'Fayl yoki rasm yuborish' : 'Прикрепить файл или фото'}
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+          )}
+
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             disabled={!telegramUsername && !telegramChatId}
             placeholder={
               (!telegramUsername && !telegramChatId)
@@ -912,6 +1287,19 @@ export default function BloggerTelegramChat({
             }`}
             autoFocus={!!editingMessage}
           />
+
+          {/* Voice Recording Button */}
+          {!editingMessage && !inputText.trim() && (
+            <button
+              type="button"
+              onClick={triggerTelegramRedirectHint}
+              disabled={!telegramUsername && !telegramChatId}
+              className="h-[38px] w-[38px] rounded-xl flex items-center justify-center text-neutral-500 hover:text-sky-600 hover:bg-sky-50 disabled:opacity-30 disabled:cursor-not-allowed transition shrink-0 cursor-pointer"
+              title={lang === 'uz' ? 'Ovozli xabar yozish' : 'Записать голосовое сообщение'}
+            >
+              <Mic className="w-4 h-4" />
+            </button>
+          )}
 
           <button
             type="submit"
@@ -1047,6 +1435,7 @@ export default function BloggerTelegramChat({
           </div>
         </div>
       )}
+
     </div>
   );
 }

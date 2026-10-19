@@ -197,12 +197,23 @@ class ReportController extends Controller
                 }
             }
 
+            $cabinetToken = null;
+
             // Fallback to single project_id if no per-slot project was specified
-            if (empty($projectGroups) && $report->project_id !== null) {
-                $projectGroups[(string)$report->project_id] = [
-                    'slots_count' => $report->slots_count,
-                    'slots_config' => $report->slots_config ?? [],
-                ];
+            if (empty($projectGroups)) {
+                $fallbackProjId = $report->project_id;
+                if (!$fallbackProjId && $request->filled('integrationId')) {
+                    $int = Integration::find($request->input('integrationId'));
+                    if ($int && $int->project_id) {
+                        $fallbackProjId = $int->project_id;
+                    }
+                }
+                if ($fallbackProjId !== null) {
+                    $projectGroups[(string)$fallbackProjId] = [
+                        'slots_count' => $report->slots_count ?? 1,
+                        'slots_config' => $report->slots_config ?? [],
+                    ];
+                }
             }
 
             foreach ($projectGroups as $targetProjectId => $group) {
@@ -213,7 +224,11 @@ class ReportController extends Controller
                 if (!$existingIntegration) {
                     $existingIntegration = Integration::where('project_id', $targetProjectId)
                         ->where('platform', $report->platform)
-                        ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                        ->where(function ($q) use ($cleanBloggerName) {
+                            $q->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                              ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . strtolower($cleanBloggerName)])
+                              ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [strtolower($cleanBloggerName)]);
+                        })
                         ->first();
                 }
 
@@ -288,8 +303,13 @@ class ReportController extends Controller
                         $existingIntegrationUpdate['created_by'] = $createdByName;
                     }
 
+                    if (blank($existingIntegration->blogger_cabinet_token)) {
+                        $existingIntegrationUpdate['blogger_cabinet_token'] = Integration::generateCabinetToken($existingIntegration->blogger_name ?: $cleanBloggerName);
+                    }
+
                     $existingIntegration->update($existingIntegrationUpdate);
                     $existingIntegration->syncWithReports();
+                    $cabinetToken = $existingIntegration->blogger_cabinet_token ?: ($existingIntegrationUpdate['blogger_cabinet_token'] ?? null);
                 } else {
                     $token = Integration::generateCabinetToken($cleanBloggerName);
                     $referralLink = $report->destination;
@@ -314,6 +334,7 @@ class ReportController extends Controller
                         'created_by' => $createdByName,
                     ]);
                     $newIntegration->syncWithReports();
+                    $cabinetToken = $newIntegration->blogger_cabinet_token;
                 }
             }
         }
@@ -322,25 +343,58 @@ class ReportController extends Controller
         $report->refresh();
         $report->load('project');
 
-        $cabinetToken = null;
-        if ($paymentType !== 'other') {
-            $cleanBloggerName = trim(str_replace(['@', '#'], '', $report->channel_blogger));
-            $targetProj = $report->project_id;
-            if (!$targetProj && !empty($report->slots_config)) {
-                foreach ($report->slots_config as $slot) {
-                    if (!empty($slot['projectId'])) {
-                        $targetProj = $slot['projectId'];
-                        break;
+        // Robust resolution of cabinet token
+        if ($paymentType !== 'other' && empty($cabinetToken)) {
+            if ($request->filled('integrationId')) {
+                $int = Integration::find($request->input('integrationId'));
+                if ($int) {
+                    if (blank($int->blogger_cabinet_token)) {
+                        $int->blogger_cabinet_token = Integration::generateCabinetToken($int->blogger_name ?: ($report->channel_blogger ?? 'blogger'));
+                        $int->saveQuietly();
                     }
+                    $cabinetToken = $int->blogger_cabinet_token;
                 }
             }
 
-            if ($targetProj) {
-                $integration = Integration::where('project_id', $targetProj)
-                    ->where('platform', $report->platform)
-                    ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
-                    ->first();
+            if (empty($cabinetToken)) {
+                $cleanBloggerName = trim(str_replace(['@', '#'], '', $report->channel_blogger ?? ''));
+                $targetProj = $report->project_id;
+                if (!$targetProj && !empty($report->slots_config)) {
+                    foreach ($report->slots_config as $slot) {
+                        if (!empty($slot['projectId'])) {
+                            $targetProj = $slot['projectId'];
+                            break;
+                        }
+                    }
+                }
+
+                $query = Integration::query();
+                if ($targetProj) {
+                    $query->where('project_id', $targetProj);
+                }
+                if ($report->platform) {
+                    $query->where('platform', $report->platform);
+                }
+                $query->where(function ($q) use ($cleanBloggerName) {
+                    $q->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                      ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . strtolower($cleanBloggerName)])
+                      ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [strtolower($cleanBloggerName)]);
+                });
+                $integration = $query->latest('id')->first();
+
+                if (!$integration && $cleanBloggerName !== '') {
+                    $integration = Integration::where(function ($q) use ($cleanBloggerName) {
+                        $q->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                          ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . strtolower($cleanBloggerName)])
+                          ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [strtolower($cleanBloggerName)]);
+                    })->latest('id')->first();
+                }
+
                 if ($integration) {
+                    if (blank($integration->blogger_cabinet_token)) {
+                        $integration->blogger_cabinet_token = Integration::generateCabinetToken($integration->blogger_name ?: $cleanBloggerName);
+                        $integration->saveQuietly();
+                    }
                     $cabinetToken = $integration->blogger_cabinet_token;
                 }
             }
@@ -523,7 +577,11 @@ class ReportController extends Controller
                     $cleanTarget = strtolower(trim(str_replace(['@', '#'], '', $targetBlogger)));
                     $integration = Integration::where('project_id', $targetProject)
                         ->where('platform', $targetPlatform)
-                        ->whereRaw('LOWER(blogger_name) = ?', [$cleanTarget])
+                        ->where(function ($q) use ($cleanTarget) {
+                            $q->whereRaw('LOWER(blogger_name) = ?', [$cleanTarget])
+                              ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . $cleanTarget])
+                              ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [$cleanTarget]);
+                        })
                         ->first();
                     if ($integration) {
                         $integration->syncWithReports();

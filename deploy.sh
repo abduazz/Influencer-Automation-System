@@ -22,6 +22,10 @@ php artisan db:seed --force
 echo "🔄 Syncing reports..."
 php artisan reports:sync
 
+echo "🔗 Ensuring public storage link and media directory..."
+php artisan storage:link || true
+mkdir -p storage/app/public/chat_media
+
 
 # Ensure Node.js is present (auto-installs standalone portable Node.js if missing)
 if [ -f "telegram-gateway/ensure-node.sh" ]; then

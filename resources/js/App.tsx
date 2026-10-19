@@ -517,11 +517,12 @@ export default function App() {
       ...newInt,
       createdBy: newInt.createdBy || currentUserName || currentUserEmail || undefined,
     }, currentUserEmail || undefined);
-    setIntegrations((prev) => [...prev, integration]);
+    setIntegrations((prev) => [integration, ...prev]);
   };
 
   const handleEditIntegration = async (id: string, updatedFields: Partial<Integration>) => {
-    setIntegrations((prev) => prev.map(item => item.id === id ? { ...item, ...updatedFields } : item));
+    const nowIso = new Date().toISOString();
+    setIntegrations((prev) => prev.map(item => item.id === id ? { ...item, ...updatedFields, updatedAt: nowIso } : item));
     const integration = await updateIntegration(id, updatedFields, currentUserEmail || undefined);
     setIntegrations((prev) => prev.map(item => item.id === id ? { ...item, ...integration } : item));
     const [freshReports, freshIntegrations] = await Promise.all([
@@ -552,6 +553,7 @@ export default function App() {
 
   const handleAddReport = async (newRep: Omit<Report, 'id' | 'totalAmount' | 'paidAmount' | 'projectName'> & { integrationId?: string; createdBy?: string }) => {
     // Optimistically update integration deal stage if it was in ready_for_payment
+    const nowIso = new Date().toISOString();
     setIntegrations((prev) => prev.map((item) => {
       const isTarget = (newRep.integrationId && String(item.id) === String(newRep.integrationId)) ||
         (!newRep.integrationId && newRep.channelBlogger && item.bloggerName.toLowerCase().trim() === newRep.channelBlogger.toLowerCase().trim() && String(item.projectId) === String(newRep.projectId));
@@ -560,6 +562,7 @@ export default function App() {
         return { 
           ...item, 
           kanbanStage: 'paid_in_progress',
+          updatedAt: nowIso,
           createdBy: item.createdBy || newRep.createdBy || currentUserName || currentUserEmail || undefined
         };
       }
@@ -680,15 +683,19 @@ export default function App() {
   };
 
   const handleUpdateIntegrationStage = async (integrationId: string, newStage: KanbanStage) => {
+    const nowIso = new Date().toISOString();
     setIntegrations((prev) => prev.map((item) => {
       if (item.id === integrationId) {
-        return { ...item, kanbanStage: newStage };
+        return { ...item, kanbanStage: newStage, updatedAt: nowIso };
       }
       return item;
     }));
 
     try {
-      await updateIntegration(integrationId, { kanbanStage: newStage }, currentUserEmail || undefined);
+      const updated = await updateIntegration(integrationId, { kanbanStage: newStage }, currentUserEmail || undefined);
+      if (updated && updated.id) {
+        setIntegrations((prev) => prev.map((item) => String(item.id) === String(updated.id) ? { ...item, ...updated } : item));
+      }
     } catch (err) {
       console.error('Failed to persist integration stage to backend:', err);
     }

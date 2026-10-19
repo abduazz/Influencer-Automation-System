@@ -21,12 +21,14 @@ class ChatMessage extends Model
         'status',
         'sent_at',
         'received_at',
+        'read_at',
     ];
 
     protected $casts = [
         'telegram_message_id' => 'integer',
         'sent_at' => 'datetime',
         'received_at' => 'datetime',
+        'read_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

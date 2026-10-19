@@ -45,11 +45,9 @@ class TelegramChatController extends Controller
             $sentAt = $msg->sent_at ?? $msg->created_at;
             $receivedAt = $msg->received_at;
             if (!$receivedAt) {
-                if ($msg->sender_type === 'blogger') {
-                    $receivedAt = $msg->created_at ?? $sentAt;
-                } elseif ($msg->status === 'delivered' || $msg->status === 'read' || $msg->status === 'sent') {
-                    $receivedAt = $msg->updated_at ?? $msg->created_at ?? $sentAt;
-                }
+                $receivedAt = $sentAt;
+            } elseif ($msg->sender_type === 'manager' && $sentAt && $receivedAt->diffInMinutes($sentAt) > 60) {
+                $receivedAt = $sentAt;
             }
 
             return [
@@ -65,6 +63,7 @@ class TelegramChatController extends Controller
                 'isEdited' => $isEdited,
                 'sentAt' => $sentAt ? $sentAt->toISOString() : null,
                 'receivedAt' => $receivedAt ? $receivedAt->toISOString() : null,
+                'readAt' => $msg->read_at ? $msg->read_at->toISOString() : null,
                 'createdAt' => $msg->created_at ? $msg->created_at->toISOString() : now()->toISOString(),
                 'updatedAt' => $msg->updated_at ? $msg->updated_at->toISOString() : now()->toISOString(),
             ];
@@ -126,8 +125,11 @@ class TelegramChatController extends Controller
     public function sendMessage(Request $request, $integrationId): JsonResponse
     {
         $request->validate([
-            'text' => 'required|string|max:4000',
+            'text' => 'nullable|string|max:4000',
             'senderName' => 'nullable|string|max:255',
+            'file' => 'nullable|file|max:51200',
+            'mediaType' => 'nullable|string|max:50',
+            'isVoice' => 'nullable',
         ]);
 
         $integration = Integration::find($integrationId);
@@ -135,13 +137,76 @@ class TelegramChatController extends Controller
             return response()->json(['message' => 'Integration not found'], 404);
         }
 
-        $text = trim($request->input('text'));
+        $text = trim((string)$request->input('text', ''));
         $senderName = $request->input('senderName') ?: 'Super Admin';
+        $hasFile = $request->hasFile('file');
+
+        if ($text === '' && !$hasFile) {
+            return response()->json([
+                'error' => 'Сообщение не может быть пустым. Введите текст или прикрепите файл/голосовое сообщение.',
+            ], 422);
+        }
 
         if (empty($integration->telegram_username) && empty($integration->telegram_chat_id)) {
             return response()->json([
                 'error' => 'У блогера не указан контакт Telegram. Укажите @username или номер телефона блогера в карточке для отправки сообщения.',
             ], 422);
+        }
+
+        // Process file upload if attached
+        if ($hasFile) {
+            $uploaded = $request->file('file');
+            $originalName = $uploaded->getClientOriginalName() ?: 'file';
+            $ext = strtolower($uploaded->getClientOriginalExtension());
+            $mime = (string) $uploaded->getMimeType();
+            $isVoice = $request->boolean('isVoice');
+
+            $mediaType = $request->input('mediaType');
+            if ($isVoice) {
+                $mediaType = 'voice';
+                if (!$ext || !in_array($ext, ['ogg', 'oga', 'webm', 'wav', 'mp3', 'm4a'])) {
+                    $ext = 'ogg';
+                }
+            } elseif (!$mediaType) {
+                if (str_starts_with($mime, 'image/')) {
+                    $mediaType = 'photo';
+                } elseif (str_starts_with($mime, 'audio/')) {
+                    $mediaType = 'audio';
+                } elseif (str_starts_with($mime, 'video/')) {
+                    $mediaType = 'video';
+                } else {
+                    $mediaType = 'document';
+                }
+            }
+
+            $storageDir = storage_path('app/public/chat_media');
+            if (!file_exists($storageDir)) {
+                @mkdir($storageDir, 0775, true);
+            }
+
+            $prefix = $mediaType === 'voice' ? 'voice_' : 'chat_';
+            $filename = uniqid($prefix) . '_' . time() . '.' . ($ext ?: 'bin');
+            $uploaded->storeAs('public/chat_media', $filename);
+
+            $mediaUrl = '/storage/chat_media/' . $filename;
+            $absolutePath = storage_path('app/public/chat_media/' . $filename);
+
+            if ($text === '') {
+                $text = match ($mediaType) {
+                    'voice' => '🎤 Голосовое сообщение',
+                    'photo' => '📷 Фотография',
+                    'video' => '🎥 Видеозапись',
+                    default => '📄 ' . $originalName,
+                };
+            }
+
+            $request->merge([
+                'text' => $text,
+                'mediaPath' => $absolutePath,
+                'mediaUrl' => $mediaUrl,
+                'mediaType' => $mediaType,
+                'isVoice' => $mediaType === 'voice',
+            ]);
         }
 
         // Send exclusively via Personal MTProto Gateway
@@ -319,7 +384,8 @@ class TelegramChatController extends Controller
                 'status' => $chatMessage->status,
                 'isEdited' => true,
                 'sentAt' => ($chatMessage->sent_at ?? $chatMessage->created_at)?->toISOString(),
-                'receivedAt' => ($chatMessage->received_at ?? $chatMessage->updated_at)?->toISOString(),
+                'receivedAt' => ($chatMessage->received_at ?? $chatMessage->sent_at ?? $chatMessage->created_at)?->toISOString(),
+                'readAt' => $chatMessage->read_at?->toISOString(),
                 'createdAt' => $chatMessage->created_at ? $chatMessage->created_at->toISOString() : now()->toISOString(),
                 'updatedAt' => $chatMessage->updated_at ? $chatMessage->updated_at->toISOString() : now()->toISOString(),
             ],

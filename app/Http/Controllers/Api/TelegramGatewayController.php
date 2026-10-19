@@ -417,6 +417,11 @@ class TelegramGatewayController extends Controller
             ], 422);
         }
 
+        $mediaPath = $request->input('mediaPath');
+        $mediaUrl = $request->input('mediaUrl');
+        $mediaType = $request->input('mediaType');
+        $isVoice = $request->boolean('isVoice');
+
         // Save local message record
         $now = now();
         $chatMessage = ChatMessage::create([
@@ -424,6 +429,8 @@ class TelegramGatewayController extends Controller
             'sender_type' => 'manager',
             'sender_name' => $senderName,
             'text' => $text,
+            'media_url' => $mediaUrl,
+            'media_type' => $mediaType,
             'status' => 'pending',
             'sent_at' => $now,
             'received_at' => null,
@@ -434,12 +441,16 @@ class TelegramGatewayController extends Controller
         try {
             $response = Http::withHeaders([
                 'Accept' => 'application/json',
-            ])->timeout(20)->post($url, [
+            ])->timeout($mediaPath ? 45 : 20)->post($url, [
                 'to' => $target,
                 'chatId' => $integration->telegram_chat_id ? (string) $integration->telegram_chat_id : null,
                 'username' => $validUsername,
                 'phone' => $phoneCandidate,
                 'text' => $text,
+                'mediaPath' => $mediaPath,
+                'mediaUrl' => $mediaUrl,
+                'mediaType' => $mediaType,
+                'isVoice' => $isVoice,
                 'bloggerName' => $integration->blogger_name,
                 'senderName' => $senderName,
                 'integrationId' => (string) $integration->id,
@@ -480,9 +491,12 @@ class TelegramGatewayController extends Controller
                         'senderType' => $chatMessage->sender_type,
                         'senderName' => $chatMessage->sender_name,
                         'text' => $chatMessage->text,
+                        'mediaUrl' => $chatMessage->media_url,
+                        'mediaType' => $chatMessage->media_type,
                         'status' => 'delivered',
                         'sentAt' => $chatMessage->sent_at?->toISOString() ?? $now->toISOString(),
                         'receivedAt' => $deliveredAt->toISOString(),
+                        'readAt' => null,
                         'createdAt' => $chatMessage->created_at->toISOString(),
                         'updatedAt' => $chatMessage->updated_at->toISOString(),
                     ],
@@ -524,8 +538,21 @@ class TelegramGatewayController extends Controller
     public function processMessageUpdate(array $data, ?Integration $preferredIntegration = null, bool $forceIntegration = false): void
     {
         $text = trim($data['text'] ?? '');
-        if ($text === '') {
+        $mediaUrl = $data['mediaUrl'] ?? null;
+        $mediaType = $data['mediaType'] ?? null;
+
+        if ($text === '' && empty($mediaUrl) && empty($mediaType)) {
             return;
+        }
+
+        if ($text === '' && $mediaType) {
+            $text = match ($mediaType) {
+                'voice' => '🎤 Голосовое сообщение',
+                'photo' => '📷 Фотография',
+                'video' => '🎥 Видеозапись',
+                'audio' => '🎵 Аудиофайл',
+                default => '📄 Документ',
+            };
         }
 
         $senderUsername = $data['senderUsername'] ?? null;
@@ -591,12 +618,19 @@ class TelegramGatewayController extends Controller
                     $integration->save();
                 }
 
-                // Avoid creating duplicates if already saved
+                // If message already exists, update read status if reported
                 if ($messageId) {
-                    $exists = ChatMessage::where('integration_id', $integration->id)
+                    $existing = ChatMessage::where('integration_id', $integration->id)
                         ->where('telegram_message_id', $messageId)
-                        ->exists();
-                    if ($exists) {
+                        ->first();
+                    if ($existing) {
+                        $isRead = !empty($data['isRead']);
+                        if ($isRead && ($existing->status !== 'read' || !$existing->read_at)) {
+                            $existing->update([
+                                'status' => 'read',
+                                'read_at' => $existing->read_at ?: now(),
+                            ]);
+                        }
                         continue;
                     }
                 }
@@ -604,9 +638,12 @@ class TelegramGatewayController extends Controller
                 $sentAt = !empty($data['date']) 
                     ? \Illuminate\Support\Carbon::createFromTimestamp($data['date']) 
                     : now();
-                $receivedAt = !empty($data['timestamp'])
-                    ? \Illuminate\Support\Carbon::createFromTimestampMs($data['timestamp'])
-                    : now();
+                $receivedAt = $isOutgoing
+                    ? $sentAt
+                    : (!empty($data['timestamp']) ? \Illuminate\Support\Carbon::createFromTimestampMs($data['timestamp']) : $sentAt);
+
+                $isRead = !empty($data['isRead']);
+                $readAt = $isRead ? (!empty($data['readDate']) ? \Illuminate\Support\Carbon::createFromTimestamp($data['readDate']) : now()) : null;
 
                 ChatMessage::create([
                     'integration_id' => $integration->id,
@@ -614,9 +651,12 @@ class TelegramGatewayController extends Controller
                     'sender_name' => $isOutgoing ? 'Я (Telegram)' : ($senderFirstName ?: 'Блогер'),
                     'text' => $text,
                     'telegram_message_id' => $messageId,
-                    'status' => 'delivered',
+                    'media_url' => $mediaUrl,
+                    'media_type' => $mediaType,
+                    'status' => $isRead ? 'read' : 'delivered',
                     'sent_at' => $sentAt,
                     'received_at' => $receivedAt,
+                    'read_at' => $readAt,
                     'created_at' => $sentAt,
                     'updated_at' => $receivedAt,
                 ]);
@@ -675,6 +715,30 @@ class TelegramGatewayController extends Controller
             $reason = $data['reason'] ?? 'Сессия Telegram была завершена или сброшена';
             $this->handleSessionLostAlert($reason);
             return response()->json(['ok' => true, 'event' => 'session_lost_handled']);
+        }
+
+        // Handle read receipts from Telegram
+        if (($data['type'] ?? '') === 'read_history') {
+            $peerId = (string) ($data['peerId'] ?? '');
+            $maxId = (int) ($data['maxId'] ?? 0);
+            $readAt = !empty($data['readAt'])
+                ? \Illuminate\Support\Carbon::createFromTimestamp($data['readAt'])
+                : now();
+
+            if ($peerId && $maxId > 0) {
+                $integrations = Integration::where('telegram_chat_id', $peerId)->get();
+                foreach ($integrations as $integration) {
+                    ChatMessage::where('integration_id', $integration->id)
+                        ->where('sender_type', 'manager')
+                        ->where('telegram_message_id', '<=', $maxId)
+                        ->whereNull('read_at')
+                        ->update([
+                            'status' => 'read',
+                            'read_at' => $readAt,
+                        ]);
+                }
+            }
+            return response()->json(['ok' => true]);
         }
 
         $this->processMessageUpdate($data);

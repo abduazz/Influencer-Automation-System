@@ -614,7 +614,7 @@ export default function KanbanView({
     return integrations.filter(i => Boolean(i.kanbanStage)).length;
   }, [integrations]);
 
-  // Grouped Integrations by Column ID
+  // Grouped Integrations by Column ID (sorted by update date descending)
   const columnDataMap = useMemo(() => {
     const map = new Map<string, Integration[]>();
     columns.forEach(c => map.set(c.id, []));
@@ -625,6 +625,34 @@ export default function KanbanView({
       if (map.has(stage)) {
         map.get(stage)!.push(item);
       }
+    });
+
+    const getUpdateTime = (deal: Integration): number => {
+      if (deal.updatedAt) {
+        const time = new Date(deal.updatedAt).getTime();
+        if (!isNaN(time)) return time;
+      }
+      if (deal.createdAt) {
+        const time = new Date(deal.createdAt).getTime();
+        if (!isNaN(time)) return time;
+      }
+      if (deal.startDate) {
+        const time = new Date(deal.startDate).getTime();
+        if (!isNaN(time)) return time;
+      }
+      const numId = Number(deal.id);
+      return !isNaN(numId) ? numId : 0;
+    };
+
+    map.forEach((deals) => {
+      deals.sort((a, b) => {
+        const timeB = getUpdateTime(b);
+        const timeA = getUpdateTime(a);
+        if (timeB !== timeA) {
+          return timeB - timeA;
+        }
+        return Number(b.id || 0) - Number(a.id || 0);
+      });
     });
 
     return map;
@@ -1687,6 +1715,28 @@ export default function KanbanView({
                                 <Copy className="w-3 h-3" />
                               )}
                             </button>
+
+                            {/* Quick copy cabinet link button */}
+                            {(deal.bloggerCabinetToken || deal.kanbanStage === 'paid_in_progress') && (
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const url = getCabinetUrl(deal.bloggerCabinetToken || deal.id);
+                                  await copyToClipboard(url);
+                                  setCopiedId(`cabinet-${deal.id}`);
+                                  setTimeout(() => setCopiedId(null), 2000);
+                                }}
+                                title={copiedId === `cabinet-${deal.id}` ? (t.kanbanCopiedSuccess || 'Скопировано!') : (t.kanbanBloggerCabinetBtn || 'Скопировать ссылку на кабинет блогера')}
+                                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-800 transition cursor-pointer"
+                              >
+                                {copiedId === `cabinet-${deal.id}` ? (
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                ) : (
+                                  <ExternalLink className="w-3 h-3 text-slate-400 hover:text-slate-700" />
+                                )}
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -1702,6 +1752,34 @@ export default function KanbanView({
                           >
                             <FilePlus className="w-3 h-3" />
                             <span>{t.createReport || 'Создать отчет'}</span>
+                          </button>
+                        )}
+
+                        {/* Action Button for 'paid_in_progress' Stage: Кабинет блогера */}
+                        {(column.id === 'paid_in_progress' || deal.kanbanStage === 'paid_in_progress') && (
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const url = getCabinetUrl(deal.bloggerCabinetToken || deal.id);
+                              await copyToClipboard(url);
+                              setCopiedId(`cabinet-btn-${deal.id}`);
+                              setTimeout(() => setCopiedId(null), 2000);
+                            }}
+                            className="w-full flex items-center justify-center gap-1.5 py-1 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 font-bold text-[11px] rounded-md shadow-2xs transition cursor-pointer border border-slate-200"
+                            title={t.kanbanBloggerCabinetBtn || 'Скопировать ссылку на кабинет блогера'}
+                          >
+                            {copiedId === `cabinet-btn-${deal.id}` ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>{t.kanbanCopiedSuccess || 'Скопировано!'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <ExternalLink className="w-3 h-3 text-slate-600" />
+                                <span>{t.kanbanBloggerCabinetBtn || 'Кабинет блогера'}</span>
+                              </>
+                            )}
                           </button>
                         )}
 

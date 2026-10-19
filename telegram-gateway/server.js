@@ -219,6 +219,60 @@ function clearSession() {
   currentQr = null;
 }
 
+// Extract media metadata without saving to disk (100% zero-disk & confidential)
+function extractMediaMetadata(message) {
+  if (!message || !message.media) {
+    return { mediaType: null, mediaDuration: null, mediaFilename: null };
+  }
+
+  let mediaType = null;
+  let mediaFilename = null;
+  let mediaDuration = null;
+
+  try {
+    const media = message.media;
+    if (media.className === 'MessageMediaPhoto' || media.photo) {
+      mediaType = 'photo';
+    } else if (media.className === 'MessageMediaDocument' || media.document) {
+      const doc = media.document;
+      if (doc) {
+        const isVoice = doc.attributes?.some(attr => 
+          (attr.className === 'DocumentAttributeAudio' || attr.voice) && !!attr.voice
+        );
+        const audioAttr = doc.attributes?.find(attr => 
+          attr.className === 'DocumentAttributeAudio' || attr.duration !== undefined
+        );
+        const videoAttr = doc.attributes?.find(attr => 
+          attr.className === 'DocumentAttributeVideo'
+        );
+        const filenameAttr = doc.attributes?.find(attr => 
+          attr.className === 'DocumentAttributeFilename'
+        );
+
+        if (isVoice) {
+          mediaType = 'voice';
+          mediaDuration = audioAttr?.duration || 0;
+        } else if (doc.mimeType?.startsWith('image/')) {
+          mediaType = 'photo';
+        } else if (videoAttr || doc.mimeType?.startsWith('video/')) {
+          mediaType = 'video';
+          mediaDuration = videoAttr?.duration || 0;
+        } else if (audioAttr || doc.mimeType?.startsWith('audio/')) {
+          mediaType = 'audio';
+          mediaDuration = audioAttr?.duration || 0;
+        } else {
+          mediaType = 'document';
+          mediaFilename = filenameAttr?.fileName || 'Документ';
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[GATEWAY] Error reading media metadata for msg ${message?.id}:`, err.message);
+  }
+
+  return { mediaType, mediaDuration, mediaFilename };
+}
+
 // Setup incoming message listener
 function setupMessageListener() {
   if (messageListenerRegistered) return;
@@ -226,6 +280,32 @@ function setupMessageListener() {
 
   client.addEventHandler(async (event) => {
     try {
+      // 1. Read receipts: blogger read messages in Telegram (UpdateReadHistoryOutbox / UpdateReadChannelOutbox)
+      if (event.className === 'UpdateReadHistoryOutbox' || event.className === 'UpdateReadChannelOutbox') {
+        const maxId = event.maxId;
+        const peerId = (event.peer?.userId || event.peer?.chatId || event.peer?.channelId || event.channelId || '').toString();
+        console.log(`[GATEWAY] 👁️ Messages read by peer ${peerId} up to msgId ${maxId}`);
+        const readPayload = {
+          type: 'read_history',
+          peerId: peerId,
+          maxId: maxId,
+          readAt: Math.floor(Date.now() / 1000),
+          timestamp: Date.now(),
+        };
+
+        for (const url of CANDIDATE_WEBHOOK_URLS) {
+          try {
+            await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify(readPayload),
+            });
+            break;
+          } catch (e) {}
+        }
+        return;
+      }
+
       const message = event.message;
       if (!message) return;
 
@@ -240,6 +320,37 @@ function setupMessageListener() {
         chat = await message.getChat();
       } catch (e) {}
 
+      // Extract media metadata (zero disk usage, 100% confidential)
+      let mediaType = null;
+      let mediaDuration = null;
+      let mediaFilename = null;
+
+      if (message.media) {
+        try {
+          const mInfo = extractMediaMetadata(message);
+          mediaType = mInfo.mediaType;
+          mediaDuration = mInfo.mediaDuration;
+          mediaFilename = mInfo.mediaFilename;
+        } catch (e) {
+          console.error('[GATEWAY] Error reading incoming media metadata:', e.message);
+        }
+      }
+
+      let text = message.message || message.text || '';
+      if (!text && mediaType) {
+        if (mediaType === 'voice') {
+          text = `🎤 Голосовое сообщение${mediaDuration ? ` (${Math.floor(mediaDuration / 60)}:${String(mediaDuration % 60).padStart(2, '0')})` : ''}`;
+        } else if (mediaType === 'photo') {
+          text = '📷 Фотография';
+        } else if (mediaType === 'video') {
+          text = `🎥 Видеозапись${mediaDuration ? ` (${Math.floor(mediaDuration / 60)}:${String(mediaDuration % 60).padStart(2, '0')})` : ''}`;
+        } else if (mediaType === 'audio') {
+          text = `🎵 Аудиофайл${mediaDuration ? ` (${Math.floor(mediaDuration / 60)}:${String(mediaDuration % 60).padStart(2, '0')})` : ''}`;
+        } else {
+          text = `📄 ${mediaFilename || 'Документ'}`;
+        }
+      }
+
       const payload = {
         messageId: message.id,
         isOutgoing: !!message.out,
@@ -251,7 +362,11 @@ function setupMessageListener() {
         senderLastName: sender?.lastName || null,
         chatUsername: chat?.username || null,
         chatTitle: chat?.title || null,
-        text: message.message || message.text || '',
+        text: text,
+        mediaUrl: mediaUrl,
+        mediaType: mediaType,
+        mediaDuration: mediaDuration,
+        mediaFilename: mediaFilename,
         date: message.date,
         timestamp: Date.now(),
       };
@@ -657,11 +772,37 @@ const server = http.createServer(async (req, res) => {
       console.log(`[GATEWAY] Final resolvedPeer to send to:`, typeof resolvedPeer === 'object' ? `User(${resolvedPeer.id})` : resolvedPeer);
 
       try {
-        const result = await withTimeout(
-          client.sendMessage(resolvedPeer, { message: text }),
-          12000,
-          'Отправка в Telegram превысила лимит ожидания (12 сек). Telegram-сервер не ответил.'
-        );
+        let result;
+        if (body.mediaPath && fs.existsSync(body.mediaPath)) {
+          console.log(`[GATEWAY] 📎 Sending media ${body.mediaPath} (isVoice: ${!!body.isVoice}) to peer...`);
+          const caption = text && !text.startsWith('🎤 Голосовое') && !text.startsWith('📷 Фото') && !text.startsWith('📄 ') && !text.startsWith('🎥 Видео') ? text : '';
+          const sendOptions = {
+            file: body.mediaPath,
+            caption: caption,
+            voiceNote: !!body.isVoice,
+          };
+
+          if (body.isVoice) {
+            sendOptions.attributes = [
+              new Api.DocumentAttributeAudio({
+                voice: true,
+                duration: body.duration ? parseInt(body.duration, 10) : 0,
+              })
+            ];
+          }
+
+          result = await withTimeout(
+            client.sendFile(resolvedPeer, sendOptions),
+            35000,
+            'Отправка медиафайла в Telegram превысила лимит ожидания (35 сек).'
+          );
+        } else {
+          result = await withTimeout(
+            client.sendMessage(resolvedPeer, { message: text }),
+            12000,
+            'Отправка в Telegram превысила лимит ожидания (12 сек). Telegram-сервер не ответил.'
+          );
+        }
 
         let peerId = null;
         if (result.peerId) {
@@ -727,6 +868,13 @@ const server = http.createServer(async (req, res) => {
         }
 
         return sendJson(500, { error: err.message || 'Failed to send message via Telegram' });
+      } finally {
+        if (body.mediaPath && fs.existsSync(body.mediaPath)) {
+          try {
+            fs.unlinkSync(body.mediaPath);
+            console.log(`[GATEWAY] 🧹 Deleted temporary media file to preserve disk space: ${body.mediaPath}`);
+          } catch (e) {}
+        }
       }
     }
 
@@ -787,6 +935,28 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
+        let readOutboxMaxId = 0;
+        try {
+          const inputPeer = await client.getInputEntity(resolvedPeer);
+          const peerDialogs = await withTimeout(
+            client.invoke(new Api.messages.GetPeerDialogs({ peers: [new Api.InputDialogPeer({ peer: inputPeer })] })),
+            2500,
+            'GetPeerDialogs timed out'
+          );
+          if (peerDialogs && peerDialogs.dialogs && peerDialogs.dialogs.length > 0) {
+            readOutboxMaxId = peerDialogs.dialogs[0].readOutboxMaxId || 0;
+          }
+        } catch (e) {
+          try {
+            const dialogs = await withTimeout(client.getDialogs({ limit: 30 }), 2000, 'getDialogs timed out');
+            const peerStr = String(resolvedPeer?.id || resolvedPeer).replace(/\D/g, '');
+            const d = dialogs.find(d => String(d.id || '').replace(/\D/g, '') === peerStr);
+            if (d?.dialog?.readOutboxMaxId) {
+              readOutboxMaxId = d.dialog.readOutboxMaxId;
+            }
+          } catch (e2) {}
+        }
+
         const messages = await withTimeout(
           client.getMessages(resolvedPeer, { limit: 25 }),
           8000,
@@ -800,6 +970,37 @@ const server = http.createServer(async (req, res) => {
           let mChat = null;
           try { mChat = await m.getChat(); } catch (e) {}
 
+          let mType = null;
+          let mUrl = null;
+          let mDur = null;
+          let mFile = null;
+
+          if (m.media) {
+            try {
+              const mInfo = extractMediaMetadata(m);
+              mType = mInfo.mediaType;
+              mDur = mInfo.mediaDuration;
+              mFile = mInfo.mediaFilename;
+            } catch (e) {}
+          }
+
+          let mText = m.message || m.text || '';
+          if (!mText && mType) {
+            if (mType === 'voice') {
+              mText = `🎤 Голосовое сообщение${mDur ? ` (${Math.floor(mDur / 60)}:${String(mDur % 60).padStart(2, '0')})` : ''}`;
+            } else if (mType === 'photo') {
+              mText = '📷 Фотография';
+            } else if (mType === 'video') {
+              mText = '🎥 Видеозапись';
+            } else if (mType === 'audio') {
+              mText = '🎵 Аудиофайл';
+            } else {
+              mText = `📄 ${mFile || 'Документ'}`;
+            }
+          }
+
+          const isRead = !!(m.out && readOutboxMaxId && m.id <= readOutboxMaxId);
+
           list.push({
             messageId: m.id,
             isOutgoing: !!m.out,
@@ -811,7 +1012,10 @@ const server = http.createServer(async (req, res) => {
             senderLastName: mSender?.lastName || null,
             chatUsername: mChat?.username || null,
             chatTitle: mChat?.title || null,
-            text: m.message || m.text || '',
+            text: mText,
+            mediaUrl: mUrl,
+            mediaType: mType,
+            isRead: isRead,
             date: m.date,
           });
         }

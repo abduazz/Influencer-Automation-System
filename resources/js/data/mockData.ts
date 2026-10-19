@@ -89,6 +89,7 @@ export interface ChatMessage {
   status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
   sentAt?: string | null;
   receivedAt?: string | null;
+  readAt?: string | null;
   createdAt: string;
   updatedAt?: string;
   isEdited?: boolean;
@@ -141,6 +142,8 @@ export interface Integration {
   subscribersCount?: number | null;
   subscribersUpdatedAt?: string | null;
   subscribersHistory?: SubscriberHistoryItem[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface Report {

@@ -15,12 +15,17 @@ if [ -f "database/database.sqlite" ]; then
     cp database/database.sqlite "storage/backups/pre_deploy_$(date +%Y%m%d_%H%M%S).sqlite"
 fi
 
+echo "🔒 Ensuring storage and log permissions..."
+chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+chmod -R 777 storage/logs 2>/dev/null || true
+chmod 666 storage/logs/*.log 2>/dev/null || true
+
 echo "🗃️ Running database migrations and seeding..."
 php artisan migrate --force
 php artisan db:seed --force
 
 echo "🔄 Syncing reports..."
-php artisan reports:sync
+php artisan reports:sync || echo "⚠️ Report sync encountered an issue, continuing deployment..."
 
 echo "🔗 Ensuring public storage link and media directory..."
 php artisan storage:link || true
@@ -77,6 +82,8 @@ if command -v npm &> /dev/null || [ -x "$NPM_CMD" ]; then
     # Ensure storage permissions for www-data
     chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
     chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+    chmod -R 777 storage/logs 2>/dev/null || true
+    chmod 666 storage/logs/*.log 2>/dev/null || true
 
     if command -v pm2 &> /dev/null; then
         pm2 start telegram-gateway/server.js --name "telegram-gateway" --cwd "$(pwd)" --update-env
@@ -91,5 +98,11 @@ if command -v npm &> /dev/null || [ -x "$NPM_CMD" ]; then
 else
     echo "⚠️ Node.js runtime could not be started."
 fi
+
+# Ensure storage and log permissions for all processes
+chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
+chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+chmod -R 777 storage/logs 2>/dev/null || true
+chmod 666 storage/logs/*.log 2>/dev/null || true
 
 echo "🎉 Deployment completed successfully!"

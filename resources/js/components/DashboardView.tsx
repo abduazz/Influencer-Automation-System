@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Project, 
   Integration,
@@ -109,6 +109,38 @@ export default function DashboardView({
   const [copiedCabinetLink, setCopiedCabinetLink] = useState(false);
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+
+  // Accounting mode: 'cash' (by payment date) vs 'published_slots' (by slot delivery date)
+  const [accountingMode, setAccountingMode] = useState<'cash' | 'published_slots'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('accounting_view_mode');
+      if (saved === 'published_slots' || saved === 'cash') return saved;
+    }
+    return 'cash';
+  });
+
+  const handleAccountingModeChange = (mode: 'cash' | 'published_slots') => {
+    setAccountingMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accounting_view_mode', mode);
+      window.dispatchEvent(new Event('accounting_mode_changed'));
+    }
+  };
+
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('accounting_view_mode');
+      if (saved === 'cash' || saved === 'published_slots') {
+        setAccountingMode(saved);
+      }
+    };
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('accounting_mode_changed', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('accounting_mode_changed', handleSync);
+    };
+  }, []);
 
   // New Project Form state
   const [newProjectName, setNewProjectName] = useState('');
@@ -379,7 +411,34 @@ export default function DashboardView({
     });
 
   // Selected Project Statistics Calculators (filtered by date)
-  const totalSpend = filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
+  const cashTotalSpend = filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
+
+  const publishedSlotsFilteredSpend = useMemo(() => {
+    let sum = 0;
+    filteredIntegrations.forEach(item => {
+      const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+      const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
+      const pricePerSlot = Number(item.pricePerSlot) || (slotsTotal > 0 ? (Number(item.totalAmount) / slotsTotal) : 0);
+      if (!sub || !sub.data) return;
+
+      for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
+        const slotKey = `slot_${sIdx}`;
+        const url = sub.data[slotKey];
+        if (typeof url === 'string' && url.trim() !== '') {
+          const rawDate = sub.data[`${slotKey}_submitted_at`] || sub.submittedAt || item.startDate;
+          const slotDate = rawDate ? String(rawDate).substring(0, 10) : '';
+          const matchesDate = (!filterStartDate || slotDate >= filterStartDate) &&
+            (!filterEndDate || slotDate <= filterEndDate);
+          if (matchesDate) {
+            sum += pricePerSlot;
+          }
+        }
+      }
+    });
+    return Math.round(sum * 100) / 100;
+  }, [filteredIntegrations, submissions, filterStartDate, filterEndDate]);
+
+  const totalSpend = accountingMode === 'cash' ? cashTotalSpend : publishedSlotsFilteredSpend;
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
 
   // Selected Project total spend and current month spend
@@ -390,13 +449,59 @@ export default function DashboardView({
   const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
   const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
 
-  const selectedProjectMonthlySpend = activeProjectIntegrations.filter(i => {
+  const cashMonthlySpend = activeProjectIntegrations.filter(i => {
     if (!i.startDate) return false;
     const iEnd = i.endDate || i.startDate;
     const startYM = i.startDate.substring(0, 7);
     const endYM = iEnd.substring(0, 7);
     return currentYMPrefix >= startYM && currentYMPrefix <= endYM;
   }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+
+  const publishedSlotsMonthlySpend = useMemo(() => {
+    let sum = 0;
+    activeProjectIntegrations.forEach(item => {
+      const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+      const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
+      const pricePerSlot = Number(item.pricePerSlot) || (slotsTotal > 0 ? (Number(item.totalAmount) / slotsTotal) : 0);
+      if (!sub || !sub.data) return;
+
+      for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
+        const slotKey = `slot_${sIdx}`;
+        const url = sub.data[slotKey];
+        if (typeof url === 'string' && url.trim() !== '') {
+          const rawDate = sub.data[`${slotKey}_submitted_at`] || sub.submittedAt || item.startDate;
+          if (rawDate && String(rawDate).substring(0, 7) === currentYMPrefix) {
+            sum += pricePerSlot;
+          }
+        }
+      }
+    });
+    return Math.round(sum * 100) / 100;
+  }, [activeProjectIntegrations, submissions, currentYMPrefix]);
+
+  const projectPendingSpend = useMemo(() => {
+    let pending = 0;
+    activeProjectIntegrations.forEach(item => {
+      const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+      const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
+      const pricePerSlot = Number(item.pricePerSlot) || (slotsTotal > 0 ? (Number(item.totalAmount) / slotsTotal) : 0);
+      let publishedCount = 0;
+      if (sub && sub.data) {
+        for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
+          const slotKey = `slot_${sIdx}`;
+          const url = sub.data[slotKey];
+          if (typeof url === 'string' && url.trim() !== '') {
+            publishedCount++;
+          }
+        }
+      }
+      const remainingSlots = Math.max(0, slotsTotal - publishedCount);
+      pending += remainingSlots * pricePerSlot;
+    });
+    return Math.round(pending * 100) / 100;
+  }, [activeProjectIntegrations, submissions]);
+
+  const selectedProjectMonthlySpend = accountingMode === 'cash' ? cashMonthlySpend : publishedSlotsMonthlySpend;
 
   const remainingLimit = selectedProject && (selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null)
     ? selectedProject.monthlyLimit - selectedProjectMonthlySpend
@@ -674,6 +779,34 @@ export default function DashboardView({
                 <span>{t.remainingLimit}: {remainingLimit !== null ? Math.round(remainingLimit).toLocaleString('ru-RU') : t.limitNotSet}</span>
               </span>
             )}
+
+            {/* Accounting Mode Toggle: Cash (По оплате) vs Accrual (По выходу слотов) */}
+            <div className="ml-auto inline-flex items-center p-0.5 rounded-lg bg-neutral-100 border border-neutral-200 text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => handleAccountingModeChange('cash')}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                  accountingMode === 'cash'
+                    ? 'bg-white text-black shadow-2xs font-extrabold'
+                    : 'text-neutral-500 hover:text-black'
+                }`}
+                title={t.accountingCashDesc}
+              >
+                {t.accountingCashShort || t.accountingCash}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAccountingModeChange('published_slots')}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer flex items-center gap-1 ${
+                  accountingMode === 'published_slots'
+                    ? 'bg-white text-sky-700 shadow-2xs font-extrabold'
+                    : 'text-neutral-500 hover:text-black'
+                }`}
+                title={t.accountingAccrualDesc}
+              >
+                <span>{t.accountingAccrualShort || t.accountingAccrual}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -716,12 +849,17 @@ export default function DashboardView({
         )}
         {allowedMetrics.includes('spend') && (
           <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.monthlySpend}>
-              {t.monthlySpend}
-            </span>
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.monthlySpend}>
+                {t.monthlySpend}
+              </span>
+              <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded ${accountingMode === 'published_slots' ? 'bg-sky-100 text-sky-800' : 'bg-neutral-100 text-neutral-600'}`}>
+                {accountingMode === 'published_slots' ? (t.accountingAccrualShort || 'Факт') : (t.accountingCashShort || 'Касса')}
+              </span>
+            </div>
             <span 
               className={`${getMetricValueClasses(formatMetricVal(selectedProjectMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS`}
+              title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc})${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
             >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />

@@ -1240,6 +1240,7 @@ export default function App() {
               <ReportsFeedView
                 projects={projects}
                 integrations={integrations}
+                submissions={submissions}
                 reports={reports.filter((r) => r.paymentType !== 'other')}
                 otherExpensesReports={reports.filter((r) => r.paymentType === 'other')}
                 allReports={reports}
@@ -1269,6 +1270,7 @@ export default function App() {
               <ReportsFeedView
                 projects={projects}
                 integrations={integrations}
+                submissions={submissions}
                 reports={reports.filter((r) => r.paymentType === 'other')}
                 otherExpensesReports={reports.filter((r) => r.paymentType === 'other')}
                 allReports={reports}

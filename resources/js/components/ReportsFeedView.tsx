@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Clock, Search, Trash2, X, ExternalLink, Link, LayoutGrid, Table, FileText, FileSpreadsheet, Send, FolderKanban, Edit3, User, Receipt, ArrowRight, Filter, Check, Wallet } from 'lucide-react';
-import { Project, Report, Integration, SlotConfig } from '../data/mockData';
+import { Project, Report, Integration, SlotConfig, BloggerSubmission } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
@@ -10,6 +10,7 @@ import { cleanAmount, formatPrice, parsePrice } from '../utils/format';
 interface ReportsFeedViewProps {
   projects: Project[];
   integrations: Integration[];
+  submissions?: BloggerSubmission[];
   reports: Report[];
   otherExpensesReports?: Report[];
   allReports?: Report[];
@@ -117,6 +118,7 @@ const getTelegramReportUrl = (rep: Report | null | undefined, projects: Project[
 export default function ReportsFeedView({
   projects,
   integrations,
+  submissions,
   reports,
   otherExpensesReports,
   allReports,
@@ -138,6 +140,38 @@ export default function ReportsFeedView({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+
+  // Accounting mode: 'cash' (by payment date) vs 'published_slots' (by slot delivery date)
+  const [accountingMode, setAccountingMode] = useState<'cash' | 'published_slots'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('accounting_view_mode');
+      if (saved === 'published_slots' || saved === 'cash') return saved;
+    }
+    return 'cash';
+  });
+
+  const handleAccountingModeChange = (mode: 'cash' | 'published_slots') => {
+    setAccountingMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accounting_view_mode', mode);
+      window.dispatchEvent(new Event('accounting_mode_changed'));
+    }
+  };
+
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('accounting_view_mode');
+      if (saved === 'cash' || saved === 'published_slots') {
+        setAccountingMode(saved);
+      }
+    };
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('accounting_mode_changed', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('accounting_mode_changed', handleSync);
+    };
+  }, []);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -398,6 +432,60 @@ export default function ReportsFeedView({
     }
   };
 
+  // Helper to calculate slot delivery progress and delivery dates for a report
+  const getReportSlotStats = useMemo(() => {
+    return (rep: Report, matchesDateFn: (d?: string | null) => boolean) => {
+      if (rep.paymentType === 'other') {
+        const fullAmount = cleanAmount(Number(rep.totalAmount || rep.paidAmount || (rep as any).amount || 0));
+        const inPeriod = matchesDateFn(rep.date);
+        return {
+          totalSlots: 1,
+          totalPublished: 1,
+          publishedInPeriod: inPeriod ? 1 : 0,
+          costInPeriod: inPeriod ? fullAmount : 0,
+          pendingCost: 0,
+          pricePerSlot: fullAmount,
+        };
+      }
+
+      const matching = findMatchingIntegration(rep, integrations);
+      const sub = (submissions || []).find(s => matching && String(s.integrationId) === String(matching.id));
+      const totalSlots = Number(rep.slotsCount) > 0 ? Number(rep.slotsCount) : (matching ? Number(matching.slotsCount) : 1);
+      const repTotal = cleanAmount(Number(rep.totalAmount || rep.paidAmount || (Number(rep.pricePerSlot || 0) * totalSlots) || 0));
+      const pricePerSlot = cleanAmount(Number(rep.pricePerSlot) || (totalSlots > 0 ? (repTotal / totalSlots) : 0));
+
+      let publishedTotal = 0;
+      let publishedInPeriod = 0;
+      let costInPeriod = 0;
+
+      for (let i = 1; i <= totalSlots; i++) {
+        const slotKey = `slot_${i}`;
+        const url = sub?.data?.[slotKey];
+        const isPub = typeof url === 'string' && url.trim() !== '';
+        if (isPub) {
+          publishedTotal++;
+          const rawDate = sub?.data?.[`${slotKey}_submitted_at`] || sub?.submittedAt || rep.date;
+          const slotDate = rawDate ? String(rawDate).substring(0, 10) : '';
+          if (matchesDateFn(slotDate)) {
+            publishedInPeriod++;
+            costInPeriod += pricePerSlot;
+          }
+        }
+      }
+
+      const pendingCost = Math.max(0, (totalSlots - publishedTotal) * pricePerSlot);
+
+      return {
+        totalSlots,
+        totalPublished: publishedTotal,
+        publishedInPeriod,
+        costInPeriod: cleanAmount(costInPeriod),
+        pendingCost: cleanAmount(pendingCost),
+        pricePerSlot,
+      };
+    };
+  }, [integrations, submissions]);
+
   // Filtering reports based on search query, project filter, and date period
   const filteredReports = useMemo(() => {
     return reports.filter(rep => {
@@ -421,8 +509,23 @@ export default function ReportsFeedView({
         createdBy.toLowerCase().includes(searchLower)
       );
 
-      const matchesDate = (!filterStartDate || rep.date >= filterStartDate) &&
+      const matchesCashDate = (!filterStartDate || rep.date >= filterStartDate) &&
         (!filterEndDate || rep.date <= filterEndDate);
+
+      let matchesDate = matchesCashDate;
+      if (accountingMode === 'published_slots') {
+        if (rep.paymentType === 'other') {
+          matchesDate = matchesCashDate;
+        } else {
+          const stats = getReportSlotStats(rep, (d) => {
+            if (!d) return false;
+            if (filterStartDate && d < filterStartDate) return false;
+            if (filterEndDate && d > filterEndDate) return false;
+            return true;
+          });
+          matchesDate = stats.publishedInPeriod > 0 || (matchesCashDate && stats.totalPublished === 0);
+        }
+      }
 
       const matchesProject = selectedProjectId === 'all' ||
         (rep.projectId && String(rep.projectId) === String(selectedProjectId)) ||
@@ -431,7 +534,7 @@ export default function ReportsFeedView({
 
       return matchesSearch && matchesDate && matchesProject;
     });
-  }, [reports, projects, searchQuery, filterStartDate, filterEndDate, selectedProjectId, selectedProject]);
+  }, [reports, projects, searchQuery, filterStartDate, filterEndDate, selectedProjectId, selectedProject, accountingMode, getReportSlotStats]);
 
   // Date and period calculation helpers
   const now = useMemo(() => new Date(), []);
@@ -497,6 +600,8 @@ export default function ReportsFeedView({
     let bloggerCount = 0;
     let otherTotal = 0;
     let otherCount = 0;
+    let pendingTotal = 0;
+    let deliveredSlotsCount = 0;
 
     const matchesDateRange = (repDate?: string | null) => {
       if (!repDate) return false;
@@ -542,29 +647,53 @@ export default function ReportsFeedView({
       return false;
     };
 
-    allAvailableReports.forEach(rep => {
-      if (!matchesDateRange(rep.date)) return;
-      if (!matchesProj(rep)) return;
+    if (accountingMode === 'cash') {
+      allAvailableReports.forEach(rep => {
+        if (!matchesDateRange(rep.date)) return;
+        if (!matchesProj(rep)) return;
 
-      const cost = getReportCost(rep);
-      if (rep.paymentType === 'other') {
-        otherTotal += cost;
-        otherCount++;
-      } else {
-        bloggerTotal += cost;
-        bloggerCount++;
-      }
-    });
+        const cost = getReportCost(rep);
+        if (rep.paymentType === 'other') {
+          otherTotal += cost;
+          otherCount++;
+        } else {
+          bloggerTotal += cost;
+          bloggerCount++;
+        }
+      });
+    } else {
+      allAvailableReports.forEach(rep => {
+        if (!matchesProj(rep)) return;
+
+        if (rep.paymentType === 'other') {
+          if (matchesDateRange(rep.date)) {
+            const cost = getReportCost(rep);
+            otherTotal += cost;
+            otherCount++;
+          }
+        } else {
+          const stats = getReportSlotStats(rep, matchesDateRange);
+          if (stats.publishedInPeriod > 0) {
+            bloggerTotal += stats.costInPeriod;
+            bloggerCount++;
+            deliveredSlotsCount += stats.publishedInPeriod;
+          }
+          pendingTotal += stats.pendingCost;
+        }
+      });
+    }
 
     return {
-      bloggerTotal,
+      bloggerTotal: Math.round(bloggerTotal * 100) / 100,
       bloggerCount,
-      otherTotal,
+      otherTotal: Math.round(otherTotal * 100) / 100,
       otherCount,
-      grandTotal: bloggerTotal + otherTotal,
+      grandTotal: Math.round((bloggerTotal + otherTotal) * 100) / 100,
       totalCount: bloggerCount + otherCount,
+      pendingTotal: Math.round(pendingTotal * 100) / 100,
+      deliveredSlotsCount,
     };
-  }, [allAvailableReports, isPeriodFiltered, filterStartDate, filterEndDate, selectedProjectId, selectedProject, currentYMPrefix, currentMonthStart, currentMonthEnd]);
+  }, [allAvailableReports, isPeriodFiltered, filterStartDate, filterEndDate, selectedProjectId, selectedProject, currentYMPrefix, currentMonthStart, currentMonthEnd, accountingMode, getReportSlotStats]);
 
   const handleExportExcel = async () => {
     if (filteredReports.length === 0) {
@@ -829,10 +958,12 @@ export default function ReportsFeedView({
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate">
-                  {isCurrentMonthPreset ? t.expensesCurrentMonth : t.expensesPeriod}
+                  {accountingMode === 'published_slots'
+                    ? (isCurrentMonthPreset ? (lang === 'ru' ? 'Вышедшие слоты (факт)' : lang === 'uz' ? 'Chiqgan slotlar (fakt)' : 'Delivered Slots (Fact)') : (lang === 'ru' ? 'Вышедшие слоты за период' : lang === 'uz' ? 'Davr uchun chiqqan slotlar' : 'Delivered Slots in Period'))
+                    : (isCurrentMonthPreset ? t.expensesCurrentMonth : t.expensesPeriod)}
                 </span>
-                <span className="text-[9px] font-extrabold text-neutral-600 bg-neutral-100 px-1.5 py-0.2 rounded-full shrink-0" title={t.bloggerReportsCount}>
-                  {expenseMetrics.bloggerCount}
+                <span className="text-[9px] font-extrabold text-neutral-600 bg-neutral-100 px-1.5 py-0.2 rounded-full shrink-0" title={accountingMode === 'published_slots' ? (t.deliveredSlotsLabel || 'Вышедшие слоты') : t.bloggerReportsCount}>
+                  {accountingMode === 'published_slots' ? `${expenseMetrics.deliveredSlotsCount || 0} ${t.totalSlotsLabel?.toLowerCase() || 'слотов'}` : expenseMetrics.bloggerCount}
                 </span>
               </div>
               <div className="flex items-baseline gap-1 mt-0.5">
@@ -840,6 +971,11 @@ export default function ReportsFeedView({
                   {formatPrice(expenseMetrics.bloggerTotal)}
                 </span>
                 <span className="text-[10px] font-bold text-neutral-400">UZS</span>
+                {accountingMode === 'published_slots' && expenseMetrics.pendingTotal > 0 && (
+                  <span className="text-[10px] font-medium text-neutral-500 ml-1.5 hidden lg:inline" title={`${t.pendingSpend}: ${formatPrice(expenseMetrics.pendingTotal)} UZS`}>
+                    ({lang === 'ru' ? 'аванс в ожидании:' : lang === 'uz' ? 'kutilayotgan avans:' : 'pending:'} {formatPrice(expenseMetrics.pendingTotal)})
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -867,6 +1003,9 @@ export default function ReportsFeedView({
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-bold text-amber-900/80 uppercase tracking-wider truncate">
                   {isCurrentMonthPreset ? t.expensesCurrentMonthWithOther : t.expensesPeriodWithOther}
+                </span>
+                <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded ${accountingMode === 'published_slots' ? 'bg-sky-100 text-sky-800' : 'bg-neutral-100 text-neutral-600'}`}>
+                  {accountingMode === 'published_slots' ? (t.accountingAccrualShort || 'Факт') : (t.accountingCashShort || 'Касса')}
                 </span>
               </div>
               <div className="flex items-baseline gap-1 mt-0.5">
@@ -1074,6 +1213,34 @@ export default function ReportsFeedView({
             </button>
           </div>
 
+          {/* Accounting Mode Toggle: Cash (По оплате) vs Accrual (По выходу слотов) */}
+          <div className="flex items-center gap-0.5 bg-white md:bg-neutral-50 p-0.5 rounded-xl border border-neutral-200 shadow-3xs shrink-0">
+            <button
+              type="button"
+              onClick={() => handleAccountingModeChange('cash')}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                accountingMode === 'cash'
+                  ? 'bg-black text-white shadow-3xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+              }`}
+              title={t.accountingCashDesc}
+            >
+              {t.accountingCashShort || t.accountingCash}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAccountingModeChange('published_slots')}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                accountingMode === 'published_slots'
+                  ? 'bg-sky-600 text-white shadow-3xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+              }`}
+              title={t.accountingAccrualDesc}
+            >
+              <span>{t.accountingAccrualShort || t.accountingAccrual}</span>
+            </button>
+          </div>
+
           {/* Export to Excel & Reset button on Mobile */}
           <div className="flex items-center gap-2 w-full md:w-auto">
             <button
@@ -1165,6 +1332,8 @@ export default function ReportsFeedView({
                   const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
                   const cabinetUrl = token ? getCabinetUrl(token) : '';
 
+                  const stats = !isOther ? getReportSlotStats(rep, (d) => isPeriodFiltered ? (!filterStartDate || (d != null && d >= filterStartDate)) && (!filterEndDate || (d != null && d <= filterEndDate)) : (d ? (d.startsWith(currentYMPrefix) || (d >= currentMonthStart && d <= currentMonthEnd)) : false)) : null;
+
                   return (
                     <tr
                       key={rep.id}
@@ -1211,6 +1380,15 @@ export default function ReportsFeedView({
                       <td className="px-5 py-4 max-w-xs truncate text-neutral-600 font-medium">
                         {isOther ? (
                           <span className="italic text-neutral-500">{rep.destination}</span>
+                        ) : accountingMode === 'published_slots' && stats ? (
+                          <div className="flex flex-col">
+                            <span className="font-bold text-neutral-800">
+                              {stats.publishedInPeriod} / {rep.slotsCount} {t.slotsDeliveredInPeriod || 'вышло'}
+                            </span>
+                            <span className="text-[10px] text-neutral-400">
+                              {formatPrice(Number(rep.pricePerSlot))} UZS / slot
+                            </span>
+                          </div>
                         ) : (
                           <span>
                             {rep.slotsCount} slots × {formatPrice(Number(rep.pricePerSlot))}
@@ -1225,7 +1403,18 @@ export default function ReportsFeedView({
 
                       {/* Total Sum */}
                       <td className="px-5 py-4 whitespace-nowrap text-right font-black text-black">
-                        {formatPrice(rep.totalAmount)} UZS
+                        {accountingMode === 'published_slots' && stats && !isOther ? (
+                          <div className="flex flex-col items-end">
+                            <span className={stats.costInPeriod > 0 ? 'text-sky-700 font-black' : 'text-neutral-400 font-bold'}>
+                              {formatPrice(stats.costInPeriod)} UZS
+                            </span>
+                            <span className="text-[10px] font-semibold text-neutral-400" title={`${t.totalSpend}: ${formatPrice(rep.totalAmount)} UZS`}>
+                              из {formatPrice(rep.totalAmount)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span>{formatPrice(rep.totalAmount)} UZS</span>
+                        )}
                       </td>
 
                       {/* Receipt */}
@@ -1343,6 +1532,8 @@ export default function ReportsFeedView({
           const token = matchingInt?.bloggerCabinetToken || matchingInt?.id;
           const cabinetUrl = token ? getCabinetUrl(token) : '';
 
+          const gridStats = !isOther ? getReportSlotStats(rep, (d) => isPeriodFiltered ? (!filterStartDate || (d != null && d >= filterStartDate)) && (!filterEndDate || (d != null && d <= filterEndDate)) : (d ? (d.startsWith(currentYMPrefix) || (d >= currentMonthStart && d <= currentMonthEnd)) : false)) : null;
+
           return (
             <div
               key={rep.id}
@@ -1421,19 +1612,36 @@ export default function ReportsFeedView({
               <div className="bg-neutral-50/90 border border-neutral-150/60 rounded-xl p-2.5 flex items-center justify-between gap-2">
                 <div>
                   <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider block">
-                    {t.totalSumColumn}
+                    {accountingMode === 'published_slots' && !isOther ? (t.accruedSpend || 'Освоено') : t.totalSumColumn}
                   </span>
                   <div className="text-sm sm:text-base font-black text-neutral-950 tracking-tight">
-                    {formatPrice(rep.totalAmount)} <span className="text-[10px] font-bold text-neutral-400">UZS</span>
+                    {accountingMode === 'published_slots' && !isOther && gridStats ? (
+                      <span className={gridStats.costInPeriod > 0 ? 'text-sky-700' : 'text-neutral-500'}>
+                        {formatPrice(gridStats.costInPeriod)} <span className="text-[10px] font-bold text-neutral-400">UZS</span>
+                      </span>
+                    ) : (
+                      <>
+                        {formatPrice(rep.totalAmount)} <span className="text-[10px] font-bold text-neutral-400">UZS</span>
+                      </>
+                    )}
                   </div>
+                  {accountingMode === 'published_slots' && !isOther && gridStats && (
+                    <span className="text-[9px] text-neutral-400 font-medium block">
+                      из {formatPrice(rep.totalAmount)} UZS
+                    </span>
+                  )}
                 </div>
                 {!isOther && (
                   <div className="text-right">
                     <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider block">
-                      {t.slotsColumn}
+                      {accountingMode === 'published_slots' ? (t.deliveredSlotsLabel || 'Слоты') : t.slotsColumn}
                     </span>
                     <span className="text-xs font-extrabold text-neutral-700">
-                      {rep.slotsCount} × {formatPrice(Number(rep.pricePerSlot))}
+                      {accountingMode === 'published_slots' && gridStats ? (
+                        `${gridStats.publishedInPeriod} / ${rep.slotsCount} вышло`
+                      ) : (
+                        `${rep.slotsCount} × ${formatPrice(Number(rep.pricePerSlot))}`
+                      )}
                     </span>
                   </div>
                 )}

@@ -59,7 +59,7 @@ class TelegramService
         return null;
     }
 
-    public static function sendMessage($chatId, $text, $threadId = null)
+    public static function sendMessage($chatId, $text, $threadId = null, array $options = [])
     {
         $threadId = self::parseThreadId($threadId);
         $token = config('services.telegram.bot_token');
@@ -76,6 +76,9 @@ class TelegramService
             ];
             if ($threadId) {
                 $params['message_thread_id'] = $threadId;
+            }
+            if (!empty($options['link_preview_options'])) {
+                $params['link_preview_options'] = $options['link_preview_options'];
             }
 
             // First attempt: try with HTML parse mode
@@ -108,6 +111,9 @@ class TelegramService
             ];
             if ($threadId) {
                 $plainParams['message_thread_id'] = $threadId;
+            }
+            if (!empty($options['link_preview_options'])) {
+                $plainParams['link_preview_options'] = $options['link_preview_options'];
             }
 
             $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
@@ -970,7 +976,20 @@ class TelegramService
                     $responseJson = self::sendMessage($chatId, $text, $threadId);
                 }
             } else {
-                $responseJson = self::sendMessage($chatId, $text, $threadId);
+                $options = [];
+                $cleanLink = trim($link);
+                $targetUrl = $cleanLink;
+                if (!preg_match('~^https?://~i', $targetUrl)) {
+                    $targetUrl = 'https://' . $targetUrl;
+                }
+                if (filter_var($targetUrl, FILTER_VALIDATE_URL)) {
+                    $options['link_preview_options'] = [
+                        'url' => $targetUrl,
+                        'prefer_large_media' => true,
+                    ];
+                }
+
+                $responseJson = self::sendMessage($chatId, $text, $threadId, $options);
             }
 
             if ($responseJson) {

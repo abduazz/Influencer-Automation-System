@@ -148,12 +148,18 @@ class Integration extends Model
         $finalSlotsConfig = [];
         for ($i = 1; $i <= $slotsCount; $i++) {
             $existingConfig = $mergedSlotsConfig[$i - 1] ?? ($this->slots_config[$i - 1] ?? null);
+            $allocatedAt = (!empty($existingConfig['allocatedAt']))
+                ? $existingConfig['allocatedAt']
+                : ((!empty($this->slots_config[$i - 1]['allocatedAt']))
+                    ? $this->slots_config[$i - 1]['allocatedAt']
+                    : ($minDate ? $minDate->format('Y-m-d') : now()->format('Y-m-d')));
+
             $finalSlotsConfig[] = [
                 'slot' => $i,
                 'platform' => $existingConfig['platform'] ?? $this->platform ?? 'Instagram',
                 'format' => $existingConfig['format'] ?? 'Post',
                 'projectId' => $existingConfig['projectId'] ?? (string)$this->project_id,
-                'allocatedAt' => $existingConfig['allocatedAt'] ?? now()->format('Y-m-d'),
+                'allocatedAt' => $allocatedAt,
             ];
         }
 
@@ -163,8 +169,8 @@ class Integration extends Model
 
         $this->slots_count = $slotsCount;
         $this->paid_slots_count = $totalPaidSlots;
-        $this->paid_amount = (abs($totalPaidAmount - round($totalPaidAmount)) < 0.05) ? round($totalPaidAmount) : round($totalPaidAmount, 2);
-        $this->total_amount = (abs($totalAmount - round($totalAmount)) < 0.05) ? round($totalAmount) : round($totalAmount, 2);
+        $this->paid_amount = (abs($totalPaidAmount - round($totalPaidAmount)) < 0.15) ? round($totalPaidAmount) : round($totalPaidAmount, 2);
+        $this->total_amount = (abs($totalAmount - round($totalAmount)) < 0.15) ? round($totalAmount) : round($totalAmount, 2);
         $this->price_per_slot = round($effectivePricePerSlot, 2);
         $this->slots_config = $finalSlotsConfig;
         if (!empty($latestBloggerPageLink)) {
@@ -200,11 +206,20 @@ class Integration extends Model
 
             if (!$hasReports) {
                 if ($integration->total_amount === null || $integration->isDirty('price_per_slot') || $integration->isDirty('slots_count')) {
-                    $integration->total_amount = $integration->price_per_slot * $integration->slots_count;
+                    $raw = $integration->price_per_slot * $integration->slots_count;
+                    $integration->total_amount = (abs($raw - round($raw)) < 0.15) ? round($raw) : round($raw, 2);
                 }
                 if ($integration->paid_amount === null || (!$integration->isDirty('paid_amount') && ($integration->isDirty('price_per_slot') || $integration->isDirty('paid_slots_count')))) {
                     $paidSlots = $integration->paid_slots_count ?? $integration->slots_count;
-                    $integration->paid_amount = $integration->price_per_slot * $paidSlots;
+                    $rawPaid = $integration->price_per_slot * $paidSlots;
+                    $integration->paid_amount = (abs($rawPaid - round($rawPaid)) < 0.15) ? round($rawPaid) : round($rawPaid, 2);
+                }
+            } else {
+                if ($integration->total_amount !== null && abs($integration->total_amount - round($integration->total_amount)) < 0.15) {
+                    $integration->total_amount = round($integration->total_amount);
+                }
+                if ($integration->paid_amount !== null && abs($integration->paid_amount - round($integration->paid_amount)) < 0.15) {
+                    $integration->paid_amount = round($integration->paid_amount);
                 }
             }
 

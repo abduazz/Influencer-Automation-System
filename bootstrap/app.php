@@ -18,6 +18,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'ff_user_email',
         ]);
         $middleware->append(\App\Http\Middleware\LogHttpActivity::class);
+        $middleware->api(append: [
+            \App\Http\Middleware\EnsureApiAuthenticated::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

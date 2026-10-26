@@ -1949,9 +1949,24 @@ export default function DashboardView({
 
                 const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
                 const threadId = parentProj?.telegramThreadId;
+
+                // Dynamically resolve Telegram Group link from existing slot tg URLs or default submissions chat
+                let detectedTgChatId = '4424306910'; // Default submissions group: Reklama | Integratsiyalar
+                if (sub && sub.data) {
+                  for (const key of Object.keys(sub.data)) {
+                    if (key.endsWith('_tg_url') && typeof sub.data[key] === 'string') {
+                      const match = sub.data[key].match(/t\.me\/c\/(\d+)\//);
+                      if (match && match[1]) {
+                        detectedTgChatId = match[1];
+                        break;
+                      }
+                    }
+                  }
+                }
+
                 const defaultTgUrl = threadId 
-                  ? (threadId.startsWith('http') ? threadId : `https://t.me/c/4329107459/${threadId}`)
-                  : 'https://t.me/c/4329107459';
+                  ? (threadId.startsWith('http') ? threadId : `https://t.me/c/${detectedTgChatId}/${threadId}`)
+                  : `https://t.me/c/${detectedTgChatId}`;
 
                 const formatProofDate = (dateVal?: string) => {
                   if (!dateVal) return '';

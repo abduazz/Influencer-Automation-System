@@ -10,7 +10,7 @@ export const cleanAmount = (val: number | string | null | undefined): number => 
   if (val === '' || val === undefined || val === null) return 0;
   const num = typeof val === 'number' ? val : Number(val);
   if (isNaN(num)) return 0;
-  return Math.abs(num - Math.round(num)) < 0.05 ? Math.round(num) : num;
+  return Math.abs(num - Math.round(num)) < 0.15 ? Math.round(num) : num;
 };
 
 /**

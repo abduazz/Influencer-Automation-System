@@ -50,13 +50,13 @@ class Report extends Model
             if ($report->payment_type === 'remaining') {
                 $rawTotal = $report->total_amount ?: ($report->price_per_slot * $report->paid_slots_count);
                 $rawPaid = $report->paid_amount ?: ($report->price_per_slot * $report->paid_slots_count);
-                $report->total_amount = (abs($rawTotal - round($rawTotal)) < 0.05) ? round($rawTotal) : round($rawTotal, 2);
-                $report->paid_amount = (abs($rawPaid - round($rawPaid)) < 0.05) ? round($rawPaid) : round($rawPaid, 2);
+                $report->total_amount = (abs($rawTotal - round($rawTotal)) < 0.15) ? round($rawTotal) : round($rawTotal, 2);
+                $report->paid_amount = (abs($rawPaid - round($rawPaid)) < 0.15) ? round($rawPaid) : round($rawPaid, 2);
             } else if ($report->payment_type !== 'other') {
                 $rawTotal = $report->total_amount ?: ($report->price_per_slot * $report->slots_count);
                 $rawPaid = $report->paid_amount ?: ($report->price_per_slot * $report->paid_slots_count);
-                $report->total_amount = (abs($rawTotal - round($rawTotal)) < 0.05) ? round($rawTotal) : round($rawTotal, 2);
-                $report->paid_amount = (abs($rawPaid - round($rawPaid)) < 0.05) ? round($rawPaid) : round($rawPaid, 2);
+                $report->total_amount = (abs($rawTotal - round($rawTotal)) < 0.15) ? round($rawTotal) : round($rawTotal, 2);
+                $report->paid_amount = (abs($rawPaid - round($rawPaid)) < 0.15) ? round($rawPaid) : round($rawPaid, 2);
             }
         });
     }

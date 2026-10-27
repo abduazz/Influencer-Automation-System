@@ -165,6 +165,16 @@ export default function AccessManagementView({
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
 
+  // Credentials modal for newly created/recreated user
+  const [createdCredentialsModal, setCreatedCredentialsModal] = useState<{
+    name: string;
+    email: string;
+    password: string;
+    role: string;
+    isRecreated?: boolean;
+  } | null>(null);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
+
   // Backup states
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupSuccess, setBackupSuccess] = useState<string | null>(null);
@@ -327,6 +337,16 @@ export default function AccessManagementView({
           allowedSubdomains,
           shouldOverwrite
         );
+
+        const assignedPassword = password.trim() || 'password';
+        setCreatedCredentialsModal({
+          name: cleanName,
+          email: resolvedEmail,
+          password: assignedPassword,
+          role: determinedRole,
+          isRecreated: shouldOverwrite,
+        });
+
         setSuccessMsg(
           shouldOverwrite
             ? (lang === 'ru' 
@@ -764,11 +784,22 @@ export default function AccessManagementView({
 
               {/* Password Field */}
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">
-                  {editingUser 
-                    ? (lang === 'ru' ? 'Новый пароль (оставьте пустым, чтобы не менять)' : lang === 'uz' ? 'Yangi parol (o‘zgartirmaslik uchun bo‘sh qoldiring)' : 'New password (leave blank to keep)')
-                    : (t.userPasswordLabel || 'Пароль')}
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">
+                    {editingUser 
+                      ? (lang === 'ru' ? 'Новый пароль (оставьте пустым, чтобы не менять)' : lang === 'uz' ? 'Yangi parol (o‘zgartirmaslik uchun bo‘sh qoldiring)' : 'New password (leave blank to keep)')
+                      : (t.userPasswordLabel || 'Пароль')}
+                  </label>
+                  {!editingUser && (
+                    <button
+                      type="button"
+                      onClick={() => setPassword('password')}
+                      className="text-[10px] font-bold text-neutral-500 hover:text-black underline cursor-pointer"
+                    >
+                      {t.usePasswordQuickBtn || 'Вставить: password'}
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
                   <input
@@ -779,8 +810,17 @@ export default function AccessManagementView({
                       ? (lang === 'ru' ? 'Оставьте пустым, если не меняется' : 'Bo‘sh qoldiring')
                       : (t.defaultPasswordHint || 'По умолчанию: password')}
                     className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-black focus:outline-hidden transition"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                   />
                 </div>
+                {!editingUser && (
+                  <div className="flex items-center justify-between text-[10px] text-neutral-400 font-medium">
+                    <span>{lang === 'ru' ? '💡 Если оставить пустым, пароль: password' : lang === 'uz' ? '💡 Bo‘sh qoldirilsa, parol: password' : '💡 If empty, password: password'}</span>
+                    <span className="font-mono bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded text-[9px] font-bold">default: password</span>
+                  </div>
+                )}
               </div>
 
               {/* TWO-TIER ACCESS SELECTOR */}
@@ -1971,9 +2011,26 @@ export default function AccessManagementView({
                 onChange={(e) => setNewPasswordInput(e.target.value)}
                 placeholder={lang === 'ru' ? 'Введите новый пароль...' : 'Yangi parolni kiriting...'}
                 className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-hidden"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 required
                 autoFocus
               />
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-neutral-400 font-bold uppercase">{lang === 'ru' ? 'Пресеты:' : 'Presetlar:'}</span>
+                {(['password', '123456', 'tezi2026'] as const).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setNewPasswordInput(preset)}
+                    className="px-2 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-mono font-bold rounded-lg transition cursor-pointer"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
 
               <div className="flex gap-2">
                 <button
@@ -1993,6 +2050,102 @@ export default function AccessManagementView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ========================================================================= */}
+      {/* MODAL: CREATED USER CREDENTIALS */}
+      {/* ========================================================================= */}
+      {createdCredentialsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 text-left shadow-2xl border border-neutral-200 space-y-5">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                  <Sparkles className="w-4.5 h-4.5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm tracking-tight text-black">
+                    {createdCredentialsModal.isRecreated
+                      ? (t.recreatedCredentialsTitle || 'Аккаунт сотрудника обновлен!')
+                      : (t.createdCredentialsTitle || 'Сотрудник успешно добавлен!')}
+                  </h3>
+                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                    {t.createdCredentialsSub || 'Данные для входа в систему'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCreatedCredentialsModal(null)}
+                className="text-neutral-400 hover:text-black cursor-pointer p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-neutral-50 border border-neutral-200/80 rounded-2xl p-4 space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
+                  {lang === 'ru' ? 'Имя' : 'Ism'}:
+                </span>
+                <span className="font-extrabold text-black">{createdCredentialsModal.name}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs border-t border-neutral-200/60 pt-2.5">
+                <span className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
+                  {lang === 'ru' ? 'Логин / Email' : 'Login / Email'}:
+                </span>
+                <span className="font-mono font-black text-black select-all bg-white px-2.5 py-1 rounded-lg border border-neutral-200 shadow-2xs">
+                  {createdCredentialsModal.email}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs border-t border-neutral-200/60 pt-2.5">
+                <span className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
+                  {lang === 'ru' ? 'Пароль' : 'Parol'}:
+                </span>
+                <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 select-all shadow-2xs">
+                  {createdCredentialsModal.password}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs border-t border-neutral-200/60 pt-2.5">
+                <span className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
+                  {lang === 'ru' ? 'Адрес системы' : 'Tizim manzili'}:
+                </span>
+                <span className="font-mono text-neutral-600 font-semibold">https://tezi.uz</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `Вход в Tezi.uz:\nЛогин: ${createdCredentialsModal.email}\nПароль: ${createdCredentialsModal.password}\nСсылка: https://tezi.uz`;
+                  navigator.clipboard.writeText(text);
+                  setCopiedCredentials(true);
+                  setTimeout(() => setCopiedCredentials(false), 3000);
+                }}
+                className="w-full bg-black hover:bg-neutral-800 text-white font-extrabold text-xs py-3 rounded-2xl transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                {copiedCredentials ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>{t.copiedToClipboard || 'Скопировано в буфер!'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>{t.copyCredentialsBtn || 'Скопировать данные для сотрудника'}</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCreatedCredentialsModal(null)}
+                className="w-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-extrabold text-xs py-2.5 rounded-2xl transition cursor-pointer"
+              >
+                {t.closeBtn || 'Закрыть'}
+              </button>
+            </div>
           </div>
         </div>
       )}

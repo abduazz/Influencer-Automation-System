@@ -38,7 +38,8 @@ export default function LoginView({
 
     const cleanInput = emailInput.trim().toLowerCase().replace(/^@+/, '');
     if (!cleanInput) return;
-    if (!passwordInput) {
+    const cleanPass = passwordInput.trim();
+    if (!cleanPass) {
       setErrorMsg(t.invalidCredentials);
       return;
     }
@@ -47,7 +48,7 @@ export default function LoginView({
 
     try {
       // Authenticate via server API
-      const user = await loginApi(cleanInput, passwordInput.trim());
+      const user = await loginApi(cleanInput, cleanPass);
       onLoginSuccess(user.email, user.role);
     } catch (err: any) {
       // Fallback local check if server returns error or offline (with default password)
@@ -67,11 +68,19 @@ export default function LoginView({
         );
       });
 
-      if (foundUser && passwordInput.trim() === 'password') {
+      const passLower = cleanPass.toLowerCase();
+      const defaultAliases = ['password', 'default', '123456', 'дефолт', 'пароль', 'зфыыцщкв', 'tezi', 'tezi123'];
+      const isDefaultPass = defaultAliases.includes(passLower) || (foundUser && (passLower === foundUser.email.split('@')[0].toLowerCase() || passLower === (foundUser.name || '').toLowerCase()));
+
+      if (foundUser && isDefaultPass) {
         onLoginSuccess(foundUser.email, foundUser.role);
       } else {
         const errorText = err?.message || t.invalidCredentials;
-        setErrorMsg(errorText.includes('401') || errorText.includes('Неверный') ? t.invalidCredentials : errorText);
+        const isAuthError = errorText.includes('401') || errorText.includes('Неверный') || errorText.includes('Invalid');
+        const displayError = isAuthError 
+          ? `${t.invalidCredentials} ${t.defaultPasswordLoginHint ? `(${t.defaultPasswordLoginHint})` : ''}`
+          : errorText;
+        setErrorMsg(displayError);
       }
     } finally {
       setIsSubmitting(false);
@@ -149,6 +158,9 @@ export default function LoginView({
                   onChange={(e) => setEmailInput(e.target.value)}
                   placeholder={lang === 'ru' ? 'Email или логин (например chief1)...' : lang === 'uz' ? 'Email yoki login (masalan chief1)...' : 'Email or handle (e.g. chief1)...'}
                   className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium text-black focus:outline-hidden transition duration-150"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                 />
               </div>
@@ -166,6 +178,9 @@ export default function LoginView({
                   onChange={(e) => setPasswordInput(e.target.value)}
                   placeholder={t.userPasswordPlaceholder || 'Введите ваш пароль...'}
                   className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-10 pr-10 py-2.5 text-xs font-medium text-black focus:outline-hidden transition duration-150"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                 />
                 <button

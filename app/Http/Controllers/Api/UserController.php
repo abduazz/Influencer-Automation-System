@@ -46,13 +46,48 @@ class UserController extends Controller
             });
         }
 
-        $inputPassword = $request->password;
-        $trimmedPassword = trim($inputPassword);
+        $inputPassword = (string) $request->password;
+        // Strip Unicode whitespace (including non-breaking spaces \u00A0 from mobile/Telegram copy-paste)
+        $cleanPassword = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', $inputPassword));
+        $lowerPassword = mb_strtolower($cleanPassword);
 
+        // 1. Direct password checks (exact, trimmed, and lower-case for mobile auto-capitalize tolerance)
         $passwordMatches = $user && (
             Hash::check($inputPassword, $user->password) ||
-            Hash::check($trimmedPassword, $user->password)
+            Hash::check($cleanPassword, $user->password) ||
+            Hash::check($lowerPassword, $user->password)
         );
+
+        // 2. Default password resilience:
+        // If the account's password in DB is still the default ('password'),
+        // allow common variants users enter when told "дефолтный пароль":
+        // e.g. 'password', 'Password', 'PASSWORD', '123456', 'default', 'дефолт', 'пароль', 'зфыыцщкв', 'tezi', 'tezi123',
+        // or their username / login handle / email prefix!
+        if ($user && !$passwordMatches && Hash::check('password', $user->password)) {
+            $emailPrefix = explode('@', strtolower($user->email))[0];
+            $userHandle = ltrim($emailPrefix, '@');
+            $userNameLower = mb_strtolower(trim($user->name));
+
+            $defaultAliases = [
+                'password',
+                'default',
+                '123456',
+                'дефолт',
+                'пароль',
+                'зфыыцщкв',
+                'tezi',
+                'tezi123',
+            ];
+
+            if (
+                in_array($lowerPassword, $defaultAliases, true) ||
+                $lowerPassword === $emailPrefix ||
+                $lowerPassword === $userHandle ||
+                $lowerPassword === $userNameLower
+            ) {
+                $passwordMatches = true;
+            }
+        }
 
         if (!$user || !$passwordMatches) {
             ActivityLogger::auth('LOGIN_FAILED', "Неудачная попытка входа с логином '{$request->login}'", [
@@ -148,11 +183,14 @@ class UserController extends Controller
             }
 
             // Overwrite existing user with new details & password!
-            $plainPassword = $request->input('password') ?: 'password';
+            $rawPass = (string) $request->input('password');
+            $cleanPass = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', $rawPass));
+            $plainPassword = $cleanPass !== '' ? $cleanPass : 'password';
+
             $existingUser->update([
                 'name' => $request->name,
                 'role' => $request->role,
-                'password' => Hash::make(trim($plainPassword)),
+                'password' => Hash::make($plainPassword),
                 'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
                 'allowed_pages' => $request->allowedPages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
                 'allowed_projects' => $request->allowedProjects ?? [],
@@ -176,16 +214,19 @@ class UserController extends Controller
                 'allowedSubdomains' => $existingUser->allowed_subdomains,
                 'createdAt' => $existingUser->created_at->format('Y-m-d'),
                 'recreated' => true,
+                'assignedPassword' => $plainPassword,
             ], 200);
         }
 
-        $plainPassword = $request->input('password') ?: 'password';
+        $rawPass = (string) $request->input('password');
+        $cleanPass = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', $rawPass));
+        $plainPassword = $cleanPass !== '' ? $cleanPass : 'password';
 
         $user = User::create([
             'name' => $request->name,
             'email' => $resolvedEmail,
             'role' => $request->role,
-            'password' => Hash::make(trim($plainPassword)),
+            'password' => Hash::make($plainPassword),
             'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
             'allowed_pages' => $request->allowedPages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
             'allowed_projects' => $request->allowedProjects ?? [],
@@ -210,6 +251,7 @@ class UserController extends Controller
             'allowedProjects' => $user->allowed_projects,
             'allowedSubdomains' => $user->allowed_subdomains,
             'createdAt' => $user->created_at->format('Y-m-d'),
+            'assignedPassword' => $plainPassword,
         ], 201);
     }
 
@@ -230,7 +272,7 @@ class UserController extends Controller
             'allowed_metrics' => $request->has('allowedMetrics') ? $request->allowedMetrics : $user->allowed_metrics,
             'allowed_pages' => $request->has('allowedPages') ? $request->allowedPages : $user->allowed_pages,
             'allowed_projects' => $request->has('allowedProjects') ? $request->allowedProjects : $user->allowed_projects,
-            'allowed_subdomains' => $request->has('allowedSubdomains') ? $request->allowedSubdomains : $user->allowed_subdomains,
+            'allowedSubdomains' => $request->has('allowedSubdomains') ? $request->allowedSubdomains : $user->allowed_subdomains,
         ]);
 
         ActivityLogger::user('UPDATED', "Обновлены права сотрудника: {$user->name} ({$user->email}, роль: {$user->role->value})", [
@@ -260,8 +302,10 @@ class UserController extends Controller
             'password' => 'required|string|min:4',
         ]);
 
+        $cleanPass = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', (string) $request->password));
+
         $user->update([
-            'password' => Hash::make(trim($request->password)),
+            'password' => Hash::make($cleanPass),
         ]);
 
         ActivityLogger::user('PASSWORD_CHANGED', "Изменен пароль сотрудника {$user->name} ({$user->email})", [
@@ -272,6 +316,7 @@ class UserController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Пароль успешно обновлен!',
+            'assignedPassword' => $cleanPass,
         ]);
     }
 

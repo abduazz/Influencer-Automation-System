@@ -265,6 +265,14 @@ export const translations = {
     passwordChangedSuccess: 'Password changed successfully!',
     invalidCredentials: 'Invalid login or password.',
     defaultPasswordHint: 'Default password if empty: password',
+    defaultPasswordLoginHint: 'For newly created accounts, the default password is: password',
+    usePasswordQuickBtn: 'Use: password',
+    copyCredentialsBtn: 'Copy login details for employee',
+    copiedToClipboard: 'Copied to clipboard!',
+    createdCredentialsTitle: 'User Created Successfully!',
+    recreatedCredentialsTitle: 'User Profile Updated!',
+    createdCredentialsSub: 'Login credentials for the system',
+    closeBtn: 'Close',
 
     // Blogger Requisites Directory
     bloggerRequisitesNav: 'Blogger Requisites',
@@ -772,6 +780,14 @@ export const translations = {
     passwordChangedSuccess: 'Пароль успешно изменен!',
     invalidCredentials: 'Неверный логин/email или пароль.',
     defaultPasswordHint: 'Пароль по умолчанию: password',
+    defaultPasswordLoginHint: 'Для новых аккаунтов пароль по умолчанию: password',
+    usePasswordQuickBtn: 'Вставить: password',
+    copyCredentialsBtn: 'Скопировать данные для сотрудника',
+    copiedToClipboard: 'Скопировано в буфер обмена!',
+    createdCredentialsTitle: 'Сотрудник успешно добавлен!',
+    recreatedCredentialsTitle: 'Аккаунт сотрудника обновлен!',
+    createdCredentialsSub: 'Данные для входа в систему',
+    closeBtn: 'Закрыть',
 
     // Blogger Requisites Directory
     bloggerRequisitesNav: 'Реквизиты блогеров',
@@ -1279,6 +1295,14 @@ export const translations = {
     passwordChangedSuccess: 'Parol muvaffaqiyatli o‘zgartirildi!',
     invalidCredentials: 'Noto‘g‘ri login yoki parol.',
     defaultPasswordHint: 'Boshlang‘ich parol: password',
+    defaultPasswordLoginHint: 'Yangi hisoblar uchun standart parol: password',
+    usePasswordQuickBtn: 'Kiritish: password',
+    copyCredentialsBtn: 'Xodim uchun kirish ma’lumotlarini nusxalash',
+    copiedToClipboard: 'Nusxalandi!',
+    createdCredentialsTitle: 'Xodim muvaffaqiyatli qo‘shildi!',
+    recreatedCredentialsTitle: 'Xodim hisobi yangilandi!',
+    createdCredentialsSub: 'Tizimga kirish ma’lumotlari',
+    closeBtn: 'Yopish',
 
     // Blogger Requisites Directory
     bloggerRequisitesNav: 'Bloggerlar rekvizitlari',

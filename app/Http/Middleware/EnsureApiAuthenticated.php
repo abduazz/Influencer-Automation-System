@@ -16,6 +16,11 @@ class EnsureApiAuthenticated
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // 0. Pass through preflight OPTIONS requests immediately
+        if ($request->isMethod('OPTIONS')) {
+            return $next($request);
+        }
+
         // 1. Whitelisted public endpoints that guest bloggers or external webhooks must access
         if ($this->isPublicEndpoint($request)) {
             return $next($request);
@@ -123,7 +128,7 @@ class EnsureApiAuthenticated
 
         // Active session
         if ($request->hasSession() && $request->session()->has('user_email')) {
-            $email = strtolower(trim($request->session()->get('user_email')));
+            $email = strtolower(trim((string)$request->session()->get('user_email')));
             $user = User::where('email', $email)->first();
             if ($user) {
                 Auth::setUser($user);
@@ -131,11 +136,11 @@ class EnsureApiAuthenticated
             }
         }
 
-        // Verified auth cookie set upon login
-        $cookieEmail = $request->cookie('ff_user_email') ?? ($_COOKIE['ff_user_email'] ?? null);
-        if (!empty($cookieEmail)) {
-            $email = strtolower(trim($cookieEmail));
-            $user = User::where('email', $email)->first();
+        // Verified auth cookie set upon login (handling urlencoded '@' e.g. %40)
+        $rawCookie = $request->cookie('ff_user_email') ?? ($_COOKIE['ff_user_email'] ?? null);
+        if (!empty($rawCookie)) {
+            $cookieEmail = strtolower(trim(urldecode($rawCookie)));
+            $user = User::where('email', $cookieEmail)->first();
             if ($user) {
                 Auth::setUser($user);
                 return true;
@@ -145,14 +150,14 @@ class EnsureApiAuthenticated
         // Check X-User-Email header
         $headerEmail = $request->header('X-User-Email');
         if (!empty($headerEmail)) {
-            $email = strtolower(trim($headerEmail));
+            $email = strtolower(trim(urldecode($headerEmail)));
             $user = User::where('email', $email)->first();
             if ($user) {
-                // Verified against matching cookie, session, or in local environment
                 $rawCookie = $_COOKIE['ff_user_email'] ?? $request->cookie('ff_user_email');
+                $decodedCookie = !empty($rawCookie) ? strtolower(trim(urldecode($rawCookie))) : null;
                 if (
                     app()->environment('local') ||
-                    (!empty($rawCookie) && strtolower(trim($rawCookie)) === $email) ||
+                    (!empty($decodedCookie) && $decodedCookie === $email) ||
                     ($request->hasSession() && strtolower(trim((string)$request->session()->get('user_email', ''))) === $email)
                 ) {
                     Auth::setUser($user);

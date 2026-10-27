@@ -18,25 +18,43 @@ class UserController extends Controller
             'password' => 'required|string',
         ]);
 
-        $cleanLogin = strtolower(trim($request->login));
-        $resolvedEmail = str_contains($cleanLogin, '@') ? $cleanLogin : $cleanLogin . '@tezi.uz';
+        $rawLogin = trim($request->login);
+        $cleanLogin = strtolower($rawLogin);
+        $normalizedLogin = ltrim($cleanLogin, '@'); // Handle @username or clean login
 
-        // Search for user by exact email, or matching handle / prefix
-        $user = User::where('email', $cleanLogin)
-            ->orWhere('email', $resolvedEmail)
+        $resolvedEmail = str_contains($normalizedLogin, '@') 
+            ? $normalizedLogin 
+            : $normalizedLogin . '@tezi.uz';
+
+        // 1. Search for user by exact or normalized email, or matching handle / prefix
+        $user = User::whereRaw('LOWER(email) = ?', [$normalizedLogin])
+            ->orWhereRaw('LOWER(email) = ?', [$cleanLogin])
+            ->orWhereRaw('LOWER(email) = ?', [$resolvedEmail])
             ->first();
 
         if (!$user) {
-            // Fallback match by email prefix or name (e.g. chief1)
-            $user = User::all()->first(function ($u) use ($cleanLogin) {
+            // 2. Fallback match by email prefix or name (e.g. chief1)
+            $user = User::all()->first(function ($u) use ($normalizedLogin, $cleanLogin) {
                 $userEmail = strtolower($u->email);
                 $emailPrefix = explode('@', $userEmail)[0];
-                $userName = strtolower($u->name);
-                return $userEmail === $cleanLogin || $emailPrefix === $cleanLogin || $userName === $cleanLogin;
+                $userName = strtolower(trim($u->name));
+                return $userEmail === $normalizedLogin 
+                    || $userEmail === $cleanLogin 
+                    || $emailPrefix === $normalizedLogin
+                    || $userName === $normalizedLogin 
+                    || $userName === $cleanLogin;
             });
         }
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        $inputPassword = $request->password;
+        $trimmedPassword = trim($inputPassword);
+
+        $passwordMatches = $user && (
+            Hash::check($inputPassword, $user->password) ||
+            Hash::check($trimmedPassword, $user->password)
+        );
+
+        if (!$user || !$passwordMatches) {
             ActivityLogger::auth('LOGIN_FAILED', "Неудачная попытка входа с логином '{$request->login}'", [
                 'login' => $request->login,
             ], 'warning');
@@ -95,22 +113,79 @@ class UserController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
+            'email' => 'required|string|max:255',
             'role' => 'required|in:super_admin,pr_manager,product_manager,executive',
             'password' => 'nullable|string|min:4',
             'allowedMetrics' => 'nullable|array',
             'allowedPages' => 'nullable|array',
             'allowedProjects' => 'nullable|array',
             'allowedSubdomains' => 'nullable|array',
+            'overwrite' => 'nullable|boolean',
         ]);
+
+        $rawEmail = strtolower(trim($request->email));
+        $normalizedEmail = ltrim($rawEmail, '@');
+        $resolvedEmail = str_contains($normalizedEmail, '@') ? $normalizedEmail : $normalizedEmail . '@tezi.uz';
+
+        // Check if user already exists
+        $existingUser = User::where('email', $resolvedEmail)->first();
+
+        // If user already exists and overwrite is allowed
+        if ($existingUser) {
+            if (!$request->boolean('overwrite')) {
+                return response()->json([
+                    'message' => 'Сотрудник с таким email уже существует в системе.',
+                    'errors' => [
+                        'email' => ['Сотрудник с таким email уже существует в системе.'],
+                    ],
+                    'user_exists' => true,
+                    'existing_user' => [
+                        'id' => (string) $existingUser->id,
+                        'name' => $existingUser->name,
+                        'email' => $existingUser->email,
+                    ],
+                ], 422);
+            }
+
+            // Overwrite existing user with new details & password!
+            $plainPassword = $request->input('password') ?: 'password';
+            $existingUser->update([
+                'name' => $request->name,
+                'role' => $request->role,
+                'password' => Hash::make(trim($plainPassword)),
+                'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
+                'allowed_pages' => $request->allowedPages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
+                'allowed_projects' => $request->allowedProjects ?? [],
+                'allowed_subdomains' => $request->allowedSubdomains ?? [],
+            ]);
+
+            ActivityLogger::user('RECREATED', "Пересоздан аккаунт сотрудника: {$existingUser->name} ({$existingUser->email}, роль: {$existingUser->role->value})", [
+                'user_id' => $existingUser->id,
+                'email' => $existingUser->email,
+                'role' => $existingUser->role->value,
+            ]);
+
+            return response()->json([
+                'id' => (string) $existingUser->id,
+                'name' => $existingUser->name,
+                'email' => $existingUser->email,
+                'role' => $existingUser->role->value,
+                'allowedMetrics' => $existingUser->allowed_metrics,
+                'allowedPages' => $existingUser->allowed_pages,
+                'allowedProjects' => $existingUser->allowed_projects,
+                'allowedSubdomains' => $existingUser->allowed_subdomains,
+                'createdAt' => $existingUser->created_at->format('Y-m-d'),
+                'recreated' => true,
+            ], 200);
+        }
 
         $plainPassword = $request->input('password') ?: 'password';
 
         $user = User::create([
             'name' => $request->name,
-            'email' => strtolower($request->email),
+            'email' => $resolvedEmail,
             'role' => $request->role,
-            'password' => Hash::make($plainPassword),
+            'password' => Hash::make(trim($plainPassword)),
             'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
             'allowed_pages' => $request->allowedPages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
             'allowed_projects' => $request->allowedProjects ?? [],
@@ -186,7 +261,7 @@ class UserController extends Controller
         ]);
 
         $user->update([
-            'password' => Hash::make($request->password),
+            'password' => Hash::make(trim($request->password)),
         ]);
 
         ActivityLogger::user('PASSWORD_CHANGED', "Изменен пароль сотрудника {$user->name} ({$user->email})", [

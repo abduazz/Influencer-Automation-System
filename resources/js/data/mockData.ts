@@ -231,25 +231,25 @@ export interface AllowedUser {
 
 export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
   {
-    id: 'user-1',
+    id: '1',
     name: 'Abduaziz',
     email: 'abduazizmurodqosimov@gmail.com',
     role: 'super_admin',
     createdAt: '2026-07-10',
     allowedMetrics: ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-    allowedPages: ['projects', 'reports', 'reports_feed', 'other_expenses'],
+    allowedPages: ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'access', 'logs', 'code'],
   },
   {
-    id: 'user-4',
+    id: '2',
     name: 'Khalilov',
     email: 'khalilovdev@gmail.com',
     role: 'super_admin',
     createdAt: '2026-07-10',
     allowedMetrics: ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-    allowedPages: ['projects', 'reports', 'reports_feed', 'other_expenses'],
+    allowedPages: ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'access', 'logs', 'code'],
   },
   {
-    id: 'user-5',
+    id: '4',
     name: 'Chief 1',
     email: 'chief1@tezi.uz',
     role: 'executive',

@@ -106,8 +106,9 @@ Route::get('/{any}', function (Request $request) {
         }
     } else {
         try {
-            $cookieEmail = $request->cookie('ff_user_email') ?? ($_COOKIE['ff_user_email'] ?? null);
-            $sessionEmail = $request->hasSession() ? $request->session()->get('user_email') : null;
+            $rawCookie = $request->cookie('ff_user_email') ?? ($_COOKIE['ff_user_email'] ?? null);
+            $cookieEmail = !empty($rawCookie) ? strtolower(trim(urldecode($rawCookie))) : null;
+            $sessionEmail = $request->hasSession() ? strtolower(trim((string)$request->session()->get('user_email'))) : null;
             $hasDevKey = ($request->header('X-Secret-Key') && $request->header('X-Secret-Key') === config('app.key'))
                 || ($request->query('key') && $request->query('key') === config('app.key'))
                 || ($request->query('secret_key') && $request->query('secret_key') === config('app.key'))
@@ -116,9 +117,9 @@ Route::get('/{any}', function (Request $request) {
             $isAuth = false;
             if ($hasDevKey || auth()->check()) {
                 $isAuth = true;
-            } elseif (!empty($sessionEmail) && \App\Models\User::where('email', strtolower(trim($sessionEmail)))->exists()) {
+            } elseif (!empty($sessionEmail) && \App\Models\User::where('email', $sessionEmail)->exists()) {
                 $isAuth = true;
-            } elseif (!empty($cookieEmail) && \App\Models\User::where('email', strtolower(trim($cookieEmail)))->exists()) {
+            } elseif (!empty($cookieEmail) && \App\Models\User::where('email', $cookieEmail)->exists()) {
                 $isAuth = true;
             }
 

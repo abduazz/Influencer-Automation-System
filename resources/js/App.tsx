@@ -214,10 +214,19 @@ export default function App() {
     allowedPages?: string[],
     allowedProjects?: string[],
     password?: string,
-    allowedSubdomains?: string[]
+    allowedSubdomains?: string[],
+    overwrite?: boolean
   ) => {
-    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains);
-    setAllowedUsers((prev) => [...prev, newUser]);
+    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains, overwrite);
+    setAllowedUsers((prev) => {
+      const idx = prev.findIndex((u) => u.id === newUser.id || u.email.toLowerCase() === newUser.email.toLowerCase());
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newUser;
+        return copy;
+      }
+      return [...prev, newUser];
+    });
   };
 
   const handleEditUser = async (
@@ -238,7 +247,7 @@ export default function App() {
     setAllowedUsers((prev) => prev.filter((u) => u.id !== id));
   };
 
-  const handleLoginSuccess = (email: string, role: AllowedUser['role']) => {
+  const handleLoginSuccess = async (email: string, role: AllowedUser['role']) => {
     setCurrentUserEmail(email);
     setCurrentUserRole(role);
     localStorage.setItem('ff_user_email', email);
@@ -246,6 +255,25 @@ export default function App() {
     document.cookie = `ff_user_email=${encodeURIComponent(email)}; path=/; max-age=2592000; SameSite=Lax`;
     document.cookie = `ff_user_role=${encodeURIComponent(role)}; path=/; max-age=2592000; SameSite=Lax`;
     setActiveTab('projects');
+
+    // Immediately fetch full dataset for the authenticated user session
+    try {
+      const data = await fetchBootstrapData();
+      if (data.users) setAllowedUsers(data.users);
+      if (data.projects) setProjects(data.projects);
+      if (data.allProjects) setAllProjects(data.allProjects);
+      if (data.subdomains) setSubdomains(data.subdomains);
+      if (data.integrations) setIntegrations(data.integrations);
+      if (data.reports) setReports(data.reports);
+      if (data.submissions) setSubmissions(data.submissions);
+      if (data.bulkPurchases) setBulkPurchases(data.bulkPurchases);
+      if (data.kanbanColumns && data.kanbanColumns.length > 0) setKanbanColumns(data.kanbanColumns);
+      if (data.bloggerRequisites) setBloggerRequisitesList(data.bloggerRequisites);
+      saveBootstrapCache(data);
+    } catch (err) {
+      console.warn("Post-login data refresh failed, falling back to parallel fetch:", err);
+      handleRefreshAllData();
+    }
   };
 
   const handleLogout = () => {

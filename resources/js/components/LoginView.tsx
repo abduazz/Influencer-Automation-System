@@ -36,7 +36,7 @@ export default function LoginView({
     e.preventDefault();
     setErrorMsg(null);
 
-    const cleanInput = emailInput.trim().toLowerCase();
+    const cleanInput = emailInput.trim().toLowerCase().replace(/^@+/, '');
     if (!cleanInput) return;
     if (!passwordInput) {
       setErrorMsg(t.invalidCredentials);
@@ -47,7 +47,7 @@ export default function LoginView({
 
     try {
       // Authenticate via server API
-      const user = await loginApi(cleanInput, passwordInput);
+      const user = await loginApi(cleanInput, passwordInput.trim());
       onLoginSuccess(user.email, user.role);
     } catch (err: any) {
       // Fallback local check if server returns error or offline (with default password)
@@ -59,6 +59,7 @@ export default function LoginView({
 
         return (
           userEmail === cleanInput ||
+          userEmail === `${cleanInput}@tezi.uz` ||
           userName === cleanInput ||
           emailPrefix === cleanInput ||
           userEmail.startsWith(`${cleanInput}@`) ||
@@ -66,7 +67,7 @@ export default function LoginView({
         );
       });
 
-      if (foundUser && passwordInput === 'password') {
+      if (foundUser && passwordInput.trim() === 'password') {
         onLoginSuccess(foundUser.email, foundUser.role);
       } else {
         const errorText = err?.message || t.invalidCredentials;

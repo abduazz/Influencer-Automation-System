@@ -55,7 +55,8 @@ interface AccessManagementViewProps {
     allowedPages?: string[],
     allowedProjects?: string[],
     password?: string,
-    allowedSubdomains?: string[]
+    allowedSubdomains?: string[],
+    overwrite?: boolean
   ) => Promise<void>;
   onEditUser: (
     id: string,
@@ -227,8 +228,10 @@ export default function AccessManagementView({
       return;
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase().replace(/^@+/, '');
     if (!cleanEmail) return;
+
+    let shouldOverwrite = false;
 
     if (!editingUser) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -244,10 +247,26 @@ export default function AccessManagementView({
         return;
       }
 
-      const exists = allowedUsers.some((u) => u.email.toLowerCase() === cleanEmail || u.email.toLowerCase() === `${cleanEmail}@tezi.uz`);
-      if (exists) {
-        setErrorMsg(t.emailAlreadyExists);
-        return;
+      const existingUserMatch = allowedUsers.find((u) => 
+        u.email.toLowerCase() === cleanEmail || 
+        u.email.toLowerCase() === `${cleanEmail}@tezi.uz`
+      );
+
+      if (existingUserMatch) {
+        const confirmRecreate = confirm(
+          lang === 'ru'
+            ? `Сотрудник ${existingUserMatch.email} уже существует. Хотите перезаписать его профиль и установить новый пароль?`
+            : lang === 'uz'
+            ? `Foydalanuvchi ${existingUserMatch.email} tizimda mavjud. Uning profilini qayta yaratib, yangi parol o‘rnatmoqchimisiz?`
+            : `User ${existingUserMatch.email} already exists. Do you want to overwrite their profile and set a new password?`
+        );
+
+        if (confirmRecreate) {
+          shouldOverwrite = true;
+        } else {
+          setErrorMsg(t.emailAlreadyExists);
+          return;
+        }
       }
     }
 
@@ -282,6 +301,12 @@ export default function AccessManagementView({
           allowedProjects,
           allowedSubdomains
         );
+
+        // If admin typed a new password during edit, update password immediately
+        if (password.trim()) {
+          await updateUserPassword(editingUser.id, password.trim());
+        }
+
         setSuccessMsg(
           lang === 'ru'
             ? 'Доступ пользователя успешно обновлен!'
@@ -299,9 +324,16 @@ export default function AccessManagementView({
           allowedPages,
           allowedProjects,
           password.trim() || undefined,
-          allowedSubdomains
+          allowedSubdomains,
+          shouldOverwrite
         );
-        setSuccessMsg(t.addSuccessToast.replace('{email}', resolvedEmail));
+        setSuccessMsg(
+          shouldOverwrite
+            ? (lang === 'ru' 
+                ? `Аккаунт ${resolvedEmail} успешно перезаписан с новым паролем!`
+                : `User ${resolvedEmail} recreated successfully with new password!`)
+            : t.addSuccessToast.replace('{email}', resolvedEmail)
+        );
       }
 
       setEmail('');
@@ -313,10 +345,14 @@ export default function AccessManagementView({
       setTimeout(() => {
         setSuccessMsg(null);
       }, 4000);
-    } catch (err) {
+    } catch (err: any) {
       const message = err instanceof Error ? err.message : '';
       if (message.toLowerCase().includes('already exists') || message.toLowerCase().includes('taken')) {
-        setErrorMsg(t.emailAlreadyExists);
+        setErrorMsg(
+          lang === 'ru'
+            ? 'Сотрудник с таким email уже существует в системе. Нажмите на иконку ключа или редактирования в таблице, чтобы обновить его пароль.'
+            : t.emailAlreadyExists
+        );
       } else {
         setErrorMsg(
           lang === 'ru'
@@ -726,24 +762,26 @@ export default function AccessManagementView({
                 </div>
               </div>
 
-              {/* Password Field (only when adding new user) */}
-              {!editingUser && (
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">
-                    {t.userPasswordLabel || 'Пароль'}
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
-                    <input
-                      type="text"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder={t.defaultPasswordHint || 'По умолчанию: password'}
-                      className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-black focus:outline-hidden transition"
-                    />
-                  </div>
+              {/* Password Field */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">
+                  {editingUser 
+                    ? (lang === 'ru' ? 'Новый пароль (оставьте пустым, чтобы не менять)' : lang === 'uz' ? 'Yangi parol (o‘zgartirmaslik uchun bo‘sh qoldiring)' : 'New password (leave blank to keep)')
+                    : (t.userPasswordLabel || 'Пароль')}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
+                  <input
+                    type="text"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={editingUser 
+                      ? (lang === 'ru' ? 'Оставьте пустым, если не меняется' : 'Bo‘sh qoldiring')
+                      : (t.defaultPasswordHint || 'По умолчанию: password')}
+                    className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-black focus:outline-hidden transition"
+                  />
                 </div>
-              )}
+              </div>
 
               {/* TWO-TIER ACCESS SELECTOR */}
               <div className="space-y-2 pt-1 border-t border-neutral-100">

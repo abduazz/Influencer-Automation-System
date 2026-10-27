@@ -77,4 +77,33 @@ class User extends Authenticatable implements FilamentUser
 
         return in_array($subdomain, $this->allowed_subdomains, true);
     }
+
+    /**
+     * Resolve the route binding for the model by ID, mock ID, or email/login handle.
+     */
+    public function resolveRouteBinding($value, $field = null)
+    {
+        if (is_numeric($value)) {
+            $user = $this->where('id', $value)->first();
+            if ($user) return $user;
+        }
+
+        // Support string mock IDs like 'user-4' or 'user-5'
+        if (is_string($value) && str_starts_with($value, 'user-')) {
+            $num = substr($value, 5);
+            if (is_numeric($num)) {
+                $user = $this->where('id', $num)->first();
+                if ($user) return $user;
+            }
+        }
+
+        // Support email, stripped @handle, or @tezi.uz suffix
+        $clean = is_string($value) ? strtolower(trim($value)) : '';
+        $normalized = ltrim($clean, '@');
+
+        return $this->where('email', $clean)
+            ->orWhere('email', $normalized)
+            ->orWhere('email', $normalized . '@tezi.uz')
+            ->first();
+    }
 }

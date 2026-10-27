@@ -277,11 +277,12 @@ export function createAllowedUser(
   allowedPages?: string[],
   allowedProjects?: string[],
   password?: string,
-  allowedSubdomains?: string[]
+  allowedSubdomains?: string[],
+  overwrite?: boolean
 ): Promise<AllowedUser> {
   return request<AllowedUser>('/api/allowed-users', {
     method: 'POST',
-    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains }),
+    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains, overwrite }),
   });
 }
 export function deleteAllowedUser(id: string): Promise<void> {

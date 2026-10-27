@@ -381,11 +381,11 @@ export default function DashboardView({
     localStorage.setItem('tezi_dashboard_integration_filter', filter);
   };
 
-  // Helper to identify pure preliminary pipeline leads (wishlist/negotiation/requisites_pending without agreed budget)
+  // Helper to identify pure preliminary pipeline leads (wishlist/negotiation/requisites_pending or deals without agreed budget)
   const isPreliminaryLead = (item: Integration) => {
-    const isPipelineStage = Boolean(item.kanbanStage && ['wishlist', 'negotiation', 'requisites_pending'].includes(item.kanbanStage));
     const hasNoFinancials = Number(item.totalAmount || 0) === 0 && Number(item.paidAmount || 0) === 0;
-    return isPipelineStage && hasNoFinancials;
+    const isPipelineStage = Boolean(!item.kanbanStage || ['wishlist', 'negotiation', 'requisites_pending', 'backlog', 'none'].includes(String(item.kanbanStage).toLowerCase()));
+    return hasNoFinancials || isPipelineStage;
   };
 
   // Filtered by stage/active status first

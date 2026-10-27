@@ -70,14 +70,16 @@ class Integration extends Model
         }
 
         $cleanName = strtolower(trim(str_replace(['@', '#'], '', $this->blogger_name)));
+        $normalizedName = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($this->blogger_name)));
 
         $reports = Report::where('project_id', $this->project_id)
             ->where('platform', $this->platform)
             ->get()
-            ->filter(function ($r) use ($cleanName) {
+            ->filter(function ($r) use ($cleanName, $normalizedName) {
                 if (!$r->channel_blogger) return false;
                 $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
-                return $rClean === $cleanName;
+                $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
+                return $rClean === $cleanName || $rNorm === $normalizedName;
             });
 
         if ($reports->isEmpty()) {
@@ -119,10 +121,21 @@ class Integration extends Model
                 $latestPricePerSlot = (float) $rep->price_per_slot;
             }
 
-            $repPaidAmount = (float) ($rep->paid_amount ?: $rep->total_amount ?: 0);
-            $totalPaidAmount += $repPaidAmount;
-
+            $repPaid = (float) ($rep->paid_amount ?? 0);
+            $repTotal = (float) ($rep->total_amount ?? 0);
+            $repPrice = (float) ($rep->price_per_slot ?? 0);
             $repPaidSlots = (int) ($rep->paid_slots_count ?? 0);
+
+            if ($repPaid <= 0 && $repTotal > 0 && ($rep->payment_type === 'full' || $repPaidSlots >= (int)$rep->slots_count)) {
+                $repPaid = $repTotal;
+            } elseif ($repPaid <= 0 && $repPrice > 0 && $repPaidSlots > 0) {
+                $repPaid = $repPrice * $repPaidSlots;
+            } elseif ($repPaid <= 0 && $repTotal > 0) {
+                $repPaid = $repTotal;
+            }
+
+            $totalPaidAmount += $repPaid;
+
             $totalPaidSlots += $repPaidSlots;
 
             if ($rep->payment_type !== 'remaining') {
@@ -196,12 +209,18 @@ class Integration extends Model
     {
         static::saving(function (Integration $integration): void {
             $cleanName = strtolower(trim(str_replace(['@', '#'], '', $integration->blogger_name ?? '')));
+            $normalizedName = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($integration->blogger_name ?? '')));
             $hasReports = false;
             if ($integration->exists && $integration->project_id && $cleanName !== '') {
                 $hasReports = Report::where('project_id', $integration->project_id)
                     ->where('platform', $integration->platform)
-                    ->whereRaw('LOWER(channel_blogger) = ?', [$cleanName])
-                    ->exists();
+                    ->get()
+                    ->contains(function ($r) use ($cleanName, $normalizedName) {
+                        if (!$r->channel_blogger) return false;
+                        $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
+                        $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
+                        return $rClean === $cleanName || $rNorm === $normalizedName;
+                    });
             }
 
             if (!$hasReports) {

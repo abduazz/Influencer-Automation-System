@@ -374,6 +374,8 @@ class IntegrationController extends Controller
         }
 
         $integration->refresh();
+        $integration->syncWithReports();
+        $integration->refresh();
 
         \App\Services\ActivityLogger::integration('UPDATED', "Обновлена интеграция #{$integration->id} блогера '{$integration->blogger_name}' (этап: '{$integration->kanban_stage}', статус: '{$integration->status}')", [
             'integration_id' => $integration->id,

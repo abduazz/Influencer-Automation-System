@@ -48,13 +48,16 @@ class Report extends Model
     {
         static::saving(function (Report $report): void {
             if ($report->payment_type === 'remaining') {
-                $rawTotal = $report->total_amount ?: ($report->price_per_slot * $report->paid_slots_count);
-                $rawPaid = $report->paid_amount ?: ($report->price_per_slot * $report->paid_slots_count);
+                $rawTotal = ((float)$report->total_amount > 0) ? (float)$report->total_amount : ((float)$report->price_per_slot * (int)$report->paid_slots_count);
+                $rawPaid = ((float)$report->paid_amount > 0) ? (float)$report->paid_amount : ((float)$report->price_per_slot * (int)$report->paid_slots_count);
                 $report->total_amount = (abs($rawTotal - round($rawTotal)) < 0.15) ? round($rawTotal) : round($rawTotal, 2);
                 $report->paid_amount = (abs($rawPaid - round($rawPaid)) < 0.15) ? round($rawPaid) : round($rawPaid, 2);
             } else if ($report->payment_type !== 'other') {
-                $rawTotal = $report->total_amount ?: ($report->price_per_slot * $report->slots_count);
-                $rawPaid = $report->paid_amount ?: ($report->price_per_slot * $report->paid_slots_count);
+                $rawTotal = ((float)$report->total_amount > 0) ? (float)$report->total_amount : ((float)$report->price_per_slot * (int)$report->slots_count);
+                $rawPaid = ((float)$report->paid_amount > 0) ? (float)$report->paid_amount : ((float)$report->price_per_slot * (int)$report->paid_slots_count);
+                if ($report->payment_type === 'full' && $rawPaid <= 0 && $rawTotal > 0) {
+                    $rawPaid = $rawTotal;
+                }
                 $report->total_amount = (abs($rawTotal - round($rawTotal)) < 0.15) ? round($rawTotal) : round($rawTotal, 2);
                 $report->paid_amount = (abs($rawPaid - round($rawPaid)) < 0.15) ? round($rawPaid) : round($rawPaid, 2);
             }

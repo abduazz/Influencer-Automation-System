@@ -364,8 +364,8 @@ export default function ReportsView({
         }
         setPaidSlotsCount(paidSlots);
 
-        const calcTotal = given.totalAmount !== undefined ? given.totalAmount : slots * foundPrice;
-        const calcPaid = given.paidAmount !== undefined ? given.paidAmount : paidSlots * foundPrice;
+        const calcTotal = (given.totalAmount !== undefined && Number(given.totalAmount) > 0) ? given.totalAmount : slots * foundPrice;
+        const calcPaid = (given.paidAmount !== undefined && Number(given.paidAmount) > 0) ? given.paidAmount : (currentPayType === 'full' ? calcTotal : paidSlots * foundPrice);
         setTotalAmount(calcTotal);
         setPaidAmount(calcPaid);
       }
@@ -445,16 +445,18 @@ export default function ReportsView({
       if (initialState.comments) setComments(initialState.comments);
       if (initialState.slotsCount !== undefined) setSlotsCount(initialState.slotsCount);
       if (initialState.paidSlotsCount !== undefined) setPaidSlotsCount(initialState.paidSlotsCount);
-      if (initialState.pricePerSlot !== undefined) setPricePerSlot(initialState.pricePerSlot);
-      if (initialState.totalAmount !== undefined) {
-        setTotalAmount(initialState.totalAmount);
-      } else if (initialState.slotsCount !== undefined && initialState.pricePerSlot !== undefined) {
-        setTotalAmount(Number(initialState.slotsCount) * Number(initialState.pricePerSlot || 0));
+      if (initialState.pricePerSlot !== undefined && Number(initialState.pricePerSlot) > 0) {
+        setPricePerSlot(initialState.pricePerSlot);
       }
-      if (initialState.paidAmount !== undefined) {
+      if (initialState.totalAmount !== undefined && Number(initialState.totalAmount) > 0) {
+        setTotalAmount(initialState.totalAmount);
+      } else if (initialState.slotsCount !== undefined && initialState.pricePerSlot !== undefined && Number(initialState.pricePerSlot) > 0) {
+        setTotalAmount(Number(initialState.slotsCount) * Number(initialState.pricePerSlot));
+      }
+      if (initialState.paidAmount !== undefined && Number(initialState.paidAmount) > 0) {
         setPaidAmount(initialState.paidAmount);
-      } else if (initialState.paidSlotsCount !== undefined && initialState.pricePerSlot !== undefined) {
-        setPaidAmount(Number(initialState.paidSlotsCount) * Number(initialState.pricePerSlot || 0));
+      } else if (initialState.paidSlotsCount !== undefined && initialState.pricePerSlot !== undefined && Number(initialState.pricePerSlot) > 0) {
+        setPaidAmount(Number(initialState.paidSlotsCount) * Number(initialState.pricePerSlot));
       }
       if (initialState.integrationId) {
         setCurrentIntegrationId(initialState.integrationId);
@@ -651,9 +653,14 @@ export default function ReportsView({
       setPaidAmount('');
       return;
     }
-    const p = newPrice;
-    setTotalAmount(cleanAmount(slotsCount * p));
-    setPaidAmount(cleanAmount(paidSlotsCount * p));
+    const p = Number(newPrice);
+    const tot = cleanAmount(slotsCount * p);
+    setTotalAmount(tot);
+    if (paymentType === 'full') {
+      setPaidAmount(tot);
+    } else {
+      setPaidAmount(cleanAmount(paidSlotsCount * p));
+    }
   };
 
   const handleTotalAmountChange = (newTotal: number | '') => {
@@ -664,12 +671,12 @@ export default function ReportsView({
       setPaidAmount('');
       return;
     }
-    const t = newTotal;
+    const t = Number(newTotal);
     const computedPrice = slotsCount > 0 ? (t / slotsCount) : 0;
     const roundedPrice = Math.round(computedPrice * 100) / 100;
     setPricePerSlot(roundedPrice);
-    if (paidSlotsCount === slotsCount) {
-      setPaidAmount(newTotal);
+    if (paymentType === 'full' || paidSlotsCount === slotsCount) {
+      setPaidAmount(t);
     } else {
       setPaidAmount(cleanAmount(paidSlotsCount * computedPrice));
     }
@@ -682,18 +689,22 @@ export default function ReportsView({
       setPaidAmount('');
       return;
     }
-    const p = pricePerSlot;
-    setTotalAmount(cleanAmount(newSlots * p));
+    const p = Number(pricePerSlot);
+    const tot = cleanAmount(newSlots * p);
+    setTotalAmount(tot);
 
     let nextPaidSlots = paidSlotsCount;
     if (paymentType === 'full') {
       nextPaidSlots = newSlots;
       setPaidSlotsCount(newSlots);
+      setPaidAmount(tot);
     } else if (paidSlotsCount > newSlots) {
       nextPaidSlots = newSlots;
       setPaidSlotsCount(newSlots);
+      setPaidAmount(cleanAmount(nextPaidSlots * p));
+    } else {
+      setPaidAmount(cleanAmount(nextPaidSlots * p));
     }
-    setPaidAmount(cleanAmount(nextPaidSlots * p));
   };
 
   const handlePaidSlotsCountChange = (newPaidSlots: number) => {
@@ -702,27 +713,31 @@ export default function ReportsView({
       setPaidAmount('');
       return;
     }
-    if (newPaidSlots === slotsCount && totalAmount !== '') {
-      setPaidAmount(totalAmount);
+    if ((paymentType === 'full' || newPaidSlots === slotsCount) && totalAmount !== '') {
+      setPaidAmount(Number(totalAmount));
     } else {
-      setPaidAmount(cleanAmount(newPaidSlots * pricePerSlot));
+      setPaidAmount(cleanAmount(newPaidSlots * Number(pricePerSlot)));
     }
   };
 
   // Ensure paid slots match when full payment or don't exceed total slots
   useEffect(() => {
-    if (paymentType === 'full' && paidSlotsCount !== slotsCount) {
-      setPaidSlotsCount(slotsCount);
-      if (pricePerSlot !== '') {
-        setPaidAmount(slotsCount * pricePerSlot);
+    if (paymentType === 'full') {
+      if (paidSlotsCount !== slotsCount) {
+        setPaidSlotsCount(slotsCount);
+      }
+      if (pricePerSlot !== '' && Number(pricePerSlot) > 0) {
+        setPaidAmount(cleanAmount(slotsCount * Number(pricePerSlot)));
+      } else if (totalAmount !== '' && Number(totalAmount) > 0) {
+        setPaidAmount(Number(totalAmount));
       }
     } else if (paidSlotsCount > slotsCount) {
       setPaidSlotsCount(slotsCount);
       if (pricePerSlot !== '') {
-        setPaidAmount(slotsCount * pricePerSlot);
+        setPaidAmount(cleanAmount(slotsCount * Number(pricePerSlot)));
       }
     }
-  }, [paymentType, slotsCount, paidSlotsCount, pricePerSlot]);
+  }, [paymentType, slotsCount, paidSlotsCount, pricePerSlot, totalAmount]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -811,8 +826,15 @@ export default function ReportsView({
       payload.slotsCount = slotsCount;
       payload.paidSlotsCount = paidSlotsCount;
       payload.pricePerSlot = pricePerSlot === '' ? 0 : pricePerSlot;
-      payload.totalAmount = totalAmount === '' ? undefined : cleanAmount(totalAmount);
-      payload.paidAmount = paidAmount === '' ? undefined : cleanAmount(paidAmount);
+      payload.totalAmount = (totalAmount === '' || Number(totalAmount) <= 0)
+        ? (pricePerSlot !== '' && Number(pricePerSlot) > 0 ? cleanAmount(slotsCount * Number(pricePerSlot)) : undefined)
+        : cleanAmount(totalAmount);
+
+      payload.paidAmount = (paymentType === 'full' && payload.totalAmount)
+        ? payload.totalAmount
+        : ((paidAmount === '' || Number(paidAmount) <= 0)
+            ? (pricePerSlot !== '' && Number(pricePerSlot) > 0 ? cleanAmount(paidSlotsCount * Number(pricePerSlot)) : undefined)
+            : cleanAmount(paidAmount));
 
       let finalSlotsConfig = slotsConfig;
       if (customizeSlots) {
@@ -1076,6 +1098,11 @@ export default function ReportsView({
                             onClick={() => {
                               setPaymentType('full');
                               setPaidSlotsCount(slotsCount);
+                              if (pricePerSlot !== '' && Number(pricePerSlot) > 0) {
+                                setPaidAmount(cleanAmount(slotsCount * Number(pricePerSlot)));
+                              } else if (totalAmount !== '' && Number(totalAmount) > 0) {
+                                setPaidAmount(Number(totalAmount));
+                              }
                             }}
                             className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'full'
                                 ? 'bg-black border-black text-white'

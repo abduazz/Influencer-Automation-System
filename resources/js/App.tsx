@@ -639,14 +639,14 @@ export default function App() {
       bloggerName: deal.bloggerName,
       paymentType: undefined,
       platform: deal.platform,
-      pricePerSlot: deal.pricePerSlot,
+      pricePerSlot: deal.pricePerSlot && Number(deal.pricePerSlot) > 0 ? Number(deal.pricePerSlot) : undefined,
       slotsCount: deal.slotsCount || 5,
-      paidSlotsCount: deal.paidSlotsCount ?? Math.ceil((deal.slotsCount || 5) / 2),
+      paidSlotsCount: deal.paidSlotsCount && Number(deal.paidSlotsCount) > 0 ? Number(deal.paidSlotsCount) : (deal.slotsCount || 5),
       bloggerPageLink,
       destination: deal.referralLink || '',
       comments: requisitesNote,
-      totalAmount: deal.totalAmount || (deal.pricePerSlot * (deal.slotsCount || 1)),
-      paidAmount: deal.paidAmount || (deal.pricePerSlot * (deal.paidSlotsCount ?? Math.ceil((deal.slotsCount || 5) / 2))),
+      totalAmount: deal.totalAmount && Number(deal.totalAmount) > 0 ? Number(deal.totalAmount) : (deal.pricePerSlot && Number(deal.pricePerSlot) > 0 ? (Number(deal.pricePerSlot) * (deal.slotsCount || 1)) : undefined),
+      paidAmount: deal.paidAmount && Number(deal.paidAmount) > 0 ? Number(deal.paidAmount) : (deal.pricePerSlot && Number(deal.pricePerSlot) > 0 ? (Number(deal.pricePerSlot) * (deal.paidSlotsCount || deal.slotsCount || 1)) : undefined),
       integrationId: deal.id,
     });
     setActiveTab('reports');

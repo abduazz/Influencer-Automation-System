@@ -165,11 +165,18 @@ class ReportController extends Controller
 
             if ($request->has('totalAmount') && $request->totalAmount !== null && $request->totalAmount !== '') {
                 $raw = (float) $request->totalAmount;
-                $reportData['total_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
+                if ($raw > 0) {
+                    $reportData['total_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
+                }
             }
             if ($request->has('paidAmount') && $request->paidAmount !== null && $request->paidAmount !== '') {
                 $raw = (float) $request->paidAmount;
-                $reportData['paid_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
+                if ($raw > 0) {
+                    $reportData['paid_amount'] = (abs($raw - round($raw)) < 0.05) ? round($raw) : round($raw, 2);
+                }
+            }
+            if ($paymentType === 'full' && empty($reportData['paid_amount']) && !empty($reportData['total_amount'])) {
+                $reportData['paid_amount'] = $reportData['total_amount'];
             }
         }
 

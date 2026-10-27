@@ -237,6 +237,17 @@ class ReportController extends Controller
                               ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [strtolower($cleanBloggerName)]);
                         })
                         ->first();
+
+                    if (!$existingIntegration) {
+                        $normTarget = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanBloggerName));
+                        $existingIntegration = Integration::where('project_id', $targetProjectId)
+                            ->where('platform', $report->platform)
+                            ->get()
+                            ->first(function ($int) use ($normTarget) {
+                                $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
+                                return $iNorm === $normTarget;
+                            });
+                    }
                 }
 
                 $groupSlotsCount = $group['slots_count'];
@@ -590,6 +601,18 @@ class ReportController extends Controller
                               ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [$cleanTarget]);
                         })
                         ->first();
+
+                    if (!$integration) {
+                        $normTarget = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanTarget));
+                        $integration = Integration::where('project_id', $targetProject)
+                            ->where('platform', $targetPlatform)
+                            ->get()
+                            ->first(function ($int) use ($normTarget) {
+                                $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
+                                return $iNorm === $normTarget;
+                            });
+                    }
+
                     if ($integration) {
                         $integration->syncWithReports();
                     }

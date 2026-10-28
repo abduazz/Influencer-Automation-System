@@ -357,6 +357,7 @@ export default function DashboardView({
         pricePerSlot,
         slotsCount,
         status: 'active',
+        kanbanStage: 'paid_in_progress',
         slotsConfig: finalSlotsConfig,
         createdBy: currentUserName || currentUserEmail || undefined
       });
@@ -413,12 +414,20 @@ export default function DashboardView({
   // Selected Project Statistics Calculators (filtered by date)
   const cashTotalSpend = filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
 
+  const getEffectivePricePerSlot = (item: Integration, slotsTotal: number): number => {
+    const totalAmt = Number(item.totalAmount) || 0;
+    if (totalAmt > 0 && slotsTotal > 0) {
+      return totalAmt / slotsTotal;
+    }
+    return Number(item.pricePerSlot) || 0;
+  };
+
   const publishedSlotsFilteredSpend = useMemo(() => {
     let sum = 0;
     filteredIntegrations.forEach(item => {
       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
       const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
-      const pricePerSlot = Number(item.pricePerSlot) || (slotsTotal > 0 ? (Number(item.totalAmount) / slotsTotal) : 0);
+      const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
       if (!sub || !sub.data) return;
 
       for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
@@ -438,7 +447,8 @@ export default function DashboardView({
     return Math.round(sum * 100) / 100;
   }, [filteredIntegrations, submissions, filterStartDate, filterEndDate]);
 
-  const totalSpend = accountingMode === 'cash' ? cashTotalSpend : publishedSlotsFilteredSpend;
+  const hasDateFilter = Boolean(filterStartDate || filterEndDate);
+  const totalSpend = hasDateFilter && accountingMode === 'published_slots' ? publishedSlotsFilteredSpend : cashTotalSpend;
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
 
   // Selected Project total spend and current month spend
@@ -449,20 +459,17 @@ export default function DashboardView({
   const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
   const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
 
-  const cashMonthlySpend = activeProjectIntegrations.filter(i => {
+  const cashMonthlySpend = displayProjectIntegrations.filter(i => {
     if (!i.startDate) return false;
-    const iEnd = i.endDate || i.startDate;
-    const startYM = i.startDate.substring(0, 7);
-    const endYM = iEnd.substring(0, 7);
-    return currentYMPrefix >= startYM && currentYMPrefix <= endYM;
+    return i.startDate.substring(0, 7) === currentYMPrefix;
   }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
 
   const publishedSlotsMonthlySpend = useMemo(() => {
     let sum = 0;
-    activeProjectIntegrations.forEach(item => {
+    displayProjectIntegrations.forEach(item => {
       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
       const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
-      const pricePerSlot = Number(item.pricePerSlot) || (slotsTotal > 0 ? (Number(item.totalAmount) / slotsTotal) : 0);
+      const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
       if (!sub || !sub.data) return;
 
       for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
@@ -477,14 +484,14 @@ export default function DashboardView({
       }
     });
     return Math.round(sum * 100) / 100;
-  }, [activeProjectIntegrations, submissions, currentYMPrefix]);
+  }, [displayProjectIntegrations, submissions, currentYMPrefix]);
 
   const projectPendingSpend = useMemo(() => {
     let pending = 0;
-    activeProjectIntegrations.forEach(item => {
+    displayProjectIntegrations.forEach(item => {
       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
       const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
-      const pricePerSlot = Number(item.pricePerSlot) || (slotsTotal > 0 ? (Number(item.totalAmount) / slotsTotal) : 0);
+      const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
       let publishedCount = 0;
       if (sub && sub.data) {
         for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
@@ -499,7 +506,7 @@ export default function DashboardView({
       pending += remainingSlots * pricePerSlot;
     });
     return Math.round(pending * 100) / 100;
-  }, [activeProjectIntegrations, submissions]);
+  }, [displayProjectIntegrations, submissions]);
 
   const selectedProjectMonthlySpend = accountingMode === 'cash' ? cashMonthlySpend : publishedSlotsMonthlySpend;
 

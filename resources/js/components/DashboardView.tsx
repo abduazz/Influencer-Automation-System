@@ -448,7 +448,7 @@ export default function DashboardView({
   }, [filteredIntegrations, submissions, filterStartDate, filterEndDate]);
 
   const hasDateFilter = Boolean(filterStartDate || filterEndDate);
-  const totalSpend = hasDateFilter && accountingMode === 'published_slots' ? publishedSlotsFilteredSpend : cashTotalSpend;
+  const totalSpend = cashTotalSpend;
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
 
   // Selected Project total spend and current month spend
@@ -459,12 +459,17 @@ export default function DashboardView({
   const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
   const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
 
-  const cashMonthlySpend = displayProjectIntegrations.filter(i => {
-    if (!i.startDate) return false;
-    return i.startDate.substring(0, 7) === currentYMPrefix;
-  }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  const cashMonthlySpend = hasDateFilter
+    ? cashTotalSpend
+    : displayProjectIntegrations.filter(i => {
+        if (!i.startDate) return false;
+        return i.startDate.substring(0, 7) === currentYMPrefix;
+      }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
 
   const publishedSlotsMonthlySpend = useMemo(() => {
+    if (hasDateFilter) {
+      return publishedSlotsFilteredSpend;
+    }
     let sum = 0;
     displayProjectIntegrations.forEach(item => {
       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
@@ -484,7 +489,7 @@ export default function DashboardView({
       }
     });
     return Math.round(sum * 100) / 100;
-  }, [displayProjectIntegrations, submissions, currentYMPrefix]);
+  }, [hasDateFilter, publishedSlotsFilteredSpend, displayProjectIntegrations, submissions, currentYMPrefix]);
 
   const projectPendingSpend = useMemo(() => {
     let pending = 0;

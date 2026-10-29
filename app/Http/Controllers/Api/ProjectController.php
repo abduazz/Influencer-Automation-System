@@ -16,7 +16,7 @@ class ProjectController extends Controller
         $subdomain = SubdomainService::resolve($request);
 
         $query = Project::query();
-        if ($subdomain !== null) {
+        if ($subdomain !== null && $subdomain !== 'timeline') {
             if ($subdomain === '1') {
                 $query->where(function ($q) {
                     $q->where('subdomain', '1')->orWhereNull('subdomain')->orWhere('subdomain', '');
@@ -50,7 +50,7 @@ class ProjectController extends Controller
         ]);
 
         $currentSubdomain = SubdomainService::resolve($request);
-        $targetSubdomain = $request->subdomain ? trim($request->subdomain) : ($currentSubdomain ?? '1');
+        $targetSubdomain = $request->subdomain ? trim($request->subdomain) : (($currentSubdomain && $currentSubdomain !== 'timeline') ? $currentSubdomain : '1');
 
         $project = Project::create([
             'name' => $request->name,

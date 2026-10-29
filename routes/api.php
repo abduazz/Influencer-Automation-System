@@ -40,6 +40,7 @@ Route::post('/integrations/{integration}/refresh-subscribers', [IntegrationContr
 Route::post('/integrations/{integration}/reset-subscribers-history', [IntegrationController::class, 'resetSubscribersHistory']);
 Route::post('/integrations/{integration}/subscribers-history', [IntegrationController::class, 'addSubscriberHistory']);
 Route::post('/integrations/{integration}/sync-reports', [IntegrationController::class, 'syncReports']);
+Route::put('/integrations/{integration}/slots/{slotNumber}/schedule', [IntegrationController::class, 'updateSlotSchedule']);
 Route::get('/integrations/{integration}/messages', [TelegramChatController::class, 'getMessages']);
 Route::post('/integrations/{integration}/messages', [TelegramChatController::class, 'sendMessage']);
 Route::put('/integrations/{integration}/messages/{message}', [TelegramChatController::class, 'updateMessage']);

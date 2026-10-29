@@ -205,6 +205,36 @@ class BloggerSubmissionController extends Controller
             ]
         );
 
+        // Sync published slot metadata back into Integration->slots_config for Timeline consistency
+        $rawConfig = is_array($integration->slots_config) ? $integration->slots_config : [];
+        $slotsCount = max((int) ($integration->slots_count ?: 1), count($rawConfig));
+        if ($slotsCount > 0) {
+            $updatedConfig = [];
+            $configChanged = false;
+            for ($i = 1; $i <= $slotsCount; $i++) {
+                $slotEntry = $rawConfig[$i - 1] ?? [
+                    'slot' => $i,
+                    'platform' => $integration->platform ?? 'Instagram',
+                    'format' => 'Post',
+                    'projectId' => (string) $integration->project_id,
+                ];
+                $slotKey = "slot_{$i}";
+                if (!empty($mergedData[$slotKey]) && is_string($mergedData[$slotKey])) {
+                    $slotEntry['isPublished'] = true;
+                    $slotEntry['publishedUrl'] = $mergedData[$slotKey];
+                    if (empty($slotEntry['publishedAt'])) {
+                        $slotEntry['publishedAt'] = $mergedData["{$slotKey}_submitted_at"] ?? $nowIso;
+                    }
+                    $configChanged = true;
+                }
+                $updatedConfig[] = $slotEntry;
+            }
+            if ($configChanged) {
+                $integration->slots_config = $updatedConfig;
+                $integration->saveQuietly();
+            }
+        }
+
         Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
 
         // Find newly filled slot keys

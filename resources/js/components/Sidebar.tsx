@@ -22,15 +22,16 @@ import {
   Terminal,
   Receipt,
   ScrollText,
-  ExternalLink
+  ExternalLink,
+  CalendarClock
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 
 import { AllowedUser } from '../data/mockData';
 
 interface SidebarProps {
-  activeTab: 'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
-  setActiveTab: (tab: 'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
+  activeTab: 'projects' | 'timeline' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs';
+  setActiveTab: (tab: 'projects' | 'timeline' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs') => void;
   projectsCount: number;
   integrationsCount: number;
   lang: Language;
@@ -61,13 +62,22 @@ export default function Sidebar({
 
   const hasAccess = (pageKey: string) => {
     if (userRole === 'super_admin') return true;
+    if (pageKey === 'timeline') return true;
     if (userRole === 'executive') {
-      const execPages = allowedPages || ['projects', 'reports_feed'];
+      const execPages = allowedPages || ['projects', 'timeline', 'reports_feed'];
       return execPages.includes(pageKey);
     }
     if (pageKey === 'bulk_purchases' || pageKey === 'bloggers' || pageKey === 'kanban' || pageKey === 'requisites_directory') return true;
-    return (allowedPages || ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
+    return (allowedPages || ['projects', 'timeline', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses']).includes(pageKey);
   };
+
+  const timelineExternalUrl = (() => {
+    if (typeof window === 'undefined') return '/?page=timeline';
+    const sub = new URLSearchParams(window.location.search).get('subdomain');
+    return sub && sub !== 'timeline'
+      ? `/?subdomain=${encodeURIComponent(sub)}&page=timeline`
+      : '/?page=timeline';
+  })();
 
   return (
     <aside className={`hidden md:flex bg-white border-r border-neutral-200 flex-col justify-between h-screen sticky top-0 text-neutral-800 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-80'}`}>
@@ -134,6 +144,34 @@ export default function Sidebar({
                 </span>
               )}
             </button>
+          )}
+
+          {hasAccess('timeline') && (
+            <a
+              id="nav-timeline-btn"
+              href={timelineExternalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center py-3' : 'justify-between px-4 py-2.5'} rounded-lg text-xs font-bold transition-all duration-150 group hover:bg-neutral-100 text-neutral-600 hover:text-black`}
+              title={lang === 'uz' ? 'Chiqishlar taymlayni (yangi oynada ochish)' : lang === 'en' ? 'Publication Timeline (open in new tab)' : 'Таймлайн выходов (открыть в новой вкладке)'}
+            >
+              <div className="flex items-center gap-3.5">
+                <CalendarClock className="w-4 h-4 text-indigo-600 group-hover:text-indigo-700" />
+                {!isCollapsed && (
+                  <span>
+                    {lang === 'uz' ? 'Chiqishlar taymlayni' : lang === 'en' ? 'Publication Timeline' : 'Таймлайн выходов'}
+                  </span>
+                )}
+              </div>
+              {!isCollapsed && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700">
+                    SLA
+                  </span>
+                  <ExternalLink className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black transition-colors" />
+                </div>
+              )}
+            </a>
           )}
 
           {hasAccess('kanban') && (
@@ -312,8 +350,8 @@ export default function Sidebar({
       </div>
 
       <div>
-        {/* Subdomain Switcher for Super Admin */}
-        {userRole === 'super_admin' && !isCollapsed && (
+        {/* Subdomain Switcher */}
+        {!isCollapsed && userRole === 'super_admin' && (
           <div className="px-6 pt-3 pb-1 border-t border-neutral-100 bg-neutral-50/20">
             <div className="flex items-center justify-between text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-2">
               <span className="flex items-center gap-1">
@@ -321,10 +359,12 @@ export default function Sidebar({
                 {lang === 'ru' ? 'Субдомен' : 'Subdomen'}
               </span>
               <span className="text-black font-extrabold text-[11px]">
-                {typeof window !== 'undefined' && window.location.hostname.includes('2.tezi.uz') ? '2.tezi.uz' : '1.tezi.uz'}
+                {typeof window !== 'undefined' && (window.location.hostname.includes('2.tezi.uz') || new URLSearchParams(window.location.search).get('subdomain') === '2')
+                  ? '2.tezi.uz'
+                  : '1.tezi.uz'}
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-1.5 bg-neutral-100 p-1 rounded-lg">
+            <div className="grid grid-cols-2 gap-1 bg-neutral-100 p-1 rounded-lg">
               <button
                 type="button"
                 onClick={() => {
@@ -337,7 +377,7 @@ export default function Sidebar({
                     window.location.href = url.toString();
                   }
                 }}
-                className={`py-1 text-[10px] font-black rounded-md transition ${
+                className={`py-1 text-[10px] font-black rounded-md transition cursor-pointer ${
                   (typeof window !== 'undefined' && (window.location.hostname.startsWith('1.') || new URLSearchParams(window.location.search).get('subdomain') === '1' || (!window.location.hostname.startsWith('2.') && !new URLSearchParams(window.location.search).get('subdomain'))))
                     ? 'bg-black text-white shadow-xs'
                     : 'text-neutral-600 hover:text-black hover:bg-neutral-200'
@@ -357,7 +397,7 @@ export default function Sidebar({
                     window.location.href = url.toString();
                   }
                 }}
-                className={`py-1 text-[10px] font-black rounded-md transition ${
+                className={`py-1 text-[10px] font-black rounded-md transition cursor-pointer ${
                   (typeof window !== 'undefined' && (window.location.hostname.startsWith('2.') || new URLSearchParams(window.location.search).get('subdomain') === '2'))
                     ? 'bg-black text-white shadow-xs'
                     : 'text-neutral-600 hover:text-black hover:bg-neutral-200'

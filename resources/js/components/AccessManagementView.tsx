@@ -133,6 +133,7 @@ export default function AccessManagementView({
   const [pagesPermissions, setPagesPermissions] = useState<Record<string, boolean>>({
     super_admin: false,
     projects: true,
+    timeline: true,
     kanban: true,
     requisites_directory: true,
     bloggers: true,
@@ -1142,6 +1143,7 @@ export default function AccessManagementView({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {[
                           { key: 'projects', label: t.pageProjects },
+                          { key: 'timeline', label: lang === 'ru' ? 'Таймлайн выходов (timeline.tezi.uz)' : 'Chiqishlar taymlayni' },
                           { key: 'kanban', label: t.pageKanban },
                           { key: 'requisites_directory', label: t.pageRequisitesDirectory },
                           { key: 'bloggers', label: t.pageBloggers },

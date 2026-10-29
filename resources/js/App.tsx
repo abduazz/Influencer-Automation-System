@@ -12,6 +12,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import ExecutiveDashboardView from './components/ExecutiveDashboardView';
+import TimelineView, { SlotScheduleUpdatePayload } from './components/TimelineView';
 import BloggersView from './components/BloggersView';
 import ReportsView from './components/ReportsView';
 import ReportsFeedView from './components/ReportsFeedView';
@@ -39,6 +40,7 @@ import {
   createIntegration,
   updateIntegration,
   deleteIntegration,
+  updateIntegrationSlotSchedule,
   fetchReports,
   createReport,
   updateReport,
@@ -77,7 +79,7 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt, CheckCircle2, AlertCircle, X, ScrollText } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt, CheckCircle2, AlertCircle, X, ScrollText, CalendarClock } from 'lucide-react';
 
 export default function App() {
   // Synchronous instant bootstrap cache (HTML preload or localStorage)
@@ -134,26 +136,47 @@ export default function App() {
   };
 
   // Navigation Tabs State & Types
-  type AppTab = 'projects' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs' | 'requisites';
+  type AppTab = 'projects' | 'timeline' | 'kanban' | 'requisites_directory' | 'bloggers' | 'reports' | 'bulk_purchases' | 'reports_feed' | 'other_expenses' | 'blogger' | 'code' | 'access' | 'logs' | 'requisites';
 
   const ALL_VALID_TABS: AppTab[] = [
-    'projects', 
-    'kanban', 
-    'requisites_directory', 
-    'bloggers', 
-    'reports', 
-    'bulk_purchases', 
-    'reports_feed', 
-    'other_expenses', 
-    'blogger', 
-    'code', 
-    'access', 
+    'projects',
+    'timeline',
+    'kanban',
+    'requisites_directory',
+    'bloggers',
+    'reports',
+    'bulk_purchases',
+    'reports_feed',
+    'other_expenses',
+    'blogger',
+    'code',
+    'access',
     'logs',
     'requisites'
   ];
 
+  const isTimelineSubdomainHost = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get('page') === 'timeline' ||
+      window.location.pathname.startsWith('/timeline') ||
+      window.location.hostname.startsWith('timeline.') ||
+      params.get('subdomain') === 'timeline'
+    );
+  };
+
+  const timelineExternalUrl = (() => {
+    if (typeof window === 'undefined') return '/?page=timeline';
+    const sub = new URLSearchParams(window.location.search).get('subdomain');
+    return sub && sub !== 'timeline'
+      ? `/?subdomain=${encodeURIComponent(sub)}&page=timeline`
+      : '/?page=timeline';
+  })();
+
   const getInitialActiveTab = (): AppTab => {
     if (typeof window === 'undefined') return 'projects';
+    if (isTimelineSubdomainHost()) return 'timeline';
     const params = new URLSearchParams(window.location.search);
     const hasCabinetParam = params.get('cabinet') === 'true' || window.location.pathname.startsWith('/c/');
     if (hasCabinetParam) return 'blogger';
@@ -165,11 +188,14 @@ export default function App() {
       window.open('/log-viewer', '_blank');
       return 'projects';
     }
+    if (pageParam === 'timeline') {
+      return 'timeline';
+    }
     if (pageParam && ALL_VALID_TABS.includes(pageParam as AppTab)) {
       return pageParam as AppTab;
     }
     const cachedTab = localStorage.getItem('tezi_active_tab') as AppTab;
-    if (cachedTab === 'logs') {
+    if (cachedTab === 'logs' || cachedTab === 'timeline') {
       localStorage.setItem('tezi_active_tab', 'projects');
       return 'projects';
     }
@@ -180,6 +206,7 @@ export default function App() {
   };
 
   const [activeTab, setActiveTab] = useState<AppTab>(getInitialActiveTab);
+  const isTimelineSubdomain = activeTab === 'timeline' || isTimelineSubdomainHost();
   const [bloggerRequisitesList, setBloggerRequisitesList] = useState<BloggerRequisites[]>([]);
   const [activeRequisitesToken, setActiveRequisitesToken] = useState<string | undefined>(undefined);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
@@ -202,7 +229,7 @@ export default function App() {
 
   // Check if current URL route is for external Blogger Requisites form
   const isRequisitesRoute = (new URLSearchParams(window.location.search).get('view') === 'requisites' ||
-                            window.location.pathname.startsWith('/requisites'));
+    window.location.pathname.startsWith('/requisites'));
   const requisitesToken = new URLSearchParams(window.location.search).get('token') || undefined;
 
 
@@ -254,7 +281,7 @@ export default function App() {
     localStorage.setItem('ff_user_role', role);
     document.cookie = `ff_user_email=${encodeURIComponent(email)}; path=/; max-age=2592000; SameSite=Lax`;
     document.cookie = `ff_user_role=${encodeURIComponent(role)}; path=/; max-age=2592000; SameSite=Lax`;
-    setActiveTab('projects');
+    setActiveTab(isTimelineSubdomainHost() ? 'timeline' : 'projects');
 
     // Immediately fetch full dataset for the authenticated user session
     try {
@@ -317,8 +344,8 @@ export default function App() {
 
   // Check if current URL route matches a blogger cabinet guest access pattern (and user is not logged in)
   const isBloggerCabinetRoute = (new URLSearchParams(window.location.search).get('cabinet') === 'true' ||
-                                 window.location.pathname.startsWith('/c/')) && 
-                                 !currentUserRole;
+    window.location.pathname.startsWith('/c/')) &&
+    !currentUserRole;
 
   // Core Persistent State Hook (Hydrated synchronously from instant cache / preload)
   const [projects, setProjects] = useState<Project[]>(() => initialBootstrap?.projects || []);
@@ -328,9 +355,9 @@ export default function App() {
   const [reports, setReports] = useState<Report[]>(() => initialBootstrap?.reports || []);
   const [submissions, setSubmissions] = useState<BloggerSubmission[]>(() => initialBootstrap?.submissions || []);
   const [bulkPurchases, setBulkPurchases] = useState<BulkPurchase[]>(() => initialBootstrap?.bulkPurchases || []);
-  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>(() => 
-    initialBootstrap?.kanbanColumns && initialBootstrap.kanbanColumns.length > 0 
-      ? initialBootstrap.kanbanColumns 
+  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>(() =>
+    initialBootstrap?.kanbanColumns && initialBootstrap.kanbanColumns.length > 0
+      ? initialBootstrap.kanbanColumns
       : INITIAL_KANBAN_COLUMNS
   );
 
@@ -572,6 +599,35 @@ export default function App() {
     setIntegrations(freshIntegrations);
   };
 
+  const handleUpdateSlotSchedule = async (
+    integrationId: string,
+    slotNumber: number,
+    payload: SlotScheduleUpdatePayload
+  ) => {
+    try {
+      const res = await updateIntegrationSlotSchedule(integrationId, slotNumber, payload);
+      if (res.integration) {
+        setIntegrations((prev) =>
+          prev.map((item) => (String(item.id) === String(integrationId) ? { ...item, ...res.integration } : item))
+        );
+      }
+      if (res.submission) {
+        setSubmissions((prev) => {
+          const exists = prev.some((s) => String(s.integrationId) === String(integrationId));
+          if (exists) {
+            return prev.map((s) => (String(s.integrationId) === String(integrationId) ? res.submission! : s));
+          }
+          return [res.submission!, ...prev];
+        });
+      }
+      showToast('График выхода слота успешно обновлен', 'success');
+    } catch (err: any) {
+      console.error('Failed to update slot schedule:', err);
+      showToast(err?.message || 'Ошибка при сохранении графика слота', 'error');
+      throw err;
+    }
+  };
+
   const handleEditReport = async (id: string, updatedFields: Partial<Report> & { amount?: number }) => {
     const updated = await updateReport(id, updatedFields, currentUserEmail || undefined);
     setReports((prev) => prev.map(r => r.id === id ? { ...r, ...updated } : r));
@@ -587,8 +643,8 @@ export default function App() {
         (!newRep.integrationId && newRep.channelBlogger && item.bloggerName.toLowerCase().trim() === newRep.channelBlogger.toLowerCase().trim() && String(item.projectId) === String(newRep.projectId));
 
       if (isTarget && item.kanbanStage !== 'completed') {
-        return { 
-          ...item, 
+        return {
+          ...item,
           kanbanStage: 'paid_in_progress',
           updatedAt: nowIso,
           createdBy: item.createdBy || newRep.createdBy || currentUserName || currentUserEmail || undefined
@@ -623,7 +679,7 @@ export default function App() {
 
     if (!requisitesNote && bloggerRequisitesList && deal.bloggerName) {
       const clean = deal.bloggerName.replace(/^[@#]/, '').trim().toLowerCase();
-      const br = bloggerRequisitesList.find(r => 
+      const br = bloggerRequisitesList.find(r =>
         (r.integrationId && String(r.integrationId) === String(deal.id)) ||
         (r.bloggerName && r.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean) ||
         (r.channelName && r.channelName.replace(/^[@#]/, '').trim().toLowerCase() === clean)
@@ -643,13 +699,13 @@ export default function App() {
     let bloggerPageLink = deal.bloggerPageLink || '';
     if (!bloggerPageLink && deal.bloggerName) {
       const clean = deal.bloggerName.replace(/^[@#]/, '').trim().toLowerCase();
-      const otherInt = integrations.find(i => 
+      const otherInt = integrations.find(i =>
         i.bloggerName && i.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean && i.bloggerPageLink
       );
       if (otherInt?.bloggerPageLink) {
         bloggerPageLink = otherInt.bloggerPageLink;
       } else {
-        const rep = (reports || []).slice().reverse().find(r => 
+        const rep = (reports || []).slice().reverse().find(r =>
           r.channelBlogger && r.channelBlogger.replace(/^[@#]/, '').trim().toLowerCase() === clean && r.bloggerPageLink
         );
         if (rep?.bloggerPageLink) {
@@ -776,8 +832,8 @@ export default function App() {
           const itemClean = (item.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
           const itemPlat = (item.platform || '').toLowerCase();
           if (item.id === integrationId || (targetClean && itemClean === targetClean && itemPlat === targetPlat)) {
-            return { 
-              ...item, 
+            return {
+              ...item,
               bloggerName: fresh.bloggerName,
               bloggerPageLink: fresh.bloggerPageLink,
               platform: fresh.platform,
@@ -789,8 +845,8 @@ export default function App() {
           return item;
         }));
 
-        const countStr = fresh.subscribersCount !== null && fresh.subscribersCount !== undefined 
-          ? fresh.subscribersCount.toLocaleString() 
+        const countStr = fresh.subscribersCount !== null && fresh.subscribersCount !== undefined
+          ? fresh.subscribersCount.toLocaleString()
           : '0';
         showToast(`${t.audRefreshSuccess || 'Замер выполнен'}: ${fresh.bloggerName || ''} (${countStr} ${t.audSubscribersUnit || 'подписчиков'})`, 'success');
 
@@ -832,8 +888,8 @@ export default function App() {
           const itemClean = (item.bloggerName || '').toLowerCase().replace(/^[@#]/, '').trim();
           const itemPlat = (item.platform || '').toLowerCase();
           if (item.id === integrationId || (targetClean && itemClean === targetClean && itemPlat === targetPlat)) {
-            return { 
-              ...item, 
+            return {
+              ...item,
               subscribersCount: res.integration.subscribersCount,
               subscribersUpdatedAt: res.integration.subscribersUpdatedAt,
               subscribersHistory: res.integration.subscribersHistory
@@ -886,15 +942,15 @@ export default function App() {
   useEffect(() => {
     // Detect if we are running in a real Telegram WebApp
     const searchParams = new URLSearchParams(window.location.search);
-    const isTg = searchParams.get('tgWebAppPlatform') !== null || 
-                 searchParams.get('tgWebAppVersion') !== null ||
-                 window.location.search.includes('tgWebAppPlatform') ||
-                 (window as any).Telegram?.WebApp?.initData !== undefined;
+    const isTg = searchParams.get('tgWebAppPlatform') !== null ||
+      searchParams.get('tgWebAppVersion') !== null ||
+      window.location.search.includes('tgWebAppPlatform') ||
+      (window as any).Telegram?.WebApp?.initData !== undefined;
 
     if (isTg) {
       setIsTelegramWebApp(true);
       setActiveTab('reports');
-      
+
       // Auto-login Telegram WebApp user if not set
       if (!localStorage.getItem('ff_user_email')) {
         localStorage.setItem('ff_user_email', 'telegram-manager@tezi.uz');
@@ -905,6 +961,10 @@ export default function App() {
     }
 
     const parseUrlRoute = () => {
+      if (isTimelineSubdomainHost()) {
+        setActiveTab('timeline');
+        return;
+      }
       const params = new URLSearchParams(window.location.search);
       const hasCabinetParam = params.get('cabinet') === 'true' || window.location.pathname.startsWith('/c/');
       const page = params.get('page');
@@ -924,11 +984,14 @@ export default function App() {
         window.open('/log-viewer', '_blank');
         setActiveTab('projects');
         return;
+      } else if (page === 'timeline') {
+        setActiveTab('timeline');
+        return;
       } else if (page && ALL_VALID_TABS.includes(page as any)) {
         setActiveTab(page as any);
       } else {
         const cached = localStorage.getItem('tezi_active_tab') as AppTab;
-        if (cached === 'logs') {
+        if (cached === 'logs' || cached === 'timeline') {
           localStorage.setItem('tezi_active_tab', 'projects');
           setActiveTab('projects');
         } else if (cached && ALL_VALID_TABS.includes(cached)) {
@@ -949,13 +1012,13 @@ export default function App() {
 
   // Update browser URL query string whenever activeTab changes
   useEffect(() => {
-    if (isBloggerCabinetRoute || isRequisitesRoute) return;
+    if (isBloggerCabinetRoute || isRequisitesRoute || isTimelineSubdomain) return;
 
     // Persist active tab to localStorage for instant restoration on tab refresh
     localStorage.setItem('tezi_active_tab', activeTab);
 
     const params = new URLSearchParams(window.location.search);
-    
+
     if (activeTab === 'blogger') {
       if (params.get('cabinet') !== 'true') {
         params.set('cabinet', 'true');
@@ -972,10 +1035,10 @@ export default function App() {
         window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
       }
     }
-  }, [activeTab, isBloggerCabinetRoute, isRequisitesRoute]);
+  }, [activeTab, isBloggerCabinetRoute, isRequisitesRoute, isTimelineSubdomain]);
 
   // Resolve allowed pages and projects for the active user
-  const allowedPages = activeUser?.allowedPages || ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
+  const allowedPages = activeUser?.allowedPages || ['projects', 'timeline', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'];
   const userAllowedProjects = activeUser?.allowedProjects;
 
   const accessibleProjects = (currentUserRole === 'super_admin' || !userAllowedProjects || userAllowedProjects.length === 0)
@@ -984,8 +1047,9 @@ export default function App() {
 
   const hasPageAccess = (pageKey: string) => {
     if (currentUserRole === 'super_admin') return true;
+    if (pageKey === 'timeline') return true;
     if (currentUserRole === 'executive') {
-      const execPages = allowedPages || ['projects', 'reports_feed'];
+      const execPages = allowedPages || ['projects', 'timeline', 'reports_feed'];
       return execPages.includes(pageKey);
     }
     if (pageKey === 'bulk_purchases' || pageKey === 'bloggers' || pageKey === 'kanban' || pageKey === 'requisites_directory') return true;
@@ -998,7 +1062,7 @@ export default function App() {
     if (allowedUsersLoading) return; // Do not redirect while user permissions are still loading
     if (!currentUserRole || currentUserRole === 'super_admin') return;
 
-    const isAllowedTab = (activeTab === 'bulk_purchases' || activeTab === 'bloggers' || activeTab === 'kanban' || activeTab === 'requisites_directory') ? true : allowedPages.includes(activeTab);
+    const isAllowedTab = (activeTab === 'timeline' || activeTab === 'bulk_purchases' || activeTab === 'bloggers' || activeTab === 'kanban' || activeTab === 'requisites_directory') ? true : allowedPages.includes(activeTab);
     const isSystemTab = ['access', 'logs', 'blogger'].includes(activeTab);
 
     if (!isAllowedTab && !isSystemTab) {
@@ -1023,13 +1087,13 @@ export default function App() {
 
   return (
     <div className={`flex bg-neutral-50 min-h-screen text-neutral-900 antialiased font-sans ${isSidebarCollapsed ? 'sidebar-collapsed' : ''} ${isTelegramWebApp ? 'telegram-webapp-view' : ''}`}>
-      {/* Dynamic Navigation Rail Sidebar */}
-      {!isTelegramWebApp && !isBloggerCabinetRoute && !isRequisitesRoute && (
-        <Sidebar 
+      {/* Dynamic Navigation Rail Sidebar (Hidden on standalone Timeline subdomain) */}
+      {!isTelegramWebApp && !isBloggerCabinetRoute && !isRequisitesRoute && !isTimelineSubdomain && (
+        <Sidebar
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
-          activeTab={activeTab} 
-          setActiveTab={setActiveTab} 
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
           projectsCount={projects.length}
           integrationsCount={integrations.length}
           lang={lang}
@@ -1041,8 +1105,8 @@ export default function App() {
         />
       )}
 
-      {/* Mobile Top Header */}
-      {!isBloggerCabinetRoute && !isRequisitesRoute && (
+      {/* Mobile Top Header (Hidden on standalone Timeline subdomain) */}
+      {!isBloggerCabinetRoute && !isRequisitesRoute && !isTimelineSubdomain && (
         <header className="fixed top-0 left-0 right-0 bg-white/95 border-b border-neutral-200/85 h-14 flex items-center justify-between px-4 z-50 md:hidden shadow-sm backdrop-blur-md">
           <div className="flex items-center gap-2">
             <span className="font-black text-xs tracking-wider uppercase text-neutral-800">
@@ -1056,11 +1120,10 @@ export default function App() {
                 <button
                   key={l}
                   onClick={() => handleSetLang(l)}
-                  className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${
-                    lang === l
+                  className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${lang === l
                       ? 'bg-white text-black shadow-sm'
                       : 'text-neutral-400 hover:text-neutral-600'
-                  }`}
+                    }`}
                 >
                   {l}
                 </button>
@@ -1080,15 +1143,16 @@ export default function App() {
       )}
 
       {/* Main Core View Area */}
-      <main className={`flex-1 ${
-        activeTab === 'kanban' 
-          ? 'h-screen overflow-hidden flex flex-col p-2 md:p-3 pt-16 md:pt-2.5 pb-20 md:pb-2' 
-          : activeTab === 'projects'
-          ? 'overflow-y-auto h-screen relative pt-16 p-3 sm:p-4 md:p-5 lg:px-6 lg:py-4 pb-28 md:pt-4'
-          : 'overflow-y-auto h-screen relative pt-16 p-4 pb-28 md:p-8 lg:p-12 md:pt-8'
-      }`}>
+      <main className={`flex-1 ${isTimelineSubdomain
+          ? 'min-h-screen w-full p-2.5 sm:p-4 lg:px-6 lg:py-4'
+          : activeTab === 'kanban'
+            ? 'h-screen overflow-hidden flex flex-col p-2 md:p-3 pt-16 md:pt-2.5 pb-20 md:pb-2'
+            : activeTab === 'projects'
+              ? 'overflow-y-auto h-screen relative pt-16 p-3 sm:p-4 md:p-5 lg:px-6 lg:py-4 pb-28 md:pt-4'
+              : 'overflow-y-auto h-screen relative pt-16 p-4 pb-28 md:p-8 lg:p-12 md:pt-8'
+        }`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
-        {simulatedUrlParams.platform && currentUserRole === 'super_admin' && (
+        {!isTimelineSubdomain && simulatedUrlParams.platform && currentUserRole === 'super_admin' && (
           <div className="mb-6 p-4 bg-white border-2 border-black rounded-lg flex items-center justify-between text-left text-xs text-black shadow-sm">
             <div className="flex items-start gap-2.5">
               <Info className="w-4 h-4 text-black mt-0.5 shrink-0" />
@@ -1108,8 +1172,51 @@ export default function App() {
           </div>
         )}
 
-        {/* Active Tab Router / Guest Blogger Route Gate */}
-        {isRequisitesRoute || activeTab === 'requisites' ? (
+        {/* Active Tab Router / Standalone Subdomain Gate */}
+        {isTimelineSubdomain ? (
+          <TimelineView
+            projects={accessibleProjects.length > 0 ? accessibleProjects : allProjects}
+            integrations={integrations}
+            submissions={submissions}
+            bulkPurchases={bulkPurchases}
+            reports={reports}
+            allowedUsers={allowedUsers}
+            currentUserName={currentUserName}
+            userEmail={currentUserEmail || ''}
+            userRole={currentUserRole}
+            lang={lang}
+            setLang={handleSetLang}
+            onLogout={handleLogout}
+            allowedMetrics={
+              (allowedUsers || []).find(
+                (u) =>
+                  u &&
+                  u.email &&
+                  currentUserEmail &&
+                  u.email.toLowerCase() === currentUserEmail.toLowerCase()
+              )?.allowedMetrics || [
+                'deals',
+                'spend',
+                'total_slots',
+                'slots_published',
+                'slots_remaining',
+                'financial_metrics',
+              ]
+            }
+            onUpdateSlotSchedule={handleUpdateSlotSchedule}
+            onUpdateProject={async (projectId, name, description, monthlyLimit) => {
+              const p = projects.find((proj) => String(proj.id) === String(projectId));
+              await handleEditProject(
+                projectId,
+                name,
+                description,
+                p?.telegramThreadId,
+                monthlyLimit,
+                p?.subdomain
+              );
+            }}
+          />
+        ) : isRequisitesRoute || activeTab === 'requisites' ? (
           <BloggerRequisitesView
             integrationToken={requisitesToken || activeRequisitesToken}
             integrations={integrations}
@@ -1174,6 +1281,7 @@ export default function App() {
                 onRefresh={handleRefreshAllData}
               />
             )}
+
             {activeTab === 'projects' && (
               currentUserRole === 'executive' ? (
                 <ExecutiveDashboardView
@@ -1204,8 +1312,8 @@ export default function App() {
                     } else {
                       const blogger = maybeBloggerName || '';
                       const clean = blogger.replace(/^[@#]/, '').trim().toLowerCase();
-                      const matchedInt = integrations.find(i => 
-                        String(i.projectId) === String(dealOrProjId) && 
+                      const matchedInt = integrations.find(i =>
+                        String(i.projectId) === String(dealOrProjId) &&
                         i.bloggerName && i.bloggerName.replace(/^[@#]/, '').trim().toLowerCase() === clean
                       );
                       if (matchedInt) {
@@ -1283,8 +1391,8 @@ export default function App() {
                 title={translations[lang].reportsListTab || translations[lang].pageReportsFeed || (lang === 'ru' ? 'Список отчетов' : lang === 'uz' ? 'Hisobotlar ro‘yxati' : 'Reports List')}
                 description={
                   lang === 'ru' ? 'Просматривайте все отчеты по блогерам и интеграциям.' :
-                  lang === 'uz' ? 'Barcha bloggerlar va integratsiyalar bo‘yicha hisobotlarni ko‘ring.' :
-                  'View all reports on bloggers and integrations.'
+                    lang === 'uz' ? 'Barcha bloggerlar va integratsiyalar bo‘yicha hisobotlarni ko‘ring.' :
+                      'View all reports on bloggers and integrations.'
                 }
                 onNavigateToOtherExpenses={
                   currentUserRole !== 'product_manager' && currentUserRole !== 'executive' && hasPageAccess('other_expenses')
@@ -1312,9 +1420,9 @@ export default function App() {
                 onEditReport={handleEditReport}
                 title={translations[lang].otherExpensesTab}
                 description={
-                  lang === 'ru' ? 'Просматривайте все созданные прочие расходы.' : 
-                  lang === 'uz' ? 'Barcha yaratilgan boshqa xarajatlarni ko‘ring.' : 
-                  'View all created other expenses.'
+                  lang === 'ru' ? 'Просматривайте все созданные прочие расходы.' :
+                    lang === 'uz' ? 'Barcha yaratilgan boshqa xarajatlarni ko‘ring.' :
+                      'View all created other expenses.'
                 }
                 onNavigateToReportsFeed={() => setActiveTab('reports_feed')}
               />
@@ -1361,9 +1469,9 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile Bottom Navigation Bar */}
-      {!isBloggerCabinetRoute && !isRequisitesRoute && (
-        <nav 
+      {/* Mobile Bottom Navigation Bar (Hidden on standalone Timeline subdomain) */}
+      {!isBloggerCabinetRoute && !isRequisitesRoute && !isTimelineSubdomain && (
+        <nav
           className="fixed bottom-0 left-0 right-0 bg-white/95 border-t border-neutral-200/90 z-50 md:hidden shadow-lg backdrop-blur-md overflow-x-auto"
           style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom))' }}
         >
@@ -1372,9 +1480,8 @@ export default function App() {
             {hasPageAccess('projects') && (
               <button
                 onClick={() => setActiveTab('projects')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'projects' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${activeTab === 'projects' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
               >
                 <FolderKanban className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
@@ -1383,13 +1490,27 @@ export default function App() {
               </button>
             )}
 
+            {/* Timeline External Subdomain Link (Opens in New Tab) */}
+            {hasPageAccess('timeline') && (
+              <a
+                href={timelineExternalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 text-indigo-600 hover:text-indigo-800"
+              >
+                <CalendarClock className="w-5 h-5" />
+                <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
+                  {lang === 'ru' ? 'Таймлайн' : lang === 'uz' ? 'Taymlayn' : 'Timeline'}
+                </span>
+              </a>
+            )}
+
             {/* Kanban Tab */}
             {hasPageAccess('kanban') && (
               <button
                 onClick={() => setActiveTab('kanban')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'kanban' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${activeTab === 'kanban' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
               >
                 <Kanban className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
@@ -1402,9 +1523,8 @@ export default function App() {
             {hasPageAccess('bloggers') && (
               <button
                 onClick={() => setActiveTab('bloggers')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'bloggers' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${activeTab === 'bloggers' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
               >
                 <Users className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
@@ -1417,9 +1537,8 @@ export default function App() {
             {currentUserRole !== 'product_manager' && hasPageAccess('reports') && (
               <button
                 onClick={() => setActiveTab('reports')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'reports' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${activeTab === 'reports' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
               >
                 <FilePlus className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
@@ -1432,9 +1551,8 @@ export default function App() {
             {hasPageAccess('bulk_purchases') && (
               <button
                 onClick={() => setActiveTab('bulk_purchases')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'bulk_purchases' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${activeTab === 'bulk_purchases' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
               >
                 <Layers className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
@@ -1447,9 +1565,8 @@ export default function App() {
             {currentUserRole !== 'product_manager' && hasPageAccess('reports_feed') && (
               <button
                 onClick={() => setActiveTab('reports_feed')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'reports_feed' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${activeTab === 'reports_feed' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
               >
                 <FileText className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
@@ -1462,9 +1579,8 @@ export default function App() {
             {currentUserRole === 'super_admin' && (
               <button
                 onClick={() => setActiveTab('blogger')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'blogger' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${activeTab === 'blogger' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
               >
                 <UserSquare2 className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
@@ -1477,9 +1593,8 @@ export default function App() {
             {currentUserRole === 'super_admin' && (
               <button
                 onClick={() => setActiveTab('access')}
-                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${
-                  activeTab === 'access' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
+                className={`flex flex-col items-center justify-center flex-1 min-w-[58px] py-1 text-center transition-all duration-150 ${activeTab === 'access' ? 'text-black scale-105 font-black' : 'text-neutral-400 hover:text-neutral-600'
+                  }`}
               >
                 <Shield className="w-5 h-5" />
                 <span className="text-[9px] font-bold mt-1 truncate max-w-[65px]">
@@ -1510,13 +1625,12 @@ export default function App() {
       {/* Global Toast Notification */}
       {toastNotification && (
         <div className="fixed bottom-6 right-6 z-50 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <div className={`flex items-start gap-3 p-3.5 rounded-2xl shadow-xl border backdrop-blur-md ${
-            toastNotification.type === 'error'
+          <div className={`flex items-start gap-3 p-3.5 rounded-2xl shadow-xl border backdrop-blur-md ${toastNotification.type === 'error'
               ? 'bg-rose-900/95 text-white border-rose-700 shadow-rose-900/20'
               : toastNotification.type === 'info'
-              ? 'bg-slate-900/95 text-white border-slate-700 shadow-slate-900/20'
-              : 'bg-emerald-950/95 text-white border-emerald-700 shadow-emerald-900/20'
-          }`}>
+                ? 'bg-slate-900/95 text-white border-slate-700 shadow-slate-900/20'
+                : 'bg-emerald-950/95 text-white border-emerald-700 shadow-emerald-900/20'
+            }`}>
             {toastNotification.type === 'error' ? (
               <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
             ) : toastNotification.type === 'info' ? (

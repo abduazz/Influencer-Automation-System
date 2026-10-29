@@ -14,9 +14,20 @@ export interface Project {
 }
 
 export interface SlotConfig {
+  slot?: number;
   platform: 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
   format: string; // "Reels", "Stories", "Post", "Release", etc.
   projectId?: string | null;
+  allocatedAt?: string | null;
+  scheduledDate?: string | null; // YYYY-MM-DD
+  scheduledTime?: string | null; // HH:mm
+  prManager?: string | null;
+  topic?: string | null;
+  stage?: 'planned' | 'review' | 'published';
+  isPublished?: boolean;
+  publishedUrl?: string | null;
+  publishedAt?: string | null; // YYYY-MM-DD or YYYY-MM-DD HH:mm
+  notes?: string | null;
 }
 
 export type KanbanStage = string;
@@ -237,7 +248,7 @@ export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
     role: 'super_admin',
     createdAt: '2026-07-10',
     allowedMetrics: ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-    allowedPages: ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'access', 'logs', 'code'],
+    allowedPages: ['projects', 'timeline', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'access', 'logs', 'code'],
   },
   {
     id: '2',
@@ -246,7 +257,7 @@ export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
     role: 'super_admin',
     createdAt: '2026-07-10',
     allowedMetrics: ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-    allowedPages: ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'access', 'logs', 'code'],
+    allowedPages: ['projects', 'timeline', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses', 'access', 'logs', 'code'],
   },
   {
     id: '4',
@@ -255,7 +266,7 @@ export const INITIAL_ALLOWED_USERS: AllowedUser[] = [
     role: 'executive',
     createdAt: '2026-08-27',
     allowedMetrics: ['spend', 'set_limit'],
-    allowedPages: ['projects'],
+    allowedPages: ['projects', 'timeline'],
   },
 ];
 

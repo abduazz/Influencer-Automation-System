@@ -4,12 +4,20 @@ import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurch
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('ff_user_role') : null;
   const cachedEmail = typeof window !== 'undefined' ? localStorage.getItem('ff_user_email') : null;
+  let activeSubdomainHeader: string | null = null;
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('subdomain')) {
+      activeSubdomainHeader = params.get('subdomain');
+    }
+  }
 
   const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
   const headers: Record<string, string> = {
     'Accept': 'application/json',
     ...(cachedRole ? { 'X-User-Role': cachedRole } : {}),
     ...(cachedEmail ? { 'X-User-Email': cachedEmail } : {}),
+    ...(activeSubdomainHeader ? { 'X-Subdomain': activeSubdomainHeader } : {}),
     ...(options?.headers as Record<string, string> || {}),
   };
   if (!isFormData && !headers['Content-Type']) {
@@ -169,6 +177,32 @@ export async function updateIntegration(
 }
 export function deleteIntegration(id: string): Promise<void> {
   return request<void>(`/api/integrations/${id}`, { method: 'DELETE' });
+}
+
+export function updateIntegrationSlotSchedule(
+  integrationId: string,
+  slotNumber: number,
+  data: {
+    scheduledDate?: string | null;
+    scheduledTime?: string | null;
+    prManager?: string | null;
+    platform?: string | null;
+    format?: string | null;
+    projectId?: string | null;
+    topic?: string | null;
+    isPublished?: boolean | null;
+    publishedUrl?: string | null;
+    publishedAt?: string | null;
+    notes?: string | null;
+  }
+): Promise<{ success: boolean; integration: Integration; submission: BloggerSubmission | null }> {
+  return request<{ success: boolean; integration: Integration; submission: BloggerSubmission | null }>(
+    `/api/integrations/${integrationId}/slots/${slotNumber}/schedule`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }
+  );
 }
 
 export function refreshIntegrationSubscribers(

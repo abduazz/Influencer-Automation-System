@@ -66,7 +66,7 @@ class User extends Authenticatable implements FilamentUser
             return true;
         }
 
-        if (empty($subdomain) || $subdomain === 'all') {
+        if (empty($subdomain) || $subdomain === 'all' || $subdomain === 'timeline') {
             return true;
         }
 

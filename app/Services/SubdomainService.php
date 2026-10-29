@@ -79,7 +79,7 @@ class SubdomainService
 
         $query = Project::query();
 
-        if ($subdomain !== null) {
+        if ($subdomain !== null && $subdomain !== 'timeline') {
             // Match projects explicitly assigned to this subdomain
             // If subdomain is '1', also treat NULL as '1' for backwards compatibility
             if ($subdomain === '1') {

@@ -15,6 +15,49 @@ use Illuminate\Support\Facades\Log;
 
 class IntegrationController extends Controller
 {
+    public function ensureSlotsConfigPopulated(Integration $integration, ?array $rawConfig = null, ?int $overrideSlotsCount = null): array
+    {
+        $slotsCount = max(1, (int) ($overrideSlotsCount ?? $integration->slots_count ?? 1));
+        $raw = is_array($rawConfig) ? $rawConfig : (is_array($integration->slots_config) ? $integration->slots_config : []);
+
+        $normalized = [];
+        for ($i = 1; $i <= $slotsCount; $i++) {
+            $found = null;
+            foreach ($raw as $item) {
+                if (is_array($item) && isset($item['slot']) && (int) $item['slot'] === $i) {
+                    $found = $item;
+                    break;
+                }
+            }
+            if (!$found && isset($raw[$i - 1]) && is_array($raw[$i - 1])) {
+                $found = $raw[$i - 1];
+            }
+
+            $defaultPlatform = $found['platform'] ?? $integration->platform ?? 'Instagram';
+            $defaultFormat = $found['format'] ?? match ($defaultPlatform) {
+                'Instagram' => 'Stories',
+                'Telegram' => 'Post',
+                'YouTube' => 'Shorts',
+                'TikTok' => 'VideoPost',
+                default => 'Post',
+            };
+
+            $isPub = !empty($found['isPublished']) || !empty($found['publishedUrl']);
+            $existingStage = $found['stage'] ?? null;
+            $stage = $isPub ? 'published' : (in_array($existingStage, ['planned', 'review', 'published'], true) ? ($existingStage === 'published' ? 'planned' : $existingStage) : 'planned');
+
+            $normalized[] = array_merge($found ?? [], [
+                'slot' => $i,
+                'platform' => $defaultPlatform,
+                'format' => $defaultFormat,
+                'projectId' => $found['projectId'] ?? (string) $integration->project_id,
+                'stage' => $stage,
+            ]);
+        }
+
+        return $normalized;
+    }
+
     public function formatIntegration(Integration $integration): array
     {
         if (blank($integration->blogger_cabinet_token)) {
@@ -123,7 +166,8 @@ class IntegrationController extends Controller
             $cleanedParts = [];
             foreach ($parts as $part) {
                 $part = trim($part);
-                if ($part === '') continue;
+                if ($part === '')
+                    continue;
                 if (preg_match('#(?:t\.me|telegram\.me)/(?:s/)?([a-zA-Z0-9_]+)#i', $part, $m)) {
                     $part = $m[1];
                 }
@@ -220,8 +264,10 @@ class IntegrationController extends Controller
         ]);
 
         $updateData = [];
-        if ($request->has('projectId')) $updateData['project_id'] = $request->projectId;
-        if ($request->has('bloggerName')) $updateData['blogger_name'] = $request->bloggerName;
+        if ($request->has('projectId'))
+            $updateData['project_id'] = $request->projectId;
+        if ($request->has('bloggerName'))
+            $updateData['blogger_name'] = $request->bloggerName;
         if ($request->has('bloggerPageLink')) {
             $updateData['blogger_page_link'] = $request->bloggerPageLink;
             $detectedPlat = InstagramApiService::detectPlatform($request->bloggerPageLink);
@@ -235,7 +281,8 @@ class IntegrationController extends Controller
             $cleanedParts = [];
             foreach ($parts as $part) {
                 $part = trim($part);
-                if ($part === '') continue;
+                if ($part === '')
+                    continue;
                 if (preg_match('#(?:t\.me|telegram\.me)/(?:s/)?([a-zA-Z0-9_]+)#i', $part, $m)) {
                     $part = $m[1];
                 }
@@ -262,22 +309,48 @@ class IntegrationController extends Controller
                 Cache::forget('tg_history_sync_' . $integration->id);
             }
         }
-        if ($request->has('telegramChatId')) $updateData['telegram_chat_id'] = $request->input('telegramChatId') ?: null;
-        if ($request->has('telegram_chat_id')) $updateData['telegram_chat_id'] = $request->input('telegram_chat_id') ?: null;
-        if ($request->filled('startDate')) $updateData['start_date'] = $request->startDate;
-        if ($request->has('platform') && !isset($updateData['platform'])) $updateData['platform'] = $request->platform;
-        if ($request->has('referralLink')) $updateData['referral_link'] = $request->referralLink;
-        if ($request->has('pricePerSlot')) $updateData['price_per_slot'] = $request->pricePerSlot;
-        if ($request->has('slotsCount')) $updateData['slots_count'] = $request->slotsCount;
-        if ($request->has('paidSlotsCount')) $updateData['paid_slots_count'] = $request->paidSlotsCount;
-        if ($request->has('paidAmount')) $updateData['paid_amount'] = $request->paidAmount;
-        if ($request->has('currency')) $updateData['currency'] = $request->input('currency') ?: 'UZS';
-        if ($request->filled('endDate')) $updateData['end_date'] = $request->endDate;
-        if ($request->has('status')) $updateData['status'] = $request->status;
-        if ($request->has('kanbanStage')) $updateData['kanban_stage'] = $request->kanbanStage;
-        if ($request->has('createdBy')) $updateData['created_by'] = $request->createdBy;
-        if ($request->has('slotsConfig')) $updateData['slots_config'] = $request->slotsConfig;
-        if ($request->has('comments')) $updateData['comments'] = $request->comments;
+        if ($request->has('telegramChatId'))
+            $updateData['telegram_chat_id'] = $request->input('telegramChatId') ?: null;
+        if ($request->has('telegram_chat_id'))
+            $updateData['telegram_chat_id'] = $request->input('telegram_chat_id') ?: null;
+        if ($request->filled('startDate'))
+            $updateData['start_date'] = $request->startDate;
+        if ($request->has('platform') && !isset($updateData['platform']))
+            $updateData['platform'] = $request->platform;
+        if ($request->has('referralLink'))
+            $updateData['referral_link'] = $request->referralLink;
+        if ($request->has('pricePerSlot'))
+            $updateData['price_per_slot'] = $request->pricePerSlot;
+        if ($request->has('slotsCount'))
+            $updateData['slots_count'] = $request->slotsCount;
+        if ($request->has('paidSlotsCount'))
+            $updateData['paid_slots_count'] = $request->paidSlotsCount;
+        if ($request->has('paidAmount'))
+            $updateData['paid_amount'] = $request->paidAmount;
+        if ($request->has('currency'))
+            $updateData['currency'] = $request->input('currency') ?: 'UZS';
+        if ($request->filled('endDate'))
+            $updateData['end_date'] = $request->endDate;
+        if ($request->has('status'))
+            $updateData['status'] = $request->status;
+        if ($request->has('kanbanStage'))
+            $updateData['kanban_stage'] = $request->kanbanStage;
+        if ($request->has('createdBy'))
+            $updateData['created_by'] = $request->createdBy;
+        if ($request->has('slotsConfig'))
+            $updateData['slots_config'] = $request->slotsConfig;
+
+        $targetKanbanStage = $updateData['kanban_stage'] ?? $integration->kanban_stage;
+        if ($targetKanbanStage === 'paid_in_progress') {
+            $effectiveSlotsCount = (int) ($updateData['slots_count'] ?? $integration->slots_count ?? 1);
+            $rawConfigForSync = $updateData['slots_config'] ?? (is_array($integration->slots_config) ? $integration->slots_config : []);
+            $updateData['slots_config'] = $this->ensureSlotsConfigPopulated($integration, $rawConfigForSync, $effectiveSlotsCount);
+            if (!isset($updateData['paid_slots_count']) && (int) $integration->paid_slots_count === 0) {
+                $updateData['paid_slots_count'] = $effectiveSlotsCount;
+            }
+        }
+        if ($request->has('comments'))
+            $updateData['comments'] = $request->comments;
         if ($request->has('requisites')) {
             $updateData['requisites'] = $request->requisites;
             if (is_array($request->requisites) && !empty($request->requisites['cardNumberOrIban'])) {
@@ -342,17 +415,23 @@ class IntegrationController extends Controller
                 ->where('platform', $oldPlatform)
                 ->get()
                 ->filter(function ($r) use ($cleanOld) {
-                    if (!$r->channel_blogger) return false;
+                    if (!$r->channel_blogger)
+                        return false;
                     return strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger))) === $cleanOld;
                 });
 
             foreach ($reportsToUpdate as $rep) {
                 $repUpdate = [];
-                if (isset($updateData['blogger_name'])) $repUpdate['channel_blogger'] = $updateData['blogger_name'];
-                if (isset($updateData['platform'])) $repUpdate['platform'] = $updateData['platform'];
-                if (isset($updateData['project_id'])) $repUpdate['project_id'] = $updateData['project_id'];
-                if (isset($updateData['blogger_page_link'])) $repUpdate['blogger_page_link'] = $updateData['blogger_page_link'];
-                if (isset($updateData['referral_link'])) $repUpdate['destination'] = $updateData['referral_link'];
+                if (isset($updateData['blogger_name']))
+                    $repUpdate['channel_blogger'] = $updateData['blogger_name'];
+                if (isset($updateData['platform']))
+                    $repUpdate['platform'] = $updateData['platform'];
+                if (isset($updateData['project_id']))
+                    $repUpdate['project_id'] = $updateData['project_id'];
+                if (isset($updateData['blogger_page_link']))
+                    $repUpdate['blogger_page_link'] = $updateData['blogger_page_link'];
+                if (isset($updateData['referral_link']))
+                    $repUpdate['destination'] = $updateData['referral_link'];
                 if (isset($updateData['price_per_slot'])) {
                     $rawTot = ($rep->slots_count ?: 1) * $updateData['price_per_slot'];
                     $rawPaid = ($rep->paid_slots_count ?: $rep->slots_count ?: 1) * $updateData['price_per_slot'];
@@ -412,7 +491,8 @@ class IntegrationController extends Controller
                 ->where('platform', $platform)
                 ->get()
                 ->filter(function ($r) use ($cleanBloggerName) {
-                    if (!$r->channel_blogger) return false;
+                    if (!$r->channel_blogger)
+                        return false;
                     return strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger))) === $cleanBloggerName;
                 });
 
@@ -624,7 +704,8 @@ class IntegrationController extends Controller
             if (isset($item['date']) && $item['date'] === $date) {
                 $item['count'] = $count;
                 $item['source'] = 'manual';
-                if ($note) $item['note'] = $note;
+                if ($note)
+                    $item['note'] = $note;
                 $replaced = true;
                 break;
             }
@@ -868,5 +949,214 @@ class IntegrationController extends Controller
         }
 
         return response()->json($records);
+    }
+
+    /**
+     * Update schedule, time, responsible PR manager, and publication status for a specific slot.
+     */
+    public function updateSlotSchedule(Request $request, Integration $integration, int $slotNumber)
+    {
+        $request->validate([
+            'scheduledDate' => 'nullable|string|max:30',
+            'scheduledTime' => 'nullable|string|max:20',
+            'prManager' => 'nullable|string|max:255',
+            'topic' => 'nullable|string|max:1000',
+            'platform' => 'nullable|string|in:Telegram,Instagram,YouTube,MAX,TikTok',
+            'format' => 'nullable|string|max:100',
+            'stage' => 'nullable|string|in:planned,review,published',
+            'isPublished' => 'nullable|boolean',
+            'publishedUrl' => 'nullable|string|max:2000',
+            'publishedAt' => 'nullable|string|max:50',
+        ]);
+
+        $slotNum = max(1, $slotNumber);
+        $slotsCount = max((int) ($integration->slots_count ?: 1), $slotNum);
+        $rawConfig = is_array($integration->slots_config) ? $integration->slots_config : [];
+
+        $normalizedSlots = [];
+        for ($i = 1; $i <= $slotsCount; $i++) {
+            $found = null;
+            foreach ($rawConfig as $item) {
+                if (is_array($item) && isset($item['slot']) && (int) $item['slot'] === $i) {
+                    $found = $item;
+                    break;
+                }
+            }
+            if (!$found && isset($rawConfig[$i - 1]) && is_array($rawConfig[$i - 1])) {
+                $found = $rawConfig[$i - 1];
+            }
+
+            $defaultPlatform = $found['platform'] ?? $integration->platform ?? 'Instagram';
+            $defaultFormat = $found['format'] ?? match ($defaultPlatform) {
+                'Instagram' => 'Stories',
+                'Telegram' => 'Post',
+                'YouTube' => 'Shorts',
+                'TikTok' => 'VideoPost',
+                default => 'Post',
+            };
+
+            $existingIsPub = !empty($found['isPublished']) || !empty($found['publishedUrl']);
+            $existingStage = $found['stage'] ?? ($existingIsPub ? 'published' : 'planned');
+
+            $slotObj = array_merge($found ?? [], [
+                'slot' => $i,
+                'platform' => $defaultPlatform,
+                'format' => $defaultFormat,
+                'projectId' => $found['projectId'] ?? (string) $integration->project_id,
+                'stage' => in_array($existingStage, ['planned', 'review', 'published'], true) ? $existingStage : 'planned',
+            ]);
+
+            if ($i === $slotNum) {
+                if ($request->has('scheduledDate')) {
+                    $val = trim((string) $request->input('scheduledDate', ''));
+                    $slotObj['scheduledDate'] = $val !== '' ? substr($val, 0, 10) : null;
+                }
+                if ($request->has('scheduledTime')) {
+                    $val = trim((string) $request->input('scheduledTime', ''));
+                    $slotObj['scheduledTime'] = $val !== '' ? substr($val, 0, 5) : null;
+                }
+                if ($request->has('prManager')) {
+                    $val = trim((string) $request->input('prManager', ''));
+                    $slotObj['prManager'] = $val !== '' ? $val : null;
+                }
+                if ($request->has('topic')) {
+                    $val = trim((string) $request->input('topic', ''));
+                    $slotObj['topic'] = $val !== '' ? $val : null;
+                }
+                if ($request->filled('platform')) {
+                    $slotObj['platform'] = $request->input('platform');
+                }
+                if ($request->filled('format')) {
+                    $slotObj['format'] = $request->input('format');
+                }
+                if ($request->has('publishedUrl')) {
+                    $val = trim((string) $request->input('publishedUrl', ''));
+                    if ($val !== '' && !preg_match('~^https?://~i', $val) && !str_starts_with($val, 'data:image/')) {
+                        $val = 'https://' . ltrim($val, '/');
+                    }
+                    $slotObj['publishedUrl'] = $val !== '' ? $val : null;
+                }
+
+                if ($request->filled('stage')) {
+                    $newStage = $request->input('stage');
+                    $slotObj['stage'] = $newStage;
+                    if ($newStage === 'published') {
+                        $slotObj['isPublished'] = true;
+                    } else {
+                        $slotObj['isPublished'] = $request->has('isPublished') ? (bool) $request->boolean('isPublished') : false;
+                    }
+                } elseif ($request->has('isPublished')) {
+                    $slotObj['isPublished'] = (bool) $request->boolean('isPublished');
+                    if ($slotObj['isPublished']) {
+                        $slotObj['stage'] = 'published';
+                    } elseif (($slotObj['stage'] ?? '') === 'published') {
+                        $slotObj['stage'] = 'planned';
+                    }
+                } elseif (!empty($slotObj['publishedUrl'])) {
+                    $slotObj['isPublished'] = true;
+                    $slotObj['stage'] = 'published';
+                }
+
+                if ($request->has('publishedAt')) {
+                    $val = trim((string) $request->input('publishedAt', ''));
+                    $slotObj['publishedAt'] = $val !== '' ? $val : null;
+                }
+
+                if (!empty($slotObj['isPublished']) && empty($slotObj['publishedAt'])) {
+                    $schedDate = $slotObj['scheduledDate'] ?? null;
+                    $schedTime = $slotObj['scheduledTime'] ?? '12:00';
+                    if ($schedDate && $schedDate <= now()->format('Y-m-d')) {
+                        $slotObj['publishedAt'] = "{$schedDate}T{$schedTime}:00";
+                    } else {
+                        $slotObj['publishedAt'] = now()->toISOString();
+                    }
+                } elseif (array_key_exists('isPublished', $slotObj) && $slotObj['isPublished'] === false) {
+                    $slotObj['publishedUrl'] = null;
+                    $slotObj['publishedAt'] = null;
+                }
+            }
+
+            $normalizedSlots[] = $slotObj;
+        }
+
+        $integration->slots_config = $normalizedSlots;
+        if ($slotsCount > (int) $integration->slots_count) {
+            $integration->slots_count = $slotsCount;
+        }
+        $integration->save();
+
+        // Sync with BloggerSubmission so Dashboard "По выходу" & Blogger Cabinet stay 100% unified
+        $targetSlot = $normalizedSlots[$slotNum - 1];
+        $sub = \App\Models\BloggerSubmission::where('integration_id', $integration->id)->first();
+        $slotKey = "slot_{$slotNum}";
+
+        if (!empty($targetSlot['isPublished']) || !empty($targetSlot['publishedUrl'])) {
+            $subData = $sub ? ($sub->data ?? []) : [];
+            $effectiveUrl = !empty($targetSlot['publishedUrl'])
+                ? $targetSlot['publishedUrl']
+                : ($subData[$slotKey] ?? ($integration->blogger_page_link ?: 'https://t.me/tezi_uz'));
+            $subData[$slotKey] = $effectiveUrl;
+            $subData["{$slotKey}_submitted_at"] = $targetSlot['publishedAt'] ?? ($subData["{$slotKey}_submitted_at"] ?? now()->toISOString());
+            if (!empty($targetSlot['scheduledDate'])) {
+                $subData["{$slotKey}_scheduled_date"] = $targetSlot['scheduledDate'];
+            }
+            if (!empty($targetSlot['scheduledTime'])) {
+                $subData["{$slotKey}_scheduled_time"] = $targetSlot['scheduledTime'];
+            }
+
+            $sub = \App\Models\BloggerSubmission::updateOrCreate(
+                ['integration_id' => $integration->id],
+                [
+                    'status' => 'approved',
+                    'submitted_at' => $sub?->submitted_at ?? now(),
+                    'data' => $subData,
+                ]
+            );
+        } elseif (array_key_exists('isPublished', $targetSlot) && $targetSlot['isPublished'] === false && $sub) {
+            $subData = $sub->data ?? [];
+            unset($subData[$slotKey], $subData["{$slotKey}_submitted_at"]);
+            if (!empty($targetSlot['scheduledDate'])) {
+                $subData["{$slotKey}_scheduled_date"] = $targetSlot['scheduledDate'];
+            }
+            if (!empty($targetSlot['scheduledTime'])) {
+                $subData["{$slotKey}_scheduled_time"] = $targetSlot['scheduledTime'];
+            }
+            $sub->update(['data' => $subData]);
+        } elseif ($sub) {
+            $subData = $sub->data ?? [];
+            if (array_key_exists('scheduledDate', $targetSlot)) {
+                $subData["{$slotKey}_scheduled_date"] = $targetSlot['scheduledDate'];
+            }
+            if (array_key_exists('scheduledTime', $targetSlot)) {
+                $subData["{$slotKey}_scheduled_time"] = $targetSlot['scheduledTime'];
+            }
+            $sub->update(['data' => $subData]);
+        }
+
+        $schedInfo = ($targetSlot['scheduledDate'] ?? 'не задана') . (!empty($targetSlot['scheduledTime']) ? ' ' . $targetSlot['scheduledTime'] : '');
+        \App\Services\ActivityLogger::integration(
+            'SLOT_SCHEDULED',
+            "Обновлен график слота #{$slotNum} блогера '{$integration->blogger_name}' (дата: {$schedInfo}, ответственный: " . ($targetSlot['prManager'] ?? '—') . ")",
+            [
+                'integration_id' => $integration->id,
+                'slot_number' => $slotNum,
+                'scheduled_date' => $targetSlot['scheduledDate'] ?? null,
+                'scheduled_time' => $targetSlot['scheduledTime'] ?? null,
+                'pr_manager' => $targetSlot['prManager'] ?? null,
+                'is_published' => $targetSlot['isPublished'] ?? false,
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'integration' => $this->formatIntegration($integration->fresh()),
+            'submission' => $sub ? [
+                'id' => (string) $sub->id,
+                'integrationId' => (string) $sub->integration_id,
+                'submittedAt' => $sub->submitted_at ? $sub->submitted_at->toISOString() : now()->toISOString(),
+                'status' => $sub->status,
+                'data' => $sub->data ?? [],
+            ] : null,
+        ]);
     }
 }

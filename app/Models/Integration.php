@@ -126,7 +126,7 @@ class Integration extends Model
             $repPrice = (float) ($rep->price_per_slot ?? 0);
             $repPaidSlots = (int) ($rep->paid_slots_count ?? 0);
 
-            if ($repPaid <= 0 && $repTotal > 0 && ($rep->payment_type === 'full' || $repPaidSlots >= (int)$rep->slots_count)) {
+            if ($rep->payment_type === 'full' || ($repPaidSlots > 0 && $repPaidSlots >= (int)$rep->slots_count)) {
                 $repPaid = $repTotal;
             } elseif ($repPaid <= 0 && $repPrice > 0 && $repPaidSlots > 0) {
                 $repPaid = $repPrice * $repPaidSlots;
@@ -147,32 +147,58 @@ class Integration extends Model
             }
         }
 
-        $slotsCount = max(
-            $totalReportSlots,
-            $totalPaidSlots,
-            count($mergedSlotsConfig)
-        );
-        if ($slotsCount <= 0) {
-            $slotsCount = max(1, (int) ($this->slots_count ?? 1), $totalPaidSlots);
+        if ($totalReportSlots > 0) {
+            $slotsCount = max($totalReportSlots, $totalPaidSlots);
+        } else {
+            $slotsCount = max(
+                $totalPaidSlots,
+                count($mergedSlotsConfig),
+                (int) ($this->slots_count ?? 1),
+                1
+            );
         }
 
-        // Re-index slotsConfig to ensure consistent 1..N indices
+        // Re-index slotsConfig to ensure consistent 1..N indices while preserving timeline schedule metadata
         $finalSlotsConfig = [];
         for ($i = 1; $i <= $slotsCount; $i++) {
-            $existingConfig = $mergedSlotsConfig[$i - 1] ?? ($this->slots_config[$i - 1] ?? null);
+            $ownSlot = null;
+            if (is_array($this->slots_config)) {
+                foreach ($this->slots_config as $s) {
+                    if (is_array($s) && isset($s['slot']) && (int) $s['slot'] === $i) {
+                        $ownSlot = $s;
+                        break;
+                    }
+                }
+                if (!$ownSlot && isset($this->slots_config[$i - 1]) && is_array($this->slots_config[$i - 1])) {
+                    $ownSlot = $this->slots_config[$i - 1];
+                }
+            }
+
+            $repSlot = isset($mergedSlotsConfig[$i - 1]) && is_array($mergedSlotsConfig[$i - 1])
+                ? $mergedSlotsConfig[$i - 1]
+                : [];
+
+            $existingConfig = array_merge($repSlot, $ownSlot ?? []);
+
             $allocatedAt = (!empty($existingConfig['allocatedAt']))
                 ? $existingConfig['allocatedAt']
-                : ((!empty($this->slots_config[$i - 1]['allocatedAt']))
-                    ? $this->slots_config[$i - 1]['allocatedAt']
-                    : ($minDate ? $minDate->format('Y-m-d') : now()->format('Y-m-d')));
+                : ($minDate ? $minDate->format('Y-m-d') : now()->format('Y-m-d'));
 
-            $finalSlotsConfig[] = [
+            $slotItem = [
                 'slot' => $i,
                 'platform' => $existingConfig['platform'] ?? $this->platform ?? 'Instagram',
                 'format' => $existingConfig['format'] ?? 'Post',
-                'projectId' => $existingConfig['projectId'] ?? (string)$this->project_id,
+                'projectId' => $existingConfig['projectId'] ?? (string) $this->project_id,
                 'allocatedAt' => $allocatedAt,
             ];
+
+            foreach (['scheduledDate', 'scheduledTime', 'prManager', 'topic', 'publishedAt', 'publishedUrl', 'isPublished', 'notes'] as $metaKey) {
+                if (array_key_exists($metaKey, $existingConfig) && $existingConfig[$metaKey] !== null && $existingConfig[$metaKey] !== '') {
+                    $slotItem[$metaKey] = $existingConfig[$metaKey];
+                }
+            }
+
+            $finalSlotsConfig[] = $slotItem;
         }
 
         $unpaidSlots = max(0, $slotsCount - $totalPaidSlots);
@@ -196,6 +222,9 @@ class Integration extends Model
         }
         if ($maxDate) {
             $this->end_date = $maxDate->copy()->addDays(14);
+        }
+        if (empty($this->kanban_stage) || in_array($this->kanban_stage, ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'], true)) {
+            $this->kanban_stage = 'paid_in_progress';
         }
 
         return $this->saveQuietly();

@@ -280,6 +280,20 @@ Artisan::command('bloggers:sync-subscribers {--dry-run : Only preview updates wi
   ->twiceMonthly(1, 15, '03:00');
 
 Artisan::command('integrations:sync-reports {--id= : Specific integration ID to sync}', function () {
+    // 1. Fix any 100% paid reports where paid_amount was recorded as less than total_amount
+    $reportsToFix = \App\Models\Report::where('slots_count', '>', 0)
+        ->whereColumn('paid_slots_count', '>=', 'slots_count')
+        ->where(function ($q) {
+            $q->whereColumn('paid_amount', '<', 'total_amount')
+              ->orWhere('paid_amount', '<=', 0);
+        })
+        ->get();
+
+    foreach ($reportsToFix as $rep) {
+        $rep->update(['paid_amount' => $rep->total_amount]);
+        $this->info("Updated Report #{$rep->id} ({$rep->channel_blogger}): paid_amount fixed to {$rep->total_amount}");
+    }
+
     $id = $this->option('id');
     $query = \App\Models\Integration::query();
     if ($id) {

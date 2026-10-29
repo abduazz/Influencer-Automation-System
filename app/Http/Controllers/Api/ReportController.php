@@ -264,6 +264,20 @@ class ReportController extends Controller
                 }
 
                 if ($existingIntegration) {
+                    $normBlogger = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanBloggerName));
+                    $hasPriorReports = Report::where('project_id', $targetProjectId)
+                        ->where('platform', $report->platform)
+                        ->where('id', '!=', $report->id)
+                        ->get()
+                        ->contains(function ($r) use ($cleanBloggerName, $normBlogger) {
+                            if (!$r->channel_blogger) return false;
+                            $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
+                            $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
+                            return $rClean === strtolower($cleanBloggerName) || $rNorm === $normBlogger;
+                        });
+                    $isPrePaymentStage = empty($existingIntegration->kanban_stage)
+                        || in_array($existingIntegration->kanban_stage, ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'], true);
+
                     if ($paymentType === 'remaining') {
                         $newPaidSlotsCount = min($existingIntegration->slots_count, $existingIntegration->paid_slots_count + $groupPaidSlotsCount);
                         $existingIntegrationUpdate = [
@@ -272,8 +286,8 @@ class ReportController extends Controller
                         if (!empty($report->blogger_page_link)) {
                             $existingIntegrationUpdate['blogger_page_link'] = $report->blogger_page_link;
                         }
-                    } else if ($existingIntegration->kanban_stage === 'ready_for_payment') {
-                        // The deal was at "ready_for_payment" stage in Kanban; this report fulfills it.
+                    } else if ($isPrePaymentStage || !$hasPriorReports) {
+                        // The deal was in a pre-payment stage or had no prior reports yet; this report fulfills it rather than doubling slots.
                         $existingIntegrationUpdate = [
                             'price_per_slot' => $report->price_per_slot,
                             'slots_count' => max($existingIntegration->slots_count, $groupSlotsCount),
@@ -687,21 +701,38 @@ class ReportController extends Controller
         ]);
 
         if ($paymentType !== 'other' && $projectId !== null && $channelBlogger !== null && $platform !== null) {
-            $cleanBloggerName = trim(str_replace(['@', '#'], '', $channelBlogger));
+            $cleanBloggerName = strtolower(trim(str_replace(['@', '#'], '', $channelBlogger)));
+            $normTarget = preg_replace('/[@#\s_\-\.]+/', '', $cleanBloggerName);
 
             $integration = Integration::where('project_id', $projectId)
                 ->where('platform', $platform)
-                ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                ->where(function ($q) use ($cleanBloggerName) {
+                    $q->whereRaw('LOWER(blogger_name) = ?', [$cleanBloggerName])
+                      ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . $cleanBloggerName])
+                      ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [$cleanBloggerName]);
+                })
                 ->first();
+
+            if (!$integration) {
+                $integration = Integration::where('project_id', $projectId)
+                    ->where('platform', $platform)
+                    ->get()
+                    ->first(function ($int) use ($normTarget) {
+                        $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
+                        return $iNorm === $normTarget;
+                    });
+            }
 
             if ($integration) {
                 // Find remaining reports for this integration
                 $remainingReports = Report::where('project_id', $projectId)
                     ->where('platform', $platform)
                     ->get()
-                    ->filter(function ($r) use ($cleanBloggerName) {
-                        $rClean = trim(str_replace(['@', '#'], '', $r->channel_blogger));
-                        return strtolower($rClean) === strtolower($cleanBloggerName);
+                    ->filter(function ($r) use ($cleanBloggerName, $normTarget) {
+                        if (!$r->channel_blogger) return false;
+                        $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
+                        $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
+                        return $rClean === $cleanBloggerName || $rNorm === $normTarget;
                     });
 
                 if ($remainingReports->isEmpty()) {

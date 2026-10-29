@@ -555,6 +555,22 @@ export default function ReportsView({
       i.status !== 'completed'
   );
 
+  const existingBloggerReports = useMemo(() => {
+    if (!channelBlogger.trim() || paymentType === 'other') return [];
+    const clean = channelBlogger.toLowerCase().replace(/^[@#]/, '').trim();
+    const norm = clean.replace(/[@#\s_\-\.]+/g, '');
+    return (reports || []).filter((r) => {
+      if (!r.channelBlogger || r.paymentType === 'other') return false;
+      const rClean = r.channelBlogger.toLowerCase().replace(/^[@#]/, '').trim();
+      const rNorm = rClean.replace(/[@#\s_\-\.]+/g, '');
+      const matchName = rClean === clean || rNorm === norm;
+      if (!matchName) return false;
+      if (projectId && r.projectId && String(r.projectId) !== String(projectId)) return false;
+      if (platform && r.platform && r.platform !== platform) return false;
+      return true;
+    });
+  }, [reports, channelBlogger, projectId, platform, paymentType]);
+
   useEffect(() => {
     if (activeIntegration?.bloggerPageLink && !bloggerPageLink) {
       setBloggerPageLink(activeIntegration.bloggerPageLink);
@@ -792,6 +808,19 @@ export default function ReportsView({
             ? `Iltimos, barcha slotlarni sozlang. Sozlangan: ${currentSum} ta (${slotsCount} tadan).`
             : `Please configure all slots. Configured ${currentSum} out of ${slotsCount}.`
         );
+        return;
+      }
+    }
+
+    if (paymentType !== 'other' && paymentType !== 'remaining' && existingBloggerReports.length > 0) {
+      const lastRep = existingBloggerReports[0];
+      const creatorInfo = lastRep.createdBy ? ` (${lang === 'uz' ? 'yaratdi' : lang === 'en' ? 'by' : 'создал'}: ${lastRep.createdBy})` : '';
+      const confirmDuplicateMsg = lang === 'ru'
+        ? `Внимание! Для блогера "${channelBlogger}" в этом проекте уже есть отчет #${lastRep.id} от ${lastRep.date} на сумму ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}.\n\nСоздание нового отчета прибавит слоты и сумму к существующей интеграции. Вы уверены, что хотите создать еще один отчет?`
+        : lang === 'uz'
+          ? `Diqqat! "${channelBlogger}" blogeri uchun ushbu loyihada #${lastRep.id}-sonli hisobot (${lastRep.date}, ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}) allaqachon mavjud.\n\nYangi hisobot yaratish slotlar va summani mavjud integratsiyaga qo'shadi. Davom etishni xohlaysizmi?`
+          : `Warning! A report #${lastRep.id} (${lastRep.date}, ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}) already exists for "${channelBlogger}" in this project.\n\nCreating a new report will add slots and amount to the existing integration. Are you sure you want to proceed?`;
+      if (!window.confirm(confirmDuplicateMsg)) {
         return;
       }
     }
@@ -1050,7 +1079,7 @@ export default function ReportsView({
                       </div>
                     </div>
 
-                    {currentIntegrationId && (
+                    {currentIntegrationId && existingBloggerReports.length === 0 && (
                       <div className="flex items-center justify-between p-2.5 bg-neutral-900 text-white rounded-xl text-[11px] mb-3">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
@@ -1072,6 +1101,31 @@ export default function ReportsView({
                         </button>
                       </div>
                     )}
+
+                    {paymentType !== 'other' && paymentType !== 'remaining' && existingBloggerReports.length > 0 && (() => {
+                      const lastRep = existingBloggerReports[0];
+                      return (
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-[11px] mb-3 space-y-1">
+                          <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                            <span>⚠️</span>
+                            <span>
+                              {lang === 'ru'
+                                ? `По блогеру ${channelBlogger} уже есть отчет #${lastRep.id} в этом проекте!`
+                                : lang === 'uz'
+                                  ? `${channelBlogger} bo'yicha ushbu loyihada #${lastRep.id} hisobot allaqachon mavjud!`
+                                  : `Report #${lastRep.id} already exists for ${channelBlogger} in this project!`}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-amber-700 leading-relaxed">
+                            {lang === 'ru'
+                              ? `Дата: ${lastRep.date} • Слотов: ${lastRep.slotsCount || 1} • Сумма: ${formatPrice(lastRep.totalAmount)} UZS${lastRep.createdBy ? ` • Создал: ${lastRep.createdBy}` : ''}. Повторное создание отчета удвоит/суммирует слоты и бюджет в карточке интеграции.`
+                              : lang === 'uz'
+                                ? `Sana: ${lastRep.date} • Slotlar: ${lastRep.slotsCount || 1} • Summa: ${formatPrice(lastRep.totalAmount)} UZS${lastRep.createdBy ? ` • Yaratdi: ${lastRep.createdBy}` : ''}. Qayta hisobot yaratish integratsiya kartochkasida slot va summani qo'shib yuboradi.`
+                                : `Date: ${lastRep.date} • Slots: ${lastRep.slotsCount || 1} • Total: ${formatPrice(lastRep.totalAmount)} UZS${lastRep.createdBy ? ` • Created by: ${lastRep.createdBy}` : ''}. Creating another report will sum slots and budget in the integration.`}
+                          </p>
+                        </div>
+                      );
+                    })()}
 
                     <form onSubmit={handleSubmit} className="space-y-3">
                       {/* Payment Type Selection */}

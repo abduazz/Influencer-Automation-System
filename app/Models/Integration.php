@@ -148,13 +148,12 @@ class Integration extends Model
         }
 
         $slotsCount = max(
-            (int) ($this->slots_count ?? 0),
             $totalReportSlots,
             $totalPaidSlots,
             count($mergedSlotsConfig)
         );
         if ($slotsCount <= 0) {
-            $slotsCount = max(1, $totalPaidSlots);
+            $slotsCount = max(1, (int) ($this->slots_count ?? 1), $totalPaidSlots);
         }
 
         // Re-index slotsConfig to ensure consistent 1..N indices
@@ -192,14 +191,11 @@ class Integration extends Model
         if (!empty($latestReferralLink)) {
             $this->referral_link = $latestReferralLink;
         }
-        if ($minDate && (!$this->start_date || $minDate->lt($this->start_date))) {
+        if ($minDate) {
             $this->start_date = $minDate;
         }
         if ($maxDate) {
-            $targetEndDate = $maxDate->copy()->addDays(14);
-            if (!$this->end_date || $targetEndDate->gt($this->end_date)) {
-                $this->end_date = $targetEndDate;
-            }
+            $this->end_date = $maxDate->copy()->addDays(14);
         }
 
         return $this->saveQuietly();

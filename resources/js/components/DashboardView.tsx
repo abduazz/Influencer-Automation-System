@@ -284,7 +284,7 @@ export default function DashboardView({
 
   const handleSubmitIntegration = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!bloggerName.trim() || !bloggerPageLink.trim() || !startDate || !endDate) return;
+    if (!bloggerName.trim() || !bloggerPageLink.trim() || !startDate) return;
 
     let finalSlotsConfig: SlotConfig[] = [];
     if (customizeSlots) {
@@ -397,11 +397,10 @@ export default function DashboardView({
     return true;
   });
 
-  // Filter integrations by Date range (interval overlap) & sort by date descending (newest first)
+  // Filter integrations by Date range & sort by date descending (newest first)
   const filteredIntegrations = displayProjectIntegrations
     .filter((item) => {
-      const itemEnd = item.endDate || item.startDate;
-      if (filterStartDate && itemEnd < filterStartDate) return false;
+      if (filterStartDate && item.startDate < filterStartDate) return false;
       if (filterEndDate && item.startDate > filterEndDate) return false;
       return true;
     })
@@ -1473,32 +1472,17 @@ export default function DashboardView({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {t.startDateColumn} *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {t.endDateColumn} *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                  />
-                </div>
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {t.dateColumn || t.startDateColumn} *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1784,11 +1768,11 @@ export default function DashboardView({
                 </div>
                 <div className="border-t border-neutral-200/60 pt-2.5">
                   <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                    {(t.startDateColumn || 'Start Date') + ' / ' + (t.endDateColumn || 'End Date')}
+                    {t.dateColumn || t.startDateColumn || 'Date'}
                   </p>
                   <p className="font-bold text-neutral-800 mt-0.5 flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-neutral-400" />
-                    {(selectedIntegrationForDetails.startDate || '') + ' — ' + (selectedIntegrationForDetails.endDate || '')}
+                    {selectedIntegrationForDetails.startDate || '—'}
                   </p>
                 </div>
               </div>

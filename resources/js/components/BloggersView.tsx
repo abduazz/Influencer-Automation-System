@@ -672,7 +672,7 @@ export default function BloggersView({
                                   {Number(item.totalAmount || 0).toLocaleString()}
                                 </td>
                                 <td className="px-3.5 py-3 text-[11px] text-neutral-500 whitespace-nowrap">
-                                  {item.startDate || '-'} {item.endDate ? `→ ${item.endDate}` : ''}
+                                  {item.startDate || '-'}
                                 </td>
                                 <td className="px-3.5 py-3">
                                   <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${

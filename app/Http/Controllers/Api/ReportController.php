@@ -469,28 +469,28 @@ class ReportController extends Controller
                 'total_amount' => $report->total_amount,
             ]);
 
-            return response()->json([
-                'id' => (string) $report->id,
-                'date' => $report->date ? \Carbon\Carbon::parse($report->date)->format('Y-m-d') : '',
-                'projectId' => $report->project_id ? (string) $report->project_id : null,
-                'projectName' => $report->project?->name ?? '',
-                'destination' => $report->destination,
-                'channelBlogger' => $report->channel_blogger,
-                'platform' => $report->platform,
-                'slotsCount' => $report->slots_count,
-                'paidSlotsCount' => $report->paid_slots_count,
-                'pricePerSlot' => (float) $report->price_per_slot,
-                'paidAmount' => (float) $report->paid_amount,
-                'totalAmount' => (float) $report->total_amount,
-                'comments' => $report->comments ?? '',
-                'slotsConfig' => $report->slots_config ?? [],
-                'paymentType' => $report->payment_type,
-                'receipt' => $report->receipt,
-                'receipts' => $report->receipts,
-                'telegramMessageUrl' => $report->telegram_message_url ?? null,
-                'bloggerCabinetToken' => $cabinetToken,
-                'createdBy' => $report->created_by,
-            ], 201);
+        return response()->json([
+            'id' => (string) $report->id,
+            'date' => $report->date ? \Carbon\Carbon::parse($report->date)->format('Y-m-d') : '',
+            'projectId' => $report->project_id ? (string) $report->project_id : null,
+            'projectName' => $report->project?->name ?? '',
+            'destination' => $report->destination,
+            'channelBlogger' => $report->channel_blogger,
+            'platform' => $report->platform,
+            'slotsCount' => $report->slots_count,
+            'paidSlotsCount' => $report->paid_slots_count,
+            'pricePerSlot' => (float) $report->price_per_slot,
+            'paidAmount' => (float) $report->paid_amount,
+            'totalAmount' => (float) $report->total_amount,
+            'comments' => $report->comments ?? '',
+            'slotsConfig' => $report->slots_config ?? [],
+            'paymentType' => $report->payment_type,
+            'receipt' => $report->receipt,
+            'receipts' => $report->receipts,
+            'telegramMessageUrl' => $report->telegram_message_url ?? null,
+            'bloggerCabinetToken' => $cabinetToken,
+            'createdBy' => $report->created_by,
+        ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([

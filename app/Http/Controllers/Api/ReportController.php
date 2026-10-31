@@ -182,6 +182,8 @@ class ReportController extends Controller
 
         $report = Report::create($reportData);
 
+        $cabinetToken = null;
+
         // Auto-create or merge Integration records for each allocated project
         if ($paymentType !== 'other') {
             $cleanBloggerName = trim(str_replace(['@', '#'], '', $report->channel_blogger));
@@ -203,8 +205,6 @@ class ReportController extends Controller
                     }
                 }
             }
-
-            $cabinetToken = null;
 
             // Fallback to single project_id if no per-slot project was specified
             if (empty($projectGroups)) {

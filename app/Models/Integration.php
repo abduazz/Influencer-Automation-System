@@ -6,8 +6,42 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
+/**
+ * App\Models\Integration
+ *
+ * @property int $id
+ * @property int|null $project_id
+ * @property string $blogger_name
+ * @property string|null $blogger_page_link
+ * @property string|null $telegram_username
+ * @property string|null $telegram_chat_id
+ * @property Carbon|null $start_date
+ * @property Carbon|null $end_date
+ * @property string|null $platform
+ * @property string|null $referral_link
+ * @property float|null $price_per_slot
+ * @property int $slots_count
+ * @property int $paid_slots_count
+ * @property float|null $paid_amount
+ * @property float|null $total_amount
+ * @property string $currency
+ * @property string $status
+ * @property string|null $blogger_cabinet_token
+ * @property array|null $slots_config
+ * @property string|null $comments
+ * @property string|null $kanban_stage
+ * @property string|null $created_by
+ * @property int|null $subscribers_count
+ * @property Carbon|null $subscribers_updated_at
+ * @property array|null $subscribers_history
+ * @property string|null $requisites
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Project|null $project
+ */
 class Integration extends Model
 {
     use HasFactory;

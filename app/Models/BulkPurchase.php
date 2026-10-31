@@ -4,7 +4,27 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
+/**
+ * App\Models\BulkPurchase
+ *
+ * @property int $id
+ * @property string $blogger_name
+ * @property string|null $platform
+ * @property int $total_slots
+ * @property float|null $price_per_slot
+ * @property float|null $paid_amount
+ * @property float|null $total_amount
+ * @property Carbon|null $purchase_date
+ * @property string|null $referral_link
+ * @property string|null $receipt
+ * @property string|null $comments
+ * @property array|null $slots_config
+ * @property string|null $created_by
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ */
 class BulkPurchase extends Model
 {
     use HasFactory;

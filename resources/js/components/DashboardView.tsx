@@ -492,44 +492,28 @@ export default function DashboardView({
   }, [filteredIntegrations, submissions, filterStartDate, filterEndDate]);
 
   const hasDateFilter = Boolean(filterStartDate || filterEndDate);
+  const totalSpend = cashTotalSpend;
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
 
-  // 1. All-time total spend of the selected project (never zeroed out by date filters)
-  const selectedProjectCashTotalSpend = displayProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
-  const selectedProjectPublishedTotalSpend = useMemo(() => {
-    let sum = 0;
-    displayProjectIntegrations.forEach(item => {
-      const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-      const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
-      const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
-      if (!sub || !sub.data) return;
+  // Selected Project total spend and current month spend
+  const selectedProjectTotalSpend = displayProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
 
-      for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
-        const slotKey = `slot_${sIdx}`;
-        const url = sub.data[slotKey];
-        if (typeof url === 'string' && url.trim() !== '') {
-          sum += pricePerSlot;
-        }
-      }
-    });
-    return Math.round(sum * 100) / 100;
-  }, [displayProjectIntegrations, submissions]);
-
-  const allTimeSpend = accountingMode === 'cash' ? selectedProjectCashTotalSpend : selectedProjectPublishedTotalSpend;
-  const totalSpend = allTimeSpend;
-
-  // 2. Current calendar month spend (used for monthlyLimit calculation and when no date filter is active)
   const now = new Date();
   const currentYearStr = String(now.getFullYear());
   const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
   const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
 
-  const currentMonthCashSpend = displayProjectIntegrations.filter(i => {
-    if (!i.startDate) return false;
-    return i.startDate.substring(0, 7) === currentYMPrefix;
-  }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  const cashMonthlySpend = hasDateFilter
+    ? cashTotalSpend
+    : displayProjectIntegrations.filter(i => {
+      if (!i.startDate) return false;
+      return i.startDate.substring(0, 7) === currentYMPrefix;
+    }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
 
-  const currentMonthPublishedSpend = useMemo(() => {
+  const publishedSlotsMonthlySpend = useMemo(() => {
+    if (hasDateFilter) {
+      return publishedSlotsFilteredSpend;
+    }
     let sum = 0;
     displayProjectIntegrations.forEach(item => {
       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
@@ -549,13 +533,7 @@ export default function DashboardView({
       }
     });
     return Math.round(sum * 100) / 100;
-  }, [displayProjectIntegrations, submissions, currentYMPrefix]);
-
-  const currentMonthSpend = accountingMode === 'cash' ? currentMonthCashSpend : currentMonthPublishedSpend;
-
-  // 3. Filtered period spend vs current month spend
-  const filteredPeriodSpend = accountingMode === 'cash' ? cashTotalSpend : publishedSlotsFilteredSpend;
-  const periodOrMonthlySpend = hasDateFilter ? filteredPeriodSpend : currentMonthSpend;
+  }, [hasDateFilter, publishedSlotsFilteredSpend, displayProjectIntegrations, submissions, currentYMPrefix]);
 
   const projectPendingSpend = useMemo(() => {
     let pending = 0;
@@ -579,10 +557,10 @@ export default function DashboardView({
     return Math.round(pending * 100) / 100;
   }, [displayProjectIntegrations, submissions]);
 
-  const selectedProjectMonthlySpend = currentMonthSpend;
+  const selectedProjectMonthlySpend = accountingMode === 'cash' ? cashMonthlySpend : publishedSlotsMonthlySpend;
 
   const remainingLimit = selectedProject && (selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null)
-    ? selectedProject.monthlyLimit - currentMonthSpend
+    ? selectedProject.monthlyLimit - selectedProjectMonthlySpend
     : null;
   const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
   const totalPublishedSlots = filteredIntegrations.reduce((sum, item) => {
@@ -973,17 +951,17 @@ export default function DashboardView({
         )}
         {allowedMetrics.includes('spend') && (
           <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={`${t.allocatedSpend} (${lang === 'ru' ? 'За всё время' : lang === 'uz' ? 'Barcha vaqt uchun' : 'All time'})`}>
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.allocatedSpend}>
               {t.allocatedSpend}
             </span>
             <span
-              className={`${getMetricValueClasses(formatMetricVal(allTimeSpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(allTimeSpend || 0)).toLocaleString('ru-RU')} UZS (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}
+              className={`${getMetricValueClasses(formatMetricVal(totalSpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
+              title={`${Math.round(Number(totalSpend || 0)).toLocaleString('ru-RU')} UZS`}
             >
-              {loading && displayProjectIntegrations.length === 0 ? (
+              {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
-                formatMetricVal(allTimeSpend)
+                formatMetricVal(totalSpend)
               )}
             </span>
           </div>
@@ -991,30 +969,21 @@ export default function DashboardView({
         {allowedMetrics.includes('spend') && (
           <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
             <div className="flex items-center justify-between gap-1">
-              <span
-                className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate"
-                title={hasDateFilter
-                  ? (lang === 'ru' ? 'Расход за выбранный период' : lang === 'uz' ? 'Tanlangan davr xarajati' : 'Selected Period Spend')
-                  : t.monthlySpend
-                }
-              >
-                {hasDateFilter
-                  ? (lang === 'ru' ? 'Расход за период' : lang === 'uz' ? 'Davr xarajati' : 'Period Spend')
-                  : t.monthlySpend
-                }
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.monthlySpend}>
+                {t.monthlySpend}
               </span>
               <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded ${accountingMode === 'published_slots' ? 'bg-sky-100 text-sky-800' : 'bg-neutral-100 text-neutral-600'}`}>
                 {accountingMode === 'published_slots' ? (t.accountingAccrualShort || 'Факт') : (t.accountingCashShort || 'Касса')}
               </span>
             </div>
             <span
-              className={`${getMetricValueClasses(formatMetricVal(periodOrMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(periodOrMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${hasDateFilter ? (lang === 'ru' ? 'За выбранный период' : lang === 'uz' ? 'Tanlangan davr uchun' : 'Selected period') : (accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc)})${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
+              className={`${getMetricValueClasses(formatMetricVal(selectedProjectMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
+              title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc})${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
             >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
-                formatMetricVal(periodOrMonthlySpend)
+                formatMetricVal(selectedProjectMonthlySpend)
               )}
             </span>
           </div>

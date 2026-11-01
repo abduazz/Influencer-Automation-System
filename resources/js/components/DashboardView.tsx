@@ -110,6 +110,51 @@ export default function DashboardView({
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
 
+  const datePresets = useMemo(() => {
+    const nowDate = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toYmd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    const todayYmd = toYmd(nowDate);
+
+    const d7 = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 6);
+    const sevenDaysYmd = toYmd(d7);
+
+    const d30 = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 29);
+    const thirtyDaysYmd = toYmd(d30);
+
+    const curYear = nowDate.getFullYear();
+    const curMonth = nowDate.getMonth();
+    const curMonthStart = `${curYear}-${pad(curMonth + 1)}-01`;
+    const lastDayCurMonth = new Date(curYear, curMonth + 1, 0).getDate();
+    const curMonthEnd = `${curYear}-${pad(curMonth + 1)}-${pad(lastDayCurMonth)}`;
+
+    const prevMonthDate = new Date(curYear, curMonth - 1, 1);
+    const prevYear = prevMonthDate.getFullYear();
+    const prevMonth = prevMonthDate.getMonth();
+    const prevMonthStart = `${prevYear}-${pad(prevMonth + 1)}-01`;
+    const lastDayPrevMonth = new Date(prevYear, prevMonth + 1, 0).getDate();
+    const prevMonthEnd = `${prevYear}-${pad(prevMonth + 1)}-${pad(lastDayPrevMonth)}`;
+
+    return {
+      today: { start: todayYmd, end: todayYmd },
+      sevenDays: { start: sevenDaysYmd, end: todayYmd },
+      thirtyDays: { start: thirtyDaysYmd, end: todayYmd },
+      thisMonth: { start: curMonthStart, end: curMonthEnd },
+      lastMonth: { start: prevMonthStart, end: prevMonthEnd },
+    };
+  }, []);
+
+  const toggleDatePreset = (start: string, end: string) => {
+    if (filterStartDate === start && filterEndDate === end) {
+      setFilterStartDate('');
+      setFilterEndDate('');
+    } else {
+      setFilterStartDate(start);
+      setFilterEndDate(end);
+    }
+  };
+
   // Accounting mode: 'cash' (by payment date) vs 'published_slots' (by slot delivery date)
   const [accountingMode, setAccountingMode] = useState<'cash' | 'published_slots'>(() => {
     if (typeof window !== 'undefined') {
@@ -670,43 +715,110 @@ export default function DashboardView({
               )}
             </div>
 
-            {/* Right: Inline compact date filter */}
-            <div className="flex flex-wrap items-center gap-2 bg-neutral-50 border border-neutral-200/80 rounded-xl p-1.5 shrink-0 text-xs">
-              <div className="flex items-center gap-1.5 px-2 text-neutral-500">
-                <Calendar className="w-3.5 h-3.5 text-neutral-700" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                  {lang === 'ru' ? 'Период' : lang === 'uz' ? 'Davr' : 'Period'}:
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'С' : lang === 'uz' ? 'Dan' : 'From'}</span>
-                <input
-                  type="date"
-                  value={filterStartDate}
-                  onChange={(e) => setFilterStartDate(e.target.value)}
-                  className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
-                />
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'По' : lang === 'uz' ? 'Gacha' : 'To'}</span>
-                <input
-                  type="date"
-                  value={filterEndDate}
-                  onChange={(e) => setFilterEndDate(e.target.value)}
-                  className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
-                />
-              </div>
-              {(filterStartDate || filterEndDate) && (
+            {/* Right: Inline compact date filter & Quick Presets */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {/* Quick Period Presets */}
+              <div className="flex items-center gap-0.5 bg-neutral-50 border border-neutral-200/80 rounded-xl p-1 shrink-0 text-xs shadow-3xs">
                 <button
-                  onClick={() => {
-                    setFilterStartDate('');
-                    setFilterEndDate('');
-                  }}
-                  className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 font-bold text-[10px] uppercase rounded-lg transition border border-neutral-200 cursor-pointer shadow-2xs"
+                  type="button"
+                  onClick={() => toggleDatePreset(datePresets.today.start, datePresets.today.end)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    filterStartDate === datePresets.today.start && filterEndDate === datePresets.today.end
+                      ? 'bg-black text-white shadow-2xs'
+                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                  title={t.today || (lang === 'ru' ? 'Сегодня' : lang === 'uz' ? 'Bugun' : 'Today')}
                 >
-                  {lang === 'ru' ? 'Сбросить' : lang === 'uz' ? 'Tozalash' : 'Reset'}
+                  {lang === 'ru' ? 'Сегодня' : lang === 'uz' ? 'Bugun' : 'Today'}
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => toggleDatePreset(datePresets.sevenDays.start, datePresets.sevenDays.end)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    filterStartDate === datePresets.sevenDays.start && filterEndDate === datePresets.sevenDays.end
+                      ? 'bg-black text-white shadow-2xs'
+                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                  title={lang === 'ru' ? 'Последние 7 дней' : lang === 'uz' ? 'So‘nggi 7 kun' : 'Last 7 days'}
+                >
+                  {lang === 'ru' ? '7 дней' : lang === 'uz' ? '7 kun' : '7 Days'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDatePreset(datePresets.thirtyDays.start, datePresets.thirtyDays.end)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    filterStartDate === datePresets.thirtyDays.start && filterEndDate === datePresets.thirtyDays.end
+                      ? 'bg-black text-white shadow-2xs'
+                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                  title={lang === 'ru' ? 'Последние 30 дней' : lang === 'uz' ? 'So‘nggi 30 kun' : 'Last 30 days'}
+                >
+                  {lang === 'ru' ? '30 дней' : lang === 'uz' ? '30 kun' : '30 Days'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDatePreset(datePresets.thisMonth.start, datePresets.thisMonth.end)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    filterStartDate === datePresets.thisMonth.start && filterEndDate === datePresets.thisMonth.end
+                      ? 'bg-black text-white shadow-2xs'
+                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                  title={t.currentMonthLabel || (lang === 'ru' ? 'Текущий месяц' : lang === 'uz' ? 'Joriy oy' : 'Current Month')}
+                >
+                  {lang === 'ru' ? 'Этот месяц' : lang === 'uz' ? 'Shu oy' : 'This Month'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDatePreset(datePresets.lastMonth.start, datePresets.lastMonth.end)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    filterStartDate === datePresets.lastMonth.start && filterEndDate === datePresets.lastMonth.end
+                      ? 'bg-black text-white shadow-2xs'
+                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                  title={t.prevMonthLabel || (lang === 'ru' ? 'Прошлый месяц' : lang === 'uz' ? 'O‘tgan oy' : 'Previous Month')}
+                >
+                  {lang === 'ru' ? 'Прошлый' : lang === 'uz' ? 'O‘tgan' : 'Last Month'}
+                </button>
+              </div>
+
+              {/* Date Inputs Selector */}
+              <div className="flex flex-wrap items-center gap-2 bg-neutral-50 border border-neutral-200/80 rounded-xl p-1.5 shrink-0 text-xs shadow-3xs">
+                <div className="flex items-center gap-1.5 px-2 text-neutral-500">
+                  <Calendar className="w-3.5 h-3.5 text-neutral-700" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
+                    {lang === 'ru' ? 'Период' : lang === 'uz' ? 'Davr' : 'Period'}:
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'С' : lang === 'uz' ? 'Dan' : 'From'}</span>
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'По' : lang === 'uz' ? 'Gacha' : 'To'}</span>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
+                  />
+                </div>
+                {(filterStartDate || filterEndDate) && (
+                  <button
+                    onClick={() => {
+                      setFilterStartDate('');
+                      setFilterEndDate('');
+                    }}
+                    className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 font-bold text-[10px] uppercase rounded-lg transition border border-neutral-200 cursor-pointer shadow-2xs"
+                  >
+                    {lang === 'ru' ? 'Сбросить' : lang === 'uz' ? 'Tozalash' : 'Reset'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

@@ -638,8 +638,8 @@ export default function DashboardView({
               onClick={() => handleSelectProject(proj.id)}
               id={`project-btn-${proj.id}`}
               className={`px-4 py-2 text-xs font-extrabold rounded-lg border transition duration-150 text-left flex items-center gap-2 cursor-pointer ${isSelected
-                  ? 'bg-black border-black text-white shadow-sm'
-                  : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-800'
+                ? 'bg-black border-black text-white shadow-sm'
+                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-800'
                 }`}
             >
               <span>{proj.name}</span>
@@ -732,11 +732,10 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={() => toggleDatePreset(datePresets.today.start, datePresets.today.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                    filterStartDate === datePresets.today.start && filterEndDate === datePresets.today.end
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.today.start && filterEndDate === datePresets.today.end
                       ? 'bg-black text-white shadow-2xs'
                       : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                  }`}
+                    }`}
                   title={t.today || (lang === 'ru' ? 'Сегодня' : lang === 'uz' ? 'Bugun' : 'Today')}
                 >
                   {lang === 'ru' ? 'Сегодня' : lang === 'uz' ? 'Bugun' : 'Today'}
@@ -744,11 +743,10 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={() => toggleDatePreset(datePresets.sevenDays.start, datePresets.sevenDays.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                    filterStartDate === datePresets.sevenDays.start && filterEndDate === datePresets.sevenDays.end
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.sevenDays.start && filterEndDate === datePresets.sevenDays.end
                       ? 'bg-black text-white shadow-2xs'
                       : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                  }`}
+                    }`}
                   title={lang === 'ru' ? 'Последние 7 дней' : lang === 'uz' ? 'So‘nggi 7 kun' : 'Last 7 days'}
                 >
                   {lang === 'ru' ? '7 дней' : lang === 'uz' ? '7 kun' : '7 Days'}
@@ -756,11 +754,10 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={() => toggleDatePreset(datePresets.thirtyDays.start, datePresets.thirtyDays.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                    filterStartDate === datePresets.thirtyDays.start && filterEndDate === datePresets.thirtyDays.end
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.thirtyDays.start && filterEndDate === datePresets.thirtyDays.end
                       ? 'bg-black text-white shadow-2xs'
                       : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                  }`}
+                    }`}
                   title={lang === 'ru' ? 'Последние 30 дней' : lang === 'uz' ? 'So‘nggi 30 kun' : 'Last 30 days'}
                 >
                   {lang === 'ru' ? '30 дней' : lang === 'uz' ? '30 kun' : '30 Days'}
@@ -768,11 +765,10 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={() => toggleDatePreset(datePresets.thisMonth.start, datePresets.thisMonth.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                    filterStartDate === datePresets.thisMonth.start && filterEndDate === datePresets.thisMonth.end
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.thisMonth.start && filterEndDate === datePresets.thisMonth.end
                       ? 'bg-black text-white shadow-2xs'
                       : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                  }`}
+                    }`}
                   title={t.currentMonthLabel || (lang === 'ru' ? 'Текущий месяц' : lang === 'uz' ? 'Joriy oy' : 'Current Month')}
                 >
                   {lang === 'ru' ? 'Этот месяц' : lang === 'uz' ? 'Shu oy' : 'This Month'}
@@ -780,11 +776,10 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={() => toggleDatePreset(datePresets.lastMonth.start, datePresets.lastMonth.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                    filterStartDate === datePresets.lastMonth.start && filterEndDate === datePresets.lastMonth.end
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.lastMonth.start && filterEndDate === datePresets.lastMonth.end
                       ? 'bg-black text-white shadow-2xs'
                       : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                  }`}
+                    }`}
                   title={t.prevMonthLabel || (lang === 'ru' ? 'Прошлый месяц' : lang === 'uz' ? 'O‘tgan oy' : 'Previous Month')}
                 >
                   {lang === 'ru' ? 'Прошлый' : lang === 'uz' ? 'O‘tgan' : 'Last Month'}
@@ -900,10 +895,10 @@ export default function DashboardView({
             {allowedMetrics.includes('financial_metrics') && (
               <span
                 className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 font-bold ${remainingLimit !== null && remainingLimit < 0
-                    ? 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse'
-                    : remainingLimit !== null
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                      : 'bg-neutral-100 border-neutral-200 text-neutral-500'
+                  ? 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse'
+                  : remainingLimit !== null
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-neutral-100 border-neutral-200 text-neutral-500'
                   }`}
                 title={t.remainingLimit}
               >
@@ -917,8 +912,8 @@ export default function DashboardView({
                 type="button"
                 onClick={() => handleAccountingModeChange('cash')}
                 className={`px-2.5 py-1 rounded-md transition cursor-pointer ${accountingMode === 'cash'
-                    ? 'bg-white text-black shadow-2xs font-extrabold'
-                    : 'text-neutral-500 hover:text-black'
+                  ? 'bg-white text-black shadow-2xs font-extrabold'
+                  : 'text-neutral-500 hover:text-black'
                   }`}
                 title={t.accountingCashDesc}
               >
@@ -928,8 +923,8 @@ export default function DashboardView({
                 type="button"
                 onClick={() => handleAccountingModeChange('published_slots')}
                 className={`px-2.5 py-1 rounded-md transition cursor-pointer flex items-center gap-1 ${accountingMode === 'published_slots'
-                    ? 'bg-white text-sky-700 shadow-2xs font-extrabold'
-                    : 'text-neutral-500 hover:text-black'
+                  ? 'bg-white text-sky-700 shadow-2xs font-extrabold'
+                  : 'text-neutral-500 hover:text-black'
                   }`}
                 title={t.accountingAccrualDesc}
               >
@@ -942,6 +937,25 @@ export default function DashboardView({
 
       {/* Analytics Metric Cards Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 gap-2">
+        {/* 1. Total Spend (Hero Accent Card) */}
+        {allowedMetrics.includes('spend') && (
+          <div className="bg-indigo-50/70 border border-indigo-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-indigo-300 transition flex flex-col justify-between min-w-0 overflow-hidden ring-1 ring-indigo-500/10">
+            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider truncate" title={`${t.allocatedSpend} (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}>
+              {t.allocatedSpend}
+            </span>
+            <span
+              className={`${getMetricValueClasses(formatMetricVal(totalSpend))} font-black text-indigo-950 mt-1 tracking-tight truncate w-full`}
+              title={`${Math.round(Number(totalSpend || 0)).toLocaleString('ru-RU')} UZS (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}
+            >
+              {loading && displayProjectIntegrations.length === 0 ? (
+                <span className="inline-block w-14 h-5 bg-indigo-200/60 animate-pulse rounded my-0.5" />
+              ) : (
+                formatMetricVal(totalSpend)
+              )}
+            </span>
+          </div>
+        )}
+        {/* 2. Blogger Deals */}
         {allowedMetrics.includes('deals') && (
           <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.bloggerDeals}>
@@ -955,23 +969,6 @@ export default function DashboardView({
                 <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
                 filteredIntegrations.length
-              )}
-            </span>
-          </div>
-        )}
-        {allowedMetrics.includes('spend') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={`${t.allocatedSpend} (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}>
-              {t.allocatedSpend}
-            </span>
-            <span
-              className={`${getMetricValueClasses(formatMetricVal(totalSpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(totalSpend || 0)).toLocaleString('ru-RU')} UZS (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}
-            >
-              {loading && displayProjectIntegrations.length === 0 ? (
-                <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
-              ) : (
-                formatMetricVal(totalSpend)
               )}
             </span>
           </div>
@@ -1098,8 +1095,8 @@ export default function DashboardView({
                         type="button"
                         onClick={() => handleFilterChange('active')}
                         className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer text-xs ${integrationFilter === 'active'
-                            ? 'bg-white text-black shadow-xs'
-                            : 'text-neutral-500 hover:text-black'
+                          ? 'bg-white text-black shadow-xs'
+                          : 'text-neutral-500 hover:text-black'
                           }`}
                       >
                         {t.campaignsFilterActive || 'Активные кампании'}
@@ -1108,8 +1105,8 @@ export default function DashboardView({
                         type="button"
                         onClick={() => handleFilterChange('all')}
                         className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer text-xs flex items-center gap-1.5 ${integrationFilter === 'all'
-                            ? 'bg-white text-black shadow-xs'
-                            : 'text-neutral-500 hover:text-black'
+                          ? 'bg-white text-black shadow-xs'
+                          : 'text-neutral-500 hover:text-black'
                           }`}
                       >
                         <span>{t.campaignsFilterAll || 'Все (включая лиды)'}</span>
@@ -2040,8 +2037,8 @@ export default function DashboardView({
                             setTimeout(() => setCopiedCabinetLink(false), 2000);
                           }}
                           className={`p-1 rounded border transition shrink-0 cursor-pointer ${copiedCabinetLink
-                              ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
-                              : 'bg-white hover:bg-neutral-100 border-neutral-200 text-neutral-600'
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                            : 'bg-white hover:bg-neutral-100 border-neutral-200 text-neutral-600'
                             }`}
                           title={copiedCabinetLink ? (lang === 'ru' ? 'Скопировано!' : 'Copied!') : (lang === 'ru' ? 'Копировать ссылку' : 'Copy link')}
                         >

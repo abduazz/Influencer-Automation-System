@@ -492,28 +492,24 @@ export default function DashboardView({
   }, [filteredIntegrations, submissions, filterStartDate, filterEndDate]);
 
   const hasDateFilter = Boolean(filterStartDate || filterEndDate);
-  const totalSpend = cashTotalSpend;
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
 
-  // Selected Project total spend and current month spend
+  // Selected Project total spend (all-time contractual spend of the project, never reduced by date filters)
   const selectedProjectTotalSpend = displayProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  const totalSpend = selectedProjectTotalSpend;
 
   const now = new Date();
   const currentYearStr = String(now.getFullYear());
   const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
   const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
 
-  const cashMonthlySpend = hasDateFilter
-    ? cashTotalSpend
-    : displayProjectIntegrations.filter(i => {
-      if (!i.startDate) return false;
-      return i.startDate.substring(0, 7) === currentYMPrefix;
-    }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  // Current calendar month spend (for monthly limit calculation)
+  const currentMonthCashSpend = displayProjectIntegrations.filter(i => {
+    if (!i.startDate) return false;
+    return i.startDate.substring(0, 7) === currentYMPrefix;
+  }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
 
-  const publishedSlotsMonthlySpend = useMemo(() => {
-    if (hasDateFilter) {
-      return publishedSlotsFilteredSpend;
-    }
+  const currentMonthPublishedSpend = useMemo(() => {
     let sum = 0;
     displayProjectIntegrations.forEach(item => {
       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
@@ -533,7 +529,21 @@ export default function DashboardView({
       }
     });
     return Math.round(sum * 100) / 100;
-  }, [hasDateFilter, publishedSlotsFilteredSpend, displayProjectIntegrations, submissions, currentYMPrefix]);
+  }, [displayProjectIntegrations, submissions, currentYMPrefix]);
+
+  const currentMonthSpend = accountingMode === 'cash' ? currentMonthCashSpend : currentMonthPublishedSpend;
+
+  // Monthly or Filtered Period Spend
+  const cashMonthlySpend = hasDateFilter
+    ? cashTotalSpend
+    : currentMonthCashSpend;
+
+  const publishedSlotsMonthlySpend = useMemo(() => {
+    if (hasDateFilter) {
+      return publishedSlotsFilteredSpend;
+    }
+    return currentMonthPublishedSpend;
+  }, [hasDateFilter, publishedSlotsFilteredSpend, currentMonthPublishedSpend]);
 
   const projectPendingSpend = useMemo(() => {
     let pending = 0;
@@ -560,7 +570,7 @@ export default function DashboardView({
   const selectedProjectMonthlySpend = accountingMode === 'cash' ? cashMonthlySpend : publishedSlotsMonthlySpend;
 
   const remainingLimit = selectedProject && (selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null)
-    ? selectedProject.monthlyLimit - selectedProjectMonthlySpend
+    ? selectedProject.monthlyLimit - currentMonthSpend
     : null;
   const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
   const totalPublishedSlots = filteredIntegrations.reduce((sum, item) => {
@@ -951,14 +961,14 @@ export default function DashboardView({
         )}
         {allowedMetrics.includes('spend') && (
           <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.allocatedSpend}>
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={`${t.allocatedSpend} (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}>
               {t.allocatedSpend}
             </span>
             <span
               className={`${getMetricValueClasses(formatMetricVal(totalSpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(totalSpend || 0)).toLocaleString('ru-RU')} UZS`}
+              title={`${Math.round(Number(totalSpend || 0)).toLocaleString('ru-RU')} UZS (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}
             >
-              {loading && filteredIntegrations.length === 0 ? (
+              {loading && displayProjectIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
               ) : (
                 formatMetricVal(totalSpend)
@@ -969,8 +979,17 @@ export default function DashboardView({
         {allowedMetrics.includes('spend') && (
           <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
             <div className="flex items-center justify-between gap-1">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.monthlySpend}>
-                {t.monthlySpend}
+              <span
+                className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate"
+                title={hasDateFilter
+                  ? (lang === 'ru' ? 'Расход за выбранный период' : lang === 'uz' ? 'Tanlangan davr xarajati' : 'Selected Period Spend')
+                  : t.monthlySpend
+                }
+              >
+                {hasDateFilter
+                  ? (lang === 'ru' ? 'Расход за период' : lang === 'uz' ? 'Davr xarajati' : 'Period Spend')
+                  : t.monthlySpend
+                }
               </span>
               <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded ${accountingMode === 'published_slots' ? 'bg-sky-100 text-sky-800' : 'bg-neutral-100 text-neutral-600'}`}>
                 {accountingMode === 'published_slots' ? (t.accountingAccrualShort || 'Факт') : (t.accountingCashShort || 'Касса')}
@@ -978,7 +997,7 @@ export default function DashboardView({
             </div>
             <span
               className={`${getMetricValueClasses(formatMetricVal(selectedProjectMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc})${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
+              title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${hasDateFilter ? (lang === 'ru' ? 'За выбранный период' : lang === 'uz' ? 'Tanlangan davr uchun' : 'Selected period') : (accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc)})${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
             >
               {loading && filteredIntegrations.length === 0 ? (
                 <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />

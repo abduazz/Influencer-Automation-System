@@ -1287,6 +1287,7 @@ export default function App() {
                 <ExecutiveDashboardView
                   projects={accessibleProjects}
                   integrations={integrations}
+                  reports={reports}
                   lang={lang}
                 />
               ) : (
@@ -1294,6 +1295,8 @@ export default function App() {
                   projects={accessibleProjects}
                   integrations={integrations}
                   submissions={submissions}
+                  reports={reports}
+                  bulkPurchases={bulkPurchases}
                   onAddProject={handleAddProject}
                   onEditProject={handleEditProject}
                   onDeleteProject={handleDeleteProject}

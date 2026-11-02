@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Project, Integration } from '../data/mockData';
+import { Project, Integration, Report } from '../data/mockData';
 import { Language, translations } from '../translations';
 import { 
   Building2, 
@@ -21,12 +21,14 @@ import {
 interface ExecutiveDashboardViewProps {
   projects: Project[];
   integrations: Integration[];
+  reports?: Report[];
   lang: Language;
 }
 
 export default function ExecutiveDashboardView({
   projects,
   integrations,
+  reports = [],
   lang,
 }: ExecutiveDashboardViewProps) {
   const t = translations[lang] || translations['ru'];

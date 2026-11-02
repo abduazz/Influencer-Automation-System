@@ -8,7 +8,9 @@ import {
   Project,
   Integration,
   SlotConfig,
-  BloggerSubmission
+  BloggerSubmission,
+  Report,
+  BulkPurchase
 } from '../data/mockData';
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
@@ -41,6 +43,8 @@ interface DashboardViewProps {
   projects: Project[];
   integrations: Integration[];
   submissions: BloggerSubmission[];
+  reports?: Report[];
+  bulkPurchases?: BulkPurchase[];
   onAddProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
   onEditProject?: (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, subdomain?: string) => void;
   onDeleteProject: (id: string) => void;
@@ -60,6 +64,8 @@ export default function DashboardView({
   projects,
   integrations,
   submissions,
+  reports = [],
+  bulkPurchases = [],
   onAddProject,
   onEditProject,
   onDeleteProject,
@@ -442,22 +448,6 @@ export default function DashboardView({
     return true;
   });
 
-  // Filter integrations by Date range & sort by date descending (newest first)
-  const filteredIntegrations = displayProjectIntegrations
-    .filter((item) => {
-      if (filterStartDate && item.startDate < filterStartDate) return false;
-      if (filterEndDate && item.startDate > filterEndDate) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const dateCompare = (b.startDate || '').localeCompare(a.startDate || '');
-      if (dateCompare !== 0) return dateCompare;
-      return (Number(b.id) || 0) - (Number(a.id) || 0);
-    });
-
-  // Selected Project Statistics Calculators (filtered by date)
-  const cashTotalSpend = filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
-
   const getEffectivePricePerSlot = (item: Integration, slotsTotal: number): number => {
     const totalAmt = Number(item.totalAmount) || 0;
     if (totalAmt > 0 && slotsTotal > 0) {
@@ -466,36 +456,141 @@ export default function DashboardView({
     return Number(item.pricePerSlot) || 0;
   };
 
-  const publishedSlotsFilteredSpend = useMemo(() => {
+  // Helper to check if an integration belongs to the filtered period:
+  // 1. Contract startDate in period
+  // 2. OR any slot was published in period (delivered output)
+  // 3. OR any slot was scheduled in period
+  // 4. OR any cash payment was received in period
+  const isIntegrationInPeriod = (item: Integration) => {
+    if (!filterStartDate && !filterEndDate) return true;
+
+    // 1. Contract startDate
+    const startYmd = item.startDate ? String(item.startDate).slice(0, 10) : '';
+    if (startYmd && (!filterStartDate || startYmd >= filterStartDate) && (!filterEndDate || startYmd <= filterEndDate)) {
+      return true;
+    }
+
+    // 2. Deliverables / published or scheduled slots in period
+    const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+    const configs = item.slotsConfig || [];
+    const count = Math.max(Number(item.slotsCount) || 0, 1);
+    for (let sIdx = 1; sIdx <= count; sIdx++) {
+      const cfg = configs[sIdx - 1] || {};
+      const slotKey = `slot_${sIdx}`;
+      const subUrl = (sub?.data?.[slotKey] ? String(sub.data[slotKey]) : '').trim();
+      const isPub = Boolean(cfg.isPublished || subUrl.length > 0 || cfg.stage === 'published');
+      if (isPub) {
+        const rawDate = cfg.publishedAt || sub?.data?.[`${slotKey}_submitted_at`] || sub?.submittedAt || item.startDate;
+        const sDate = rawDate ? String(rawDate).slice(0, 10) : '';
+        if (sDate && (!filterStartDate || sDate >= filterStartDate) && (!filterEndDate || sDate <= filterEndDate)) {
+          return true;
+        }
+      }
+      const schedDate = (cfg.scheduledDate || sub?.data?.[`${slotKey}_scheduled_date`] ? String(cfg.scheduledDate || sub?.data?.[`${slotKey}_scheduled_date`]).slice(0, 10) : '');
+      if (schedDate && (!filterStartDate || schedDate >= filterStartDate) && (!filterEndDate || schedDate <= filterEndDate)) {
+        return true;
+      }
+    }
+
+    // 3. Payment received in period (from reports)
+    if (reports && reports.length > 0) {
+      const cleanBlogger = (item.bloggerName || '').trim().toLowerCase().replace(/^[@#]/, '');
+      const hasPayment = reports.some(r => {
+        const rDate = (r.date || '').slice(0, 10);
+        if (!rDate) return false;
+        if (filterStartDate && rDate < filterStartDate) return false;
+        if (filterEndDate && rDate > filterEndDate) return false;
+        if (r.integrationId && String(r.integrationId) === String(item.id)) return true;
+        const rBlogger = (r.bloggerName || '').trim().toLowerCase().replace(/^[@#]/, '');
+        return cleanBlogger.length > 0 && rBlogger === cleanBlogger && String(r.projectId) === String(item.projectId);
+      });
+      if (hasPayment) return true;
+    }
+
+    return false;
+  };
+
+  // Filter integrations by Date range & sort by date descending (newest first)
+  const filteredIntegrations = displayProjectIntegrations
+    .filter(isIntegrationInPeriod)
+    .sort((a, b) => {
+      const dateCompare = (b.startDate || '').localeCompare(a.startDate || '');
+      if (dateCompare !== 0) return dateCompare;
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
+
+  const hasDateFilter = Boolean(filterStartDate || filterEndDate);
+
+  // Single Source of Truth: Reports for selected project (matching Telegram Financial Reports group)
+  const projectReports = useMemo(() => {
+    if (!reports || reports.length === 0 || !selectedProject) return [];
+    return reports.filter(r => String(r.projectId) === String(selectedProject.id));
+  }, [reports, selectedProject]);
+
+  // Cash Spend (Касса - По оплате)
+  const cashFilteredSpend = useMemo(() => {
+    if (!reports || reports.length === 0) {
+      return filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
+    }
+    return projectReports
+      .filter(r => {
+        if (!filterStartDate && !filterEndDate) return true;
+        const rDate = (r.date || '').slice(0, 10);
+        if (!rDate) return false;
+        if (filterStartDate && rDate < filterStartDate) return false;
+        if (filterEndDate && rDate > filterEndDate) return false;
+        return true;
+      })
+      .reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
+  }, [reports, projectReports, filterStartDate, filterEndDate, filteredIntegrations]);
+
+  // Published Slots deliverables calculations (SSOT synchronized with Telegram Submissions channel)
+  const { publishedSlotsFilteredSpend, totalPublishedSlots } = useMemo(() => {
     let sum = 0;
-    filteredIntegrations.forEach(item => {
+    let count = 0;
+
+    activeProjectIntegrations.forEach(item => {
+      if (integrationFilter === 'active' && isPreliminaryLead(item)) return;
+
       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-      const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
+      const slotsTotal = Math.max(Number(item.slotsCount) || 0, 1);
       const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
-      if (!sub || !sub.data) return;
+      const configs = item.slotsConfig || [];
 
       for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
+        const cfg = configs[sIdx - 1] || {};
         const slotKey = `slot_${sIdx}`;
-        const url = sub.data[slotKey];
-        if (typeof url === 'string' && url.trim() !== '') {
-          const rawDate = sub.data[`${slotKey}_submitted_at`] || sub.submittedAt || item.startDate;
-          const slotDate = rawDate ? String(rawDate).substring(0, 10) : '';
+        const subUrl = (sub?.data?.[slotKey] ? String(sub.data[slotKey]) : '').trim();
+        const isPub = Boolean(cfg.isPublished || subUrl.length > 0 || cfg.stage === 'published');
+
+        if (isPub) {
+          const rawDate = cfg.publishedAt || sub?.data?.[`${slotKey}_submitted_at`] || sub?.submittedAt || item.startDate;
+          const slotDate = rawDate ? String(rawDate).slice(0, 10) : '';
           const matchesDate = (!filterStartDate || slotDate >= filterStartDate) &&
             (!filterEndDate || slotDate <= filterEndDate);
           if (matchesDate) {
             sum += pricePerSlot;
+            count += 1;
           }
         }
       }
     });
-    return Math.round(sum * 100) / 100;
-  }, [filteredIntegrations, submissions, filterStartDate, filterEndDate]);
 
-  const hasDateFilter = Boolean(filterStartDate || filterEndDate);
+    return {
+      publishedSlotsFilteredSpend: Math.round(sum * 100) / 100,
+      totalPublishedSlots: count
+    };
+  }, [activeProjectIntegrations, integrationFilter, submissions, filterStartDate, filterEndDate]);
+
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
 
-  // Selected Project total spend (all-time contractual spend of the project, never reduced by date filters)
-  const selectedProjectTotalSpend = displayProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  // Selected Project total spend (all-time spend of the project)
+  const selectedProjectTotalSpend = useMemo(() => {
+    if (accountingMode === 'cash' && reports && reports.length > 0) {
+      return projectReports.reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
+    }
+    return displayProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  }, [accountingMode, reports, projectReports, displayProjectIntegrations]);
   const totalSpend = selectedProjectTotalSpend;
 
   const now = new Date();
@@ -504,38 +599,49 @@ export default function DashboardView({
   const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
 
   // Current calendar month spend (for monthly limit calculation)
-  const currentMonthCashSpend = displayProjectIntegrations.filter(i => {
-    if (!i.startDate) return false;
-    return i.startDate.substring(0, 7) === currentYMPrefix;
-  }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  const currentMonthCashSpend = useMemo(() => {
+    if (!reports || reports.length === 0) {
+      return displayProjectIntegrations.filter(i => {
+        if (!i.startDate) return false;
+        return i.startDate.substring(0, 7) === currentYMPrefix;
+      }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+    }
+    return projectReports
+      .filter(r => (r.date || '').startsWith(currentYMPrefix))
+      .reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
+  }, [reports, projectReports, currentYMPrefix, displayProjectIntegrations]);
 
   const currentMonthPublishedSpend = useMemo(() => {
     let sum = 0;
-    displayProjectIntegrations.forEach(item => {
+    activeProjectIntegrations.forEach(item => {
+      if (integrationFilter === 'active' && isPreliminaryLead(item)) return;
+
       const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-      const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
+      const slotsTotal = Math.max(Number(item.slotsCount) || 0, 1);
       const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
-      if (!sub || !sub.data) return;
+      const configs = item.slotsConfig || [];
 
       for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
+        const cfg = configs[sIdx - 1] || {};
         const slotKey = `slot_${sIdx}`;
-        const url = sub.data[slotKey];
-        if (typeof url === 'string' && url.trim() !== '') {
-          const rawDate = sub.data[`${slotKey}_submitted_at`] || sub.submittedAt || item.startDate;
-          if (rawDate && String(rawDate).substring(0, 7) === currentYMPrefix) {
+        const subUrl = (sub?.data?.[slotKey] ? String(sub.data[slotKey]) : '').trim();
+        const isPub = Boolean(cfg.isPublished || subUrl.length > 0 || cfg.stage === 'published');
+        if (isPub) {
+          const rawDate = cfg.publishedAt || sub?.data?.[`${slotKey}_submitted_at`] || sub?.submittedAt || item.startDate;
+          if (rawDate && String(rawDate).slice(0, 7) === currentYMPrefix) {
             sum += pricePerSlot;
           }
         }
       }
     });
     return Math.round(sum * 100) / 100;
-  }, [displayProjectIntegrations, submissions, currentYMPrefix]);
+  }, [activeProjectIntegrations, integrationFilter, submissions, currentYMPrefix]);
 
   const currentMonthSpend = accountingMode === 'cash' ? currentMonthCashSpend : currentMonthPublishedSpend;
 
   // Monthly or Filtered Period Spend
   const cashMonthlySpend = hasDateFilter
-    ? cashTotalSpend
+    ? cashFilteredSpend
     : currentMonthCashSpend;
 
   const publishedSlotsMonthlySpend = useMemo(() => {
@@ -573,13 +679,6 @@ export default function DashboardView({
     ? selectedProject.monthlyLimit - currentMonthSpend
     : null;
   const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
-  const totalPublishedSlots = filteredIntegrations.reduce((sum, item) => {
-    const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-    const slotsSubmitted = (sub && sub.data)
-      ? Object.entries(sub.data).filter(([key, val]) => /^slot_\d+$/.test(key) && typeof val === 'string' && val.trim() !== '').length
-      : 0;
-    return sum + slotsSubmitted;
-  }, 0);
   const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
 
   // Helper to format metric values into millions with 1 decimal place (e.g. 81.0M, 2.0M)

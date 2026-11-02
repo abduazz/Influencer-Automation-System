@@ -1127,7 +1127,7 @@ return (
           </div>
           <span
             className={`${getMetricValueClasses(formatMetricVal(selectedProjectMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-            title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${hasDateFilter ? (lang === 'ru' ? 'За выбранный период' : lang === 'uz' ? 'Tanlangan davr uchun' : 'Selected period') : (accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc)})${accountingMode === 'cash' && otherSpendInPeriod > 0 ? ` | +${Math.round(otherSpendInPeriod).toLocaleString('ru-RU')} UZS ${lang === 'ru' ? 'прочие' : 'boshqa'} (Всего с прочими: ${Math.round(totalCashSpendWithOtherInPeriod).toLocaleString('ru-RU')} UZS)` : ''}${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
+            title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${hasDateFilter ? (lang === 'ru' ? 'За выбранный период' : lang === 'uz' ? 'Tanlangan davr uchun' : 'Selected period') : (accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc)})${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
           >
             {loading && filteredIntegrations.length === 0 ? (
               <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
@@ -1135,14 +1135,6 @@ return (
               formatMetricVal(selectedProjectMonthlySpend)
             )}
           </span>
-          {accountingMode === 'cash' && otherSpendInPeriod > 0 && (
-            <span
-              className="text-[10px] text-neutral-500 font-semibold truncate cursor-help block mt-0.5"
-              title={`Блогеры: ${Math.round(cashBloggerFilteredSpend).toLocaleString('ru-RU')} UZS | Прочие: ${Math.round(otherSpendInPeriod).toLocaleString('ru-RU')} UZS | Итого касса: ${Math.round(totalCashSpendWithOtherInPeriod).toLocaleString('ru-RU')} UZS`}
-            >
-              +{formatMetricVal(otherSpendInPeriod)} {lang === 'ru' ? 'прочие' : 'boshqa'}
-            </span>
-          )}
         </div>
       )}
       {allowedMetrics.includes('financial_metrics') && (

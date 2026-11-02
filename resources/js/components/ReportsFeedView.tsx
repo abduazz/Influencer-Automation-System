@@ -781,7 +781,6 @@ export default function ReportsFeedView({
               }
             }
           }
-          pendingTotal += stats.pendingCost;
         }
 
         const remainingSlots = Math.max(0, slotsTotal - intPublishedTotal);

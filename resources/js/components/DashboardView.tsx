@@ -527,13 +527,15 @@ export default function DashboardView({
     return reports.filter(r => String(r.projectId) === String(selectedProject.id));
   }, [reports, selectedProject]);
 
-  // Cash Spend (Касса - По оплате)
-  const cashFilteredSpend = useMemo(() => {
+  // Cash Spend (Касса - По оплате):
+  // 1. Чистые выплаты блогерам (Blogger Cash Spend)
+  const cashBloggerFilteredSpend = useMemo(() => {
     if (!reports || reports.length === 0) {
       return filteredIntegrations.reduce((acc, curr) => acc + curr.totalAmount, 0);
     }
     return projectReports
       .filter(r => {
+        if (r.paymentType === 'other') return false;
         if (!filterStartDate && !filterEndDate) return true;
         const rDate = (r.date || '').slice(0, 10);
         if (!rDate) return false;
@@ -543,6 +545,26 @@ export default function DashboardView({
       })
       .reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
   }, [reports, projectReports, filterStartDate, filterEndDate, filteredIntegrations]);
+
+  // 2. Прочие операционные расходы (Other Expenses: командировки, продакшн, такси и т.д.)
+  const cashOtherFilteredSpend = useMemo(() => {
+    if (!reports || reports.length === 0) return 0;
+    return projectReports
+      .filter(r => {
+        if (r.paymentType !== 'other') return false;
+        if (!filterStartDate && !filterEndDate) return true;
+        const rDate = (r.date || '').slice(0, 10);
+        if (!rDate) return false;
+        if (filterStartDate && rDate < filterStartDate) return false;
+        if (filterEndDate && rDate > filterEndDate) return false;
+        return true;
+      })
+      .reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
+  }, [reports, projectReports, filterStartDate, filterEndDate]);
+
+  // 3. Общая касса со всеми расходами
+  const cashTotalFilteredSpendWithOther = cashBloggerFilteredSpend + cashOtherFilteredSpend;
+  const cashFilteredSpend = cashBloggerFilteredSpend;
 
   // Published Slots deliverables calculations (SSOT synchronized with Telegram Submissions channel)
   const { publishedSlotsFilteredSpend, totalPublishedSlots } = useMemo(() => {
@@ -584,1762 +606,1782 @@ export default function DashboardView({
 
   const totalRemainingToPay = filteredIntegrations.reduce((acc, curr) => acc + Math.max(0, curr.totalAmount - (curr.paidAmount || 0)), 0);
 
-  // Selected Project total spend (all-time spend of the project)
+  // Selected Project total spend (all-time spend of the project - invariant across accounting modes)
   const selectedProjectTotalSpend = useMemo(() => {
-    if (accountingMode === 'cash' && reports && reports.length > 0) {
-      return projectReports.reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
-    }
     return displayProjectIntegrations.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
-  }, [accountingMode, reports, projectReports, displayProjectIntegrations]);
-  const totalSpend = selectedProjectTotalSpend;
+}, [displayProjectIntegrations]);
+const totalSpend = selectedProjectTotalSpend;
 
-  const now = new Date();
-  const currentYearStr = String(now.getFullYear());
-  const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
-  const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
+const now = new Date();
+const currentYearStr = String(now.getFullYear());
+const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
+const currentYMPrefix = `${currentYearStr}-${currentMonthStr}`;
 
-  // Current calendar month spend (for monthly limit calculation)
-  const currentMonthCashSpend = useMemo(() => {
-    if (!reports || reports.length === 0) {
-      return displayProjectIntegrations.filter(i => {
-        if (!i.startDate) return false;
-        return i.startDate.substring(0, 7) === currentYMPrefix;
-      }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+// Current calendar month spend (for monthly limit calculation)
+const currentMonthCashSpend = useMemo(() => {
+  if (!reports || reports.length === 0) {
+    return displayProjectIntegrations.filter(i => {
+      if (!i.startDate) return false;
+      return i.startDate.substring(0, 7) === currentYMPrefix;
+    }).reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+  }
+  return projectReports
+    .filter(r => r.paymentType !== 'other' && (r.date || '').startsWith(currentYMPrefix))
+    .reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
+}, [reports, projectReports, currentYMPrefix, displayProjectIntegrations]);
+
+const currentMonthOtherCashSpend = useMemo(() => {
+  if (!reports || reports.length === 0) return 0;
+  return projectReports
+    .filter(r => r.paymentType === 'other' && (r.date || '').startsWith(currentYMPrefix))
+    .reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
+}, [reports, projectReports, currentYMPrefix]);
+
+const currentMonthPublishedSpend = useMemo(() => {
+  let sum = 0;
+  activeProjectIntegrations.forEach(item => {
+    if (integrationFilter === 'active' && isPreliminaryLead(item)) return;
+
+    const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+    const slotsTotal = Math.max(Number(item.slotsCount) || 0, 1);
+    const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
+    const configs = item.slotsConfig || [];
+
+    for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
+      const cfg = configs[sIdx - 1] || {};
+      const slotKey = `slot_${sIdx}`;
+      const subUrl = (sub?.data?.[slotKey] ? String(sub.data[slotKey]) : '').trim();
+      const isPub = Boolean(cfg.isPublished || subUrl.length > 0 || cfg.stage === 'published');
+      if (isPub) {
+        const rawDate = cfg.publishedAt || sub?.data?.[`${slotKey}_submitted_at`] || sub?.submittedAt || item.startDate;
+        if (rawDate && String(rawDate).slice(0, 7) === currentYMPrefix) {
+          sum += pricePerSlot;
+        }
+      }
     }
-    return projectReports
-      .filter(r => (r.date || '').startsWith(currentYMPrefix))
-      .reduce((sum, r) => sum + (Number(r.paidAmount) || Number(r.totalAmount) || 0), 0);
-  }, [reports, projectReports, currentYMPrefix, displayProjectIntegrations]);
+  });
+  return Math.round(sum * 100) / 100;
+}, [activeProjectIntegrations, integrationFilter, submissions, currentYMPrefix]);
 
-  const currentMonthPublishedSpend = useMemo(() => {
-    let sum = 0;
-    activeProjectIntegrations.forEach(item => {
-      if (integrationFilter === 'active' && isPreliminaryLead(item)) return;
+const currentMonthSpend = accountingMode === 'cash' ? currentMonthCashSpend : currentMonthPublishedSpend;
 
-      const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-      const slotsTotal = Math.max(Number(item.slotsCount) || 0, 1);
-      const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
-      const configs = item.slotsConfig || [];
+// Monthly or Filtered Period Spend
+const cashMonthlySpend = hasDateFilter
+  ? cashBloggerFilteredSpend
+  : currentMonthCashSpend;
 
+const otherSpendInPeriod = hasDateFilter
+  ? cashOtherFilteredSpend
+  : currentMonthOtherCashSpend;
+
+const totalCashSpendWithOtherInPeriod = hasDateFilter
+  ? cashTotalFilteredSpendWithOther
+  : currentMonthCashSpend + currentMonthOtherCashSpend;
+
+const publishedSlotsMonthlySpend = useMemo(() => {
+  if (hasDateFilter) {
+    return publishedSlotsFilteredSpend;
+  }
+  return currentMonthPublishedSpend;
+}, [hasDateFilter, publishedSlotsFilteredSpend, currentMonthPublishedSpend]);
+
+const projectPendingSpend = useMemo(() => {
+  let pending = 0;
+  displayProjectIntegrations.forEach(item => {
+    const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+    const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
+    const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
+    let publishedCount = 0;
+    if (sub && sub.data) {
       for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
-        const cfg = configs[sIdx - 1] || {};
         const slotKey = `slot_${sIdx}`;
-        const subUrl = (sub?.data?.[slotKey] ? String(sub.data[slotKey]) : '').trim();
-        const isPub = Boolean(cfg.isPublished || subUrl.length > 0 || cfg.stage === 'published');
-        if (isPub) {
-          const rawDate = cfg.publishedAt || sub?.data?.[`${slotKey}_submitted_at`] || sub?.submittedAt || item.startDate;
-          if (rawDate && String(rawDate).slice(0, 7) === currentYMPrefix) {
-            sum += pricePerSlot;
-          }
+        const url = sub.data[slotKey];
+        if (typeof url === 'string' && url.trim() !== '') {
+          publishedCount++;
         }
       }
-    });
-    return Math.round(sum * 100) / 100;
-  }, [activeProjectIntegrations, integrationFilter, submissions, currentYMPrefix]);
-
-  const currentMonthSpend = accountingMode === 'cash' ? currentMonthCashSpend : currentMonthPublishedSpend;
-
-  // Monthly or Filtered Period Spend
-  const cashMonthlySpend = hasDateFilter
-    ? cashFilteredSpend
-    : currentMonthCashSpend;
-
-  const publishedSlotsMonthlySpend = useMemo(() => {
-    if (hasDateFilter) {
-      return publishedSlotsFilteredSpend;
     }
-    return currentMonthPublishedSpend;
-  }, [hasDateFilter, publishedSlotsFilteredSpend, currentMonthPublishedSpend]);
+    const remainingSlots = Math.max(0, slotsTotal - publishedCount);
+    pending += remainingSlots * pricePerSlot;
+  });
+  return Math.round(pending * 100) / 100;
+}, [displayProjectIntegrations, submissions]);
 
-  const projectPendingSpend = useMemo(() => {
-    let pending = 0;
-    displayProjectIntegrations.forEach(item => {
-      const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-      const slotsTotal = Number(item.slotsCount) > 0 ? Number(item.slotsCount) : 1;
-      const pricePerSlot = getEffectivePricePerSlot(item, slotsTotal);
-      let publishedCount = 0;
-      if (sub && sub.data) {
-        for (let sIdx = 1; sIdx <= slotsTotal; sIdx++) {
-          const slotKey = `slot_${sIdx}`;
-          const url = sub.data[slotKey];
-          if (typeof url === 'string' && url.trim() !== '') {
-            publishedCount++;
-          }
-        }
-      }
-      const remainingSlots = Math.max(0, slotsTotal - publishedCount);
-      pending += remainingSlots * pricePerSlot;
-    });
-    return Math.round(pending * 100) / 100;
-  }, [displayProjectIntegrations, submissions]);
+const selectedProjectMonthlySpend = accountingMode === 'cash' ? cashMonthlySpend : publishedSlotsMonthlySpend;
 
-  const selectedProjectMonthlySpend = accountingMode === 'cash' ? cashMonthlySpend : publishedSlotsMonthlySpend;
+const remainingLimit = selectedProject && (selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null)
+  ? selectedProject.monthlyLimit - currentMonthSpend
+  : null;
+const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
+const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
 
-  const remainingLimit = selectedProject && (selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null)
-    ? selectedProject.monthlyLimit - currentMonthSpend
-    : null;
-  const totalSlotsCount = filteredIntegrations.reduce((acc, curr) => acc + curr.slotsCount, 0);
-  const totalRemainingSlots = Math.max(0, totalSlotsCount - totalPublishedSlots);
+// Helper to format metric values into millions with 1 decimal place (e.g. 81.0M, 2.0M)
+const formatMetricVal = (val: number | string): string => {
+  const num = typeof val === 'number' ? val : Number(val);
+  if (isNaN(num)) return String(val);
+  const sign = num < 0 ? '-' : '';
+  const abs = Math.abs(num);
+  const millions = abs / 1_000_000;
+  const formatted = millions >= 1000
+    ? millions.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).replace(/,/g, ' ')
+    : millions.toFixed(1);
+  return `${sign}${formatted}M`;
+};
 
-  // Helper to format metric values into millions with 1 decimal place (e.g. 81.0M, 2.0M)
-  const formatMetricVal = (val: number | string): string => {
-    const num = typeof val === 'number' ? val : Number(val);
-    if (isNaN(num)) return String(val);
-    const sign = num < 0 ? '-' : '';
-    const abs = Math.abs(num);
-    const millions = abs / 1_000_000;
-    const formatted = millions >= 1000
-      ? millions.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).replace(/,/g, ' ')
-      : millions.toFixed(1);
-    return `${sign}${formatted}M`;
-  };
+// Helper for dynamic font size based on number length to prevent overflow on 100% zoom
+const getMetricValueClasses = (str: string) => {
+  if (str.length >= 13) {
+    return 'text-xs sm:text-sm xl:text-[13px] 2xl:text-base';
+  }
+  if (str.length >= 9) {
+    return 'text-sm sm:text-base xl:text-[15px] 2xl:text-lg';
+  }
+  return 'text-lg xl:text-xl';
+};
 
-  // Helper for dynamic font size based on number length to prevent overflow on 100% zoom
-  const getMetricValueClasses = (str: string) => {
-    if (str.length >= 13) {
-      return 'text-xs sm:text-sm xl:text-[13px] 2xl:text-base';
-    }
-    if (str.length >= 9) {
-      return 'text-sm sm:text-base xl:text-[15px] 2xl:text-lg';
-    }
-    return 'text-lg xl:text-xl';
-  };
-
-  return (
-    <div className="space-y-4 w-full text-neutral-900">
-      {/* Project Directory Header */}
-      <div className="flex justify-between items-center border-b border-neutral-200 pb-5">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-black text-black tracking-tight">{t.projectDirectory}</h2>
-          <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider bg-neutral-100 px-2 py-0.5 rounded">
-            {projects.length} {t.totalSuffix}
-          </span>
-        </div>
-
-        <button
-          id="add-project-btn"
-          onClick={() => setShowAddProjectModal(true)}
-          className="flex items-center gap-1.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition duration-150 shadow-sm"
-        >
-          <Plus className="w-4 h-4 text-white" />
-          <span>{t.newProject}</span>
-        </button>
+return (
+  <div className="space-y-4 w-full text-neutral-900">
+    {/* Project Directory Header */}
+    <div className="flex justify-between items-center border-b border-neutral-200 pb-5">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xl font-black text-black tracking-tight">{t.projectDirectory}</h2>
+        <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider bg-neutral-100 px-2 py-0.5 rounded">
+          {projects.length} {t.totalSuffix}
+        </span>
       </div>
 
-      {/* Project Directory Grid */}
-      <div className="flex flex-wrap gap-2.5">
-        {projects.map((proj) => {
-          const isSelected = selectedProjectId === proj.id;
+      <button
+        id="add-project-btn"
+        onClick={() => setShowAddProjectModal(true)}
+        className="flex items-center gap-1.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition duration-150 shadow-sm"
+      >
+        <Plus className="w-4 h-4 text-white" />
+        <span>{t.newProject}</span>
+      </button>
+    </div>
 
-          return (
-            <button
-              key={proj.id}
-              onClick={() => handleSelectProject(proj.id)}
-              id={`project-btn-${proj.id}`}
-              className={`px-4 py-2 text-xs font-extrabold rounded-lg border transition duration-150 text-left flex items-center gap-2 cursor-pointer ${isSelected
-                ? 'bg-black border-black text-white shadow-sm'
-                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-800'
-                }`}
-            >
-              <span>{proj.name}</span>
-              {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0"></span>}
-            </button>
-          );
-        })}
-        {projects.length === 0 && (
-          loading ? (
-            <div className="flex items-center gap-2 py-1">
-              <div className="h-8 w-24 bg-neutral-200/80 animate-pulse rounded-lg" />
-              <div className="h-8 w-28 bg-neutral-200/80 animate-pulse rounded-lg" />
-              <div className="h-8 w-20 bg-neutral-200/80 animate-pulse rounded-lg" />
-            </div>
-          ) : (
-            <div className="w-full p-8 text-center bg-white border border-dashed border-neutral-200 rounded-xl">
-              <AlertCircle className="w-6 h-6 text-neutral-300 mx-auto mb-2" />
-              <p className="text-xs font-bold text-neutral-600">{t.noProjectsFound}</p>
-              <p className="text-[11px] text-neutral-400 mt-1">{t.createProjectPrompt}</p>
-            </div>
-          )
-        )}
-      </div>
+    {/* Project Directory Grid */}
+    <div className="flex flex-wrap gap-2.5">
+      {projects.map((proj) => {
+        const isSelected = selectedProjectId === proj.id;
 
-      {/* Unified Project Campaign Header (merged Campaign Details + Inline Date Filter) */}
-      {selectedProject && (
-        <div className="bg-white border border-neutral-200/90 rounded-2xl p-4 sm:p-5 shadow-xs text-left space-y-3.5">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            {/* Left: Project title, description, actions */}
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.selectedCampaignDetails}</span>
-                {userRole === 'super_admin' && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => {
-                        setEditProjectName(selectedProject.name);
-                        setEditProjectDesc(selectedProject.description || '');
-                        setEditProjectThreadId(selectedProject.telegramThreadId || '');
-                        setEditProjectMonthlyLimit(selectedProject.monthlyLimit ? String(selectedProject.monthlyLimit) : '');
-                        setEditProjectSubdomain(selectedProject.subdomain || '1');
-                        setShowEditProjectModal(true);
-                      }}
-                      className="text-neutral-400 hover:text-black p-1 rounded transition duration-150 cursor-pointer"
-                      title={lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(t.confirmDeleteProject)) {
-                          onDeleteProject(selectedProject.id);
-                          if (projects.length > 1) {
-                            const remaining = projects.filter(p => p.id !== selectedProject.id);
-                            handleSelectProject(remaining[0].id);
-                          } else {
-                            handleSelectProject('');
-                          }
-                        }
-                      }}
-                      id={`delete-project-${selectedProject.id}`}
-                      className="text-neutral-400 hover:text-red-600 p-1 rounded transition duration-150 cursor-pointer"
-                      title={t.deleteProjectTooltip}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-black text-black tracking-tight">{selectedProject.name}</h3>
-                {selectedProject.subdomain && (
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-neutral-100 text-neutral-600 border border-neutral-200">
-                    {selectedProject.subdomain}.tezi.uz
-                  </span>
-                )}
-              </div>
-              {selectedProject.description && (
-                <p className="text-xs text-neutral-500 max-w-3xl leading-relaxed">
-                  {selectedProject.description}
-                </p>
-              )}
-            </div>
+        return (
+          <button
+            key={proj.id}
+            onClick={() => handleSelectProject(proj.id)}
+            id={`project-btn-${proj.id}`}
+            className={`px-4 py-2 text-xs font-extrabold rounded-lg border transition duration-150 text-left flex items-center gap-2 cursor-pointer ${isSelected
+              ? 'bg-black border-black text-white shadow-sm'
+              : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-800'
+              }`}
+          >
+            <span>{proj.name}</span>
+            {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0"></span>}
+          </button>
+        );
+      })}
+      {projects.length === 0 && (
+        loading ? (
+          <div className="flex items-center gap-2 py-1">
+            <div className="h-8 w-24 bg-neutral-200/80 animate-pulse rounded-lg" />
+            <div className="h-8 w-28 bg-neutral-200/80 animate-pulse rounded-lg" />
+            <div className="h-8 w-20 bg-neutral-200/80 animate-pulse rounded-lg" />
+          </div>
+        ) : (
+          <div className="w-full p-8 text-center bg-white border border-dashed border-neutral-200 rounded-xl">
+            <AlertCircle className="w-6 h-6 text-neutral-300 mx-auto mb-2" />
+            <p className="text-xs font-bold text-neutral-600">{t.noProjectsFound}</p>
+            <p className="text-[11px] text-neutral-400 mt-1">{t.createProjectPrompt}</p>
+          </div>
+        )
+      )}
+    </div>
 
-            {/* Right: Inline compact date filter & Quick Presets */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {/* Quick Period Presets */}
-              <div className="flex items-center gap-0.5 bg-neutral-50 border border-neutral-200/80 rounded-xl p-1 shrink-0 text-xs shadow-3xs">
-                <button
-                  type="button"
-                  onClick={() => toggleDatePreset(datePresets.today.start, datePresets.today.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.today.start && filterEndDate === datePresets.today.end
-                      ? 'bg-black text-white shadow-2xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                    }`}
-                  title={t.today || (lang === 'ru' ? 'Сегодня' : lang === 'uz' ? 'Bugun' : 'Today')}
-                >
-                  {lang === 'ru' ? 'Сегодня' : lang === 'uz' ? 'Bugun' : 'Today'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleDatePreset(datePresets.sevenDays.start, datePresets.sevenDays.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.sevenDays.start && filterEndDate === datePresets.sevenDays.end
-                      ? 'bg-black text-white shadow-2xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                    }`}
-                  title={lang === 'ru' ? 'Последние 7 дней' : lang === 'uz' ? 'So‘nggi 7 kun' : 'Last 7 days'}
-                >
-                  {lang === 'ru' ? '7 дней' : lang === 'uz' ? '7 kun' : '7 Days'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleDatePreset(datePresets.thirtyDays.start, datePresets.thirtyDays.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.thirtyDays.start && filterEndDate === datePresets.thirtyDays.end
-                      ? 'bg-black text-white shadow-2xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                    }`}
-                  title={lang === 'ru' ? 'Последние 30 дней' : lang === 'uz' ? 'So‘nggi 30 kun' : 'Last 30 days'}
-                >
-                  {lang === 'ru' ? '30 дней' : lang === 'uz' ? '30 kun' : '30 Days'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleDatePreset(datePresets.thisMonth.start, datePresets.thisMonth.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.thisMonth.start && filterEndDate === datePresets.thisMonth.end
-                      ? 'bg-black text-white shadow-2xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                    }`}
-                  title={t.currentMonthLabel || (lang === 'ru' ? 'Текущий месяц' : lang === 'uz' ? 'Joriy oy' : 'Current Month')}
-                >
-                  {lang === 'ru' ? 'Этот месяц' : lang === 'uz' ? 'Shu oy' : 'This Month'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleDatePreset(datePresets.lastMonth.start, datePresets.lastMonth.end)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.lastMonth.start && filterEndDate === datePresets.lastMonth.end
-                      ? 'bg-black text-white shadow-2xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
-                    }`}
-                  title={t.prevMonthLabel || (lang === 'ru' ? 'Прошлый месяц' : lang === 'uz' ? 'O‘tgan oy' : 'Previous Month')}
-                >
-                  {lang === 'ru' ? 'Прошлый' : lang === 'uz' ? 'O‘tgan' : 'Last Month'}
-                </button>
-              </div>
-
-              {/* Date Inputs Selector */}
-              <div className="flex flex-wrap items-center gap-2 bg-neutral-50 border border-neutral-200/80 rounded-xl p-1.5 shrink-0 text-xs shadow-3xs">
-                <div className="flex items-center gap-1.5 px-2 text-neutral-500">
-                  <Calendar className="w-3.5 h-3.5 text-neutral-700" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                    {lang === 'ru' ? 'Период' : lang === 'uz' ? 'Davr' : 'Period'}:
-                  </span>
-                </div>
+    {/* Unified Project Campaign Header (merged Campaign Details + Inline Date Filter) */}
+    {selectedProject && (
+      <div className="bg-white border border-neutral-200/90 rounded-2xl p-4 sm:p-5 shadow-xs text-left space-y-3.5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          {/* Left: Project title, description, actions */}
+          <div className="space-y-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">{t.selectedCampaignDetails}</span>
+              {userRole === 'super_admin' && (
                 <div className="flex items-center gap-1">
-                  <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'С' : lang === 'uz' ? 'Dan' : 'From'}</span>
-                  <input
-                    type="date"
-                    value={filterStartDate}
-                    onChange={(e) => setFilterStartDate(e.target.value)}
-                    className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
-                  />
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'По' : lang === 'uz' ? 'Gacha' : 'To'}</span>
-                  <input
-                    type="date"
-                    value={filterEndDate}
-                    onChange={(e) => setFilterEndDate(e.target.value)}
-                    className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
-                  />
-                </div>
-                {(filterStartDate || filterEndDate) && (
                   <button
                     onClick={() => {
-                      setFilterStartDate('');
-                      setFilterEndDate('');
+                      setEditProjectName(selectedProject.name);
+                      setEditProjectDesc(selectedProject.description || '');
+                      setEditProjectThreadId(selectedProject.telegramThreadId || '');
+                      setEditProjectMonthlyLimit(selectedProject.monthlyLimit ? String(selectedProject.monthlyLimit) : '');
+                      setEditProjectSubdomain(selectedProject.subdomain || '1');
+                      setShowEditProjectModal(true);
                     }}
-                    className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 font-bold text-[10px] uppercase rounded-lg transition border border-neutral-200 cursor-pointer shadow-2xs"
+                    className="text-neutral-400 hover:text-black p-1 rounded transition duration-150 cursor-pointer"
+                    title={lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
                   >
-                    {lang === 'ru' ? 'Сбросить' : lang === 'uz' ? 'Tozalash' : 'Reset'}
+                    <Edit3 className="w-3.5 h-3.5" />
                   </button>
-                )}
-              </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(t.confirmDeleteProject)) {
+                        onDeleteProject(selectedProject.id);
+                        if (projects.length > 1) {
+                          const remaining = projects.filter(p => p.id !== selectedProject.id);
+                          handleSelectProject(remaining[0].id);
+                        } else {
+                          handleSelectProject('');
+                        }
+                      }
+                    }}
+                    id={`delete-project-${selectedProject.id}`}
+                    className="text-neutral-400 hover:text-red-600 p-1 rounded transition duration-150 cursor-pointer"
+                    title={t.deleteProjectTooltip}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-black text-black tracking-tight">{selectedProject.name}</h3>
+              {selectedProject.subdomain && (
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-neutral-100 text-neutral-600 border border-neutral-200">
+                  {selectedProject.subdomain}.tezi.uz
+                </span>
+              )}
+            </div>
+            {selectedProject.description && (
+              <p className="text-xs text-neutral-500 max-w-3xl leading-relaxed">
+                {selectedProject.description}
+              </p>
+            )}
           </div>
 
-          {/* Row 2: Campaign Quick Spend & Limit Badges */}
-          <div className="flex flex-wrap items-center gap-2 pt-2.5 border-t border-neutral-100 text-[10px] font-bold uppercase tracking-wider">
-            <span className="px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-600 border border-neutral-200/60">
-              {activeProjectIntegrations.length} {t.integrationsCount}
-            </span>
-            {allowedMetrics.includes('set_limit') || userRole === 'super_admin' ? (
-              selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null ? (
-                <button
-                  onClick={() => {
-                    const val = prompt(t.enterMonthlyLimitPrompt, String(selectedProject.monthlyLimit));
-                    if (val !== null) {
-                      const parsed = val.trim() === '' ? null : parseInt(val, 10);
-                      if (parsed === null || !isNaN(parsed)) {
-                        if (onEditProject) {
-                          onEditProject(
-                            selectedProject.id,
-                            selectedProject.name,
-                            selectedProject.description || '',
-                            selectedProject.telegramThreadId,
-                            parsed
-                          );
-                        }
-                      }
-                    }
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center gap-1 transition cursor-pointer"
-                  title={t.setMonthlyLimit}
-                >
-                  <Coins className="w-3.5 h-3.5 text-amber-600" />
-                  <span>{t.monthlyLimit}: {Math.round(selectedProject.monthlyLimit).toLocaleString('ru-RU')}</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    const val = prompt(t.enterMonthlyLimitPrompt, '');
-                    if (val !== null) {
-                      const parsed = val.trim() === '' ? null : parseInt(val, 10);
-                      if (parsed === null || !isNaN(parsed)) {
-                        if (onEditProject) {
-                          onEditProject(
-                            selectedProject.id,
-                            selectedProject.name,
-                            selectedProject.description || '',
-                            selectedProject.telegramThreadId,
-                            parsed
-                          );
-                        }
-                      }
-                    }
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-600 flex items-center gap-1 transition cursor-pointer"
-                  title={t.setMonthlyLimit}
-                >
-                  <Coins className="w-3.5 h-3.5 text-neutral-500" />
-                  <span>{t.setMonthlyLimit}</span>
-                </button>
-              )
-            ) : (
-              selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null && (
-                <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex items-center gap-1">
-                  <Coins className="w-3.5 h-3.5 text-amber-600" />
-                  <span>{t.monthlyLimit}: {Math.round(selectedProject.monthlyLimit).toLocaleString('ru-RU')}</span>
-                </span>
-              )
-            )}
-            {allowedMetrics.includes('financial_metrics') && (
-              <span
-                className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 font-bold ${remainingLimit !== null && remainingLimit < 0
-                  ? 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse'
-                  : remainingLimit !== null
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                    : 'bg-neutral-100 border-neutral-200 text-neutral-500'
+          {/* Right: Inline compact date filter & Quick Presets */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Quick Period Presets */}
+            <div className="flex items-center gap-0.5 bg-neutral-50 border border-neutral-200/80 rounded-xl p-1 shrink-0 text-xs shadow-3xs">
+              <button
+                type="button"
+                onClick={() => toggleDatePreset(datePresets.today.start, datePresets.today.end)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.today.start && filterEndDate === datePresets.today.end
+                  ? 'bg-black text-white shadow-2xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
                   }`}
-                title={t.remainingLimit}
+                title={t.today || (lang === 'ru' ? 'Сегодня' : lang === 'uz' ? 'Bugun' : 'Today')}
               >
-                <span>{t.remainingLimit}: {remainingLimit !== null ? Math.round(remainingLimit).toLocaleString('ru-RU') : t.limitNotSet}</span>
-              </span>
-            )}
+                {lang === 'ru' ? 'Сегодня' : lang === 'uz' ? 'Bugun' : 'Today'}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleDatePreset(datePresets.sevenDays.start, datePresets.sevenDays.end)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.sevenDays.start && filterEndDate === datePresets.sevenDays.end
+                  ? 'bg-black text-white shadow-2xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                title={lang === 'ru' ? 'Последние 7 дней' : lang === 'uz' ? 'So‘nggi 7 kun' : 'Last 7 days'}
+              >
+                {lang === 'ru' ? '7 дней' : lang === 'uz' ? '7 kun' : '7 Days'}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleDatePreset(datePresets.thirtyDays.start, datePresets.thirtyDays.end)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.thirtyDays.start && filterEndDate === datePresets.thirtyDays.end
+                  ? 'bg-black text-white shadow-2xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                title={lang === 'ru' ? 'Последние 30 дней' : lang === 'uz' ? 'So‘nggi 30 kun' : 'Last 30 days'}
+              >
+                {lang === 'ru' ? '30 дней' : lang === 'uz' ? '30 kun' : '30 Days'}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleDatePreset(datePresets.thisMonth.start, datePresets.thisMonth.end)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.thisMonth.start && filterEndDate === datePresets.thisMonth.end
+                  ? 'bg-black text-white shadow-2xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                title={t.currentMonthLabel || (lang === 'ru' ? 'Текущий месяц' : lang === 'uz' ? 'Joriy oy' : 'Current Month')}
+              >
+                {lang === 'ru' ? 'Этот месяц' : lang === 'uz' ? 'Shu oy' : 'This Month'}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleDatePreset(datePresets.lastMonth.start, datePresets.lastMonth.end)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${filterStartDate === datePresets.lastMonth.start && filterEndDate === datePresets.lastMonth.end
+                  ? 'bg-black text-white shadow-2xs'
+                  : 'text-neutral-600 hover:text-black hover:bg-neutral-200/60'
+                  }`}
+                title={t.prevMonthLabel || (lang === 'ru' ? 'Прошлый месяц' : lang === 'uz' ? 'O‘tgan oy' : 'Previous Month')}
+              >
+                {lang === 'ru' ? 'Прошлый' : lang === 'uz' ? 'O‘tgan' : 'Last Month'}
+              </button>
+            </div>
 
-            {/* Accounting Mode Toggle: Cash (По оплате) vs Accrual (По выходу слотов) */}
-            <div className="ml-auto inline-flex items-center p-0.5 rounded-lg bg-neutral-100 border border-neutral-200 text-[10px] font-bold">
-              <button
-                type="button"
-                onClick={() => handleAccountingModeChange('cash')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${accountingMode === 'cash'
-                  ? 'bg-white text-black shadow-2xs font-extrabold'
-                  : 'text-neutral-500 hover:text-black'
-                  }`}
-                title={t.accountingCashDesc}
-              >
-                {t.accountingCashShort || t.accountingCash}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAccountingModeChange('published_slots')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer flex items-center gap-1 ${accountingMode === 'published_slots'
-                  ? 'bg-white text-sky-700 shadow-2xs font-extrabold'
-                  : 'text-neutral-500 hover:text-black'
-                  }`}
-                title={t.accountingAccrualDesc}
-              >
-                <span>{t.accountingAccrualShort || t.accountingAccrual}</span>
-              </button>
+            {/* Date Inputs Selector */}
+            <div className="flex flex-wrap items-center gap-2 bg-neutral-50 border border-neutral-200/80 rounded-xl p-1.5 shrink-0 text-xs shadow-3xs">
+              <div className="flex items-center gap-1.5 px-2 text-neutral-500">
+                <Calendar className="w-3.5 h-3.5 text-neutral-700" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
+                  {lang === 'ru' ? 'Период' : lang === 'uz' ? 'Davr' : 'Period'}:
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'С' : lang === 'uz' ? 'Dan' : 'From'}</span>
+                <input
+                  type="date"
+                  value={filterStartDate}
+                  onChange={(e) => setFilterStartDate(e.target.value)}
+                  className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold uppercase text-neutral-400">{lang === 'ru' ? 'По' : lang === 'uz' ? 'Gacha' : 'To'}</span>
+                <input
+                  type="date"
+                  value={filterEndDate}
+                  onChange={(e) => setFilterEndDate(e.target.value)}
+                  className="bg-white border border-neutral-200 text-neutral-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-black transition font-medium"
+                />
+              </div>
+              {(filterStartDate || filterEndDate) && (
+                <button
+                  onClick={() => {
+                    setFilterStartDate('');
+                    setFilterEndDate('');
+                  }}
+                  className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 font-bold text-[10px] uppercase rounded-lg transition border border-neutral-200 cursor-pointer shadow-2xs"
+                >
+                  {lang === 'ru' ? 'Сбросить' : lang === 'uz' ? 'Tozalash' : 'Reset'}
+                </button>
+              )}
             </div>
           </div>
         </div>
-      )}
 
-      {/* Analytics Metric Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 gap-2">
-        {/* 1. Total Spend (Hero Accent Card) */}
-        {allowedMetrics.includes('spend') && (
-          <div className="bg-indigo-50/70 border border-indigo-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-indigo-300 transition flex flex-col justify-between min-w-0 overflow-hidden ring-1 ring-indigo-500/10">
-            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider truncate" title={`${t.allocatedSpend} (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}>
-              {t.allocatedSpend}
-            </span>
-            <span
-              className={`${getMetricValueClasses(formatMetricVal(totalSpend))} font-black text-indigo-950 mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(totalSpend || 0)).toLocaleString('ru-RU')} UZS (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}
-            >
-              {loading && displayProjectIntegrations.length === 0 ? (
-                <span className="inline-block w-14 h-5 bg-indigo-200/60 animate-pulse rounded my-0.5" />
-              ) : (
-                formatMetricVal(totalSpend)
-              )}
-            </span>
-          </div>
-        )}
-        {/* 2. Blogger Deals */}
-        {allowedMetrics.includes('deals') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.bloggerDeals}>
-              {t.bloggerDeals}
-            </span>
-            <span
-              className={`${getMetricValueClasses(String(filteredIntegrations.length))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={String(filteredIntegrations.length)}
-            >
-              {loading && filteredIntegrations.length === 0 ? (
-                <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
-              ) : (
-                filteredIntegrations.length
-              )}
-            </span>
-          </div>
-        )}
-        {allowedMetrics.includes('spend') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <div className="flex items-center justify-between gap-1">
-              <span
-                className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate"
-                title={hasDateFilter
-                  ? (lang === 'ru' ? 'Расход за выбранный период' : lang === 'uz' ? 'Tanlangan davr xarajati' : 'Selected Period Spend')
-                  : t.monthlySpend
-                }
+        {/* Row 2: Campaign Quick Spend & Limit Badges */}
+        <div className="flex flex-wrap items-center gap-2 pt-2.5 border-t border-neutral-100 text-[10px] font-bold uppercase tracking-wider">
+          <span className="px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-600 border border-neutral-200/60">
+            {activeProjectIntegrations.length} {t.integrationsCount}
+          </span>
+          {allowedMetrics.includes('set_limit') || userRole === 'super_admin' ? (
+            selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null ? (
+              <button
+                onClick={() => {
+                  const val = prompt(t.enterMonthlyLimitPrompt, String(selectedProject.monthlyLimit));
+                  if (val !== null) {
+                    const parsed = val.trim() === '' ? null : parseInt(val, 10);
+                    if (parsed === null || !isNaN(parsed)) {
+                      if (onEditProject) {
+                        onEditProject(
+                          selectedProject.id,
+                          selectedProject.name,
+                          selectedProject.description || '',
+                          selectedProject.telegramThreadId,
+                          parsed
+                        );
+                      }
+                    }
+                  }
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 flex items-center gap-1 transition cursor-pointer"
+                title={t.setMonthlyLimit}
               >
-                {hasDateFilter
-                  ? (lang === 'ru' ? 'Расход за период' : lang === 'uz' ? 'Davr xarajati' : 'Period Spend')
-                  : t.monthlySpend
-                }
+                <Coins className="w-3.5 h-3.5 text-amber-600" />
+                <span>{t.monthlyLimit}: {Math.round(selectedProject.monthlyLimit).toLocaleString('ru-RU')}</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const val = prompt(t.enterMonthlyLimitPrompt, '');
+                  if (val !== null) {
+                    const parsed = val.trim() === '' ? null : parseInt(val, 10);
+                    if (parsed === null || !isNaN(parsed)) {
+                      if (onEditProject) {
+                        onEditProject(
+                          selectedProject.id,
+                          selectedProject.name,
+                          selectedProject.description || '',
+                          selectedProject.telegramThreadId,
+                          parsed
+                        );
+                      }
+                    }
+                  }
+                }}
+                className="px-2.5 py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-600 flex items-center gap-1 transition cursor-pointer"
+                title={t.setMonthlyLimit}
+              >
+                <Coins className="w-3.5 h-3.5 text-neutral-500" />
+                <span>{t.setMonthlyLimit}</span>
+              </button>
+            )
+          ) : (
+            selectedProject.monthlyLimit !== undefined && selectedProject.monthlyLimit !== null && (
+              <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex items-center gap-1">
+                <Coins className="w-3.5 h-3.5 text-amber-600" />
+                <span>{t.monthlyLimit}: {Math.round(selectedProject.monthlyLimit).toLocaleString('ru-RU')}</span>
               </span>
-              <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded ${accountingMode === 'published_slots' ? 'bg-sky-100 text-sky-800' : 'bg-neutral-100 text-neutral-600'}`}>
-                {accountingMode === 'published_slots' ? (t.accountingAccrualShort || 'Факт') : (t.accountingCashShort || 'Касса')}
-              </span>
-            </div>
+            )
+          )}
+          {allowedMetrics.includes('financial_metrics') && (
             <span
-              className={`${getMetricValueClasses(formatMetricVal(selectedProjectMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${hasDateFilter ? (lang === 'ru' ? 'За выбранный период' : lang === 'uz' ? 'Tanlangan davr uchun' : 'Selected period') : (accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc)})${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
+              className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 font-bold ${remainingLimit !== null && remainingLimit < 0
+                ? 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse'
+                : remainingLimit !== null
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-neutral-100 border-neutral-200 text-neutral-500'
+                }`}
+              title={t.remainingLimit}
             >
-              {loading && filteredIntegrations.length === 0 ? (
-                <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
-              ) : (
-                formatMetricVal(selectedProjectMonthlySpend)
-              )}
+              <span>{t.remainingLimit}: {remainingLimit !== null ? Math.round(remainingLimit).toLocaleString('ru-RU') : t.limitNotSet}</span>
             </span>
-          </div>
-        )}
-        {allowedMetrics.includes('financial_metrics') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricRemainingToPay}>
-              {t.metricRemainingToPay}
-            </span>
-            <span
-              className={`${getMetricValueClasses(formatMetricVal(totalRemainingToPay))} font-black text-rose-600 mt-1 tracking-tight truncate w-full`}
-              title={`${Math.round(Number(totalRemainingToPay || 0)).toLocaleString('ru-RU')} UZS`}
+          )}
+
+          {/* Accounting Mode Toggle: Cash (По оплате) vs Accrual (По выходу слотов) */}
+          <div className="ml-auto inline-flex items-center p-0.5 rounded-lg bg-neutral-100 border border-neutral-200 text-[10px] font-bold">
+            <button
+              type="button"
+              onClick={() => handleAccountingModeChange('cash')}
+              className={`px-2.5 py-1 rounded-md transition cursor-pointer ${accountingMode === 'cash'
+                ? 'bg-white text-black shadow-2xs font-extrabold'
+                : 'text-neutral-500 hover:text-black'
+                }`}
+              title={t.accountingCashDesc}
             >
-              {loading && filteredIntegrations.length === 0 ? (
-                <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
-              ) : (
-                formatMetricVal(totalRemainingToPay)
-              )}
-            </span>
-          </div>
-        )}
-        {allowedMetrics.includes('total_slots') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.totalSlotsLabel}>
-              {t.totalSlotsLabel}
-            </span>
-            <span
-              className={`${getMetricValueClasses(String(totalSlotsCount))} font-black text-black mt-1 tracking-tight truncate w-full`}
-              title={String(totalSlotsCount)}
+              {t.accountingCashShort || t.accountingCash}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAccountingModeChange('published_slots')}
+              className={`px-2.5 py-1 rounded-md transition cursor-pointer flex items-center gap-1 ${accountingMode === 'published_slots'
+                ? 'bg-white text-sky-700 shadow-2xs font-extrabold'
+                : 'text-neutral-500 hover:text-black'
+                }`}
+              title={t.accountingAccrualDesc}
             >
-              {loading && filteredIntegrations.length === 0 ? (
-                <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
-              ) : (
-                totalSlotsCount
-              )}
-            </span>
+              <span>{t.accountingAccrualShort || t.accountingAccrual}</span>
+            </button>
           </div>
-        )}
-        {allowedMetrics.includes('slots_published') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricSlotsPublished}>
-              {t.metricSlotsPublished}
-            </span>
-            <span
-              className={`${getMetricValueClasses(String(totalPublishedSlots))} font-black text-emerald-600 mt-1 tracking-tight truncate w-full`}
-              title={String(totalPublishedSlots)}
-            >
-              {loading && filteredIntegrations.length === 0 ? (
-                <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
-              ) : (
-                totalPublishedSlots
-              )}
-            </span>
-          </div>
-        )}
-        {allowedMetrics.includes('slots_remaining') && (
-          <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricSlotsRemaining}>
-              {t.metricSlotsRemaining}
-            </span>
-            <span
-              className={`${getMetricValueClasses(String(totalRemainingSlots))} font-black text-amber-600 mt-1 tracking-tight truncate w-full`}
-              title={String(totalRemainingSlots)}
-            >
-              {loading && filteredIntegrations.length === 0 ? (
-                <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
-              ) : (
-                totalRemainingSlots
-              )}
-            </span>
-          </div>
-        )}
+        </div>
       </div>
+    )}
 
-      {/* Primary Panels Layout */}
+    {/* Analytics Metric Cards Grid */}
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 gap-2">
+      {/* 1. Total Spend (Hero Accent Card) */}
+      {allowedMetrics.includes('spend') && (
+        <div className="bg-indigo-50/70 border border-indigo-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-indigo-300 transition flex flex-col justify-between min-w-0 overflow-hidden ring-1 ring-indigo-500/10">
+          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider truncate" title={`${t.allocatedSpend} (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}>
+            {t.allocatedSpend}
+          </span>
+          <span
+            className={`${getMetricValueClasses(formatMetricVal(totalSpend))} font-black text-indigo-950 mt-1 tracking-tight truncate w-full`}
+            title={`${Math.round(Number(totalSpend || 0)).toLocaleString('ru-RU')} UZS (${lang === 'ru' ? 'За всё время проекта' : lang === 'uz' ? 'Loyiha bo‘yicha jami' : 'All time'})`}
+          >
+            {loading && displayProjectIntegrations.length === 0 ? (
+              <span className="inline-block w-14 h-5 bg-indigo-200/60 animate-pulse rounded my-0.5" />
+            ) : (
+              formatMetricVal(totalSpend)
+            )}
+          </span>
+        </div>
+      )}
+      {/* 2. Blogger Deals */}
+      {allowedMetrics.includes('deals') && (
+        <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.bloggerDeals}>
+            {t.bloggerDeals}
+          </span>
+          <span
+            className={`${getMetricValueClasses(String(filteredIntegrations.length))} font-black text-black mt-1 tracking-tight truncate w-full`}
+            title={String(filteredIntegrations.length)}
+          >
+            {loading && filteredIntegrations.length === 0 ? (
+              <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+            ) : (
+              filteredIntegrations.length
+            )}
+          </span>
+        </div>
+      )}
+      {allowedMetrics.includes('spend') && (
+        <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-1">
+            <span
+              className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate"
+              title={hasDateFilter
+                ? (lang === 'ru' ? 'Расход за выбранный период' : lang === 'uz' ? 'Tanlangan davr xarajati' : 'Selected Period Spend')
+                : t.monthlySpend
+              }
+            >
+              {hasDateFilter
+                ? (lang === 'ru' ? 'Расход за период' : lang === 'uz' ? 'Davr xarajati' : 'Period Spend')
+                : t.monthlySpend
+              }
+            </span>
+            <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded ${accountingMode === 'published_slots' ? 'bg-sky-100 text-sky-800' : 'bg-neutral-100 text-neutral-600'}`}>
+              {accountingMode === 'published_slots' ? (t.accountingAccrualShort || 'Факт') : (t.accountingCashShort || 'Касса')}
+            </span>
+          </div>
+          <span
+            className={`${getMetricValueClasses(formatMetricVal(selectedProjectMonthlySpend))} font-black text-black mt-1 tracking-tight truncate w-full`}
+            title={`${Math.round(Number(selectedProjectMonthlySpend || 0)).toLocaleString('ru-RU')} UZS (${hasDateFilter ? (lang === 'ru' ? 'За выбранный период' : lang === 'uz' ? 'Tanlangan davr uchun' : 'Selected period') : (accountingMode === 'published_slots' ? t.accountingAccrualDesc : t.accountingCashDesc)})${accountingMode === 'cash' && otherSpendInPeriod > 0 ? ` | +${Math.round(otherSpendInPeriod).toLocaleString('ru-RU')} UZS ${lang === 'ru' ? 'прочие' : 'boshqa'} (Всего с прочими: ${Math.round(totalCashSpendWithOtherInPeriod).toLocaleString('ru-RU')} UZS)` : ''}${accountingMode === 'published_slots' && projectPendingSpend > 0 ? ` | ${t.pendingSpend}: ${Math.round(projectPendingSpend).toLocaleString('ru-RU')} UZS` : ''}`}
+          >
+            {loading && filteredIntegrations.length === 0 ? (
+              <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+            ) : (
+              formatMetricVal(selectedProjectMonthlySpend)
+            )}
+          </span>
+          {accountingMode === 'cash' && otherSpendInPeriod > 0 && (
+            <span
+              className="text-[10px] text-neutral-500 font-semibold truncate cursor-help block mt-0.5"
+              title={`Блогеры: ${Math.round(cashBloggerFilteredSpend).toLocaleString('ru-RU')} UZS | Прочие: ${Math.round(otherSpendInPeriod).toLocaleString('ru-RU')} UZS | Итого касса: ${Math.round(totalCashSpendWithOtherInPeriod).toLocaleString('ru-RU')} UZS`}
+            >
+              +{formatMetricVal(otherSpendInPeriod)} {lang === 'ru' ? 'прочие' : 'boshqa'}
+            </span>
+          )}
+        </div>
+      )}
+      {allowedMetrics.includes('financial_metrics') && (
+        <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricRemainingToPay}>
+            {t.metricRemainingToPay}
+          </span>
+          <span
+            className={`${getMetricValueClasses(formatMetricVal(totalRemainingToPay))} font-black text-rose-600 mt-1 tracking-tight truncate w-full`}
+            title={`${Math.round(Number(totalRemainingToPay || 0)).toLocaleString('ru-RU')} UZS`}
+          >
+            {loading && filteredIntegrations.length === 0 ? (
+              <span className="inline-block w-14 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+            ) : (
+              formatMetricVal(totalRemainingToPay)
+            )}
+          </span>
+        </div>
+      )}
+      {allowedMetrics.includes('total_slots') && (
+        <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.totalSlotsLabel}>
+            {t.totalSlotsLabel}
+          </span>
+          <span
+            className={`${getMetricValueClasses(String(totalSlotsCount))} font-black text-black mt-1 tracking-tight truncate w-full`}
+            title={String(totalSlotsCount)}
+          >
+            {loading && filteredIntegrations.length === 0 ? (
+              <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+            ) : (
+              totalSlotsCount
+            )}
+          </span>
+        </div>
+      )}
+      {allowedMetrics.includes('slots_published') && (
+        <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricSlotsPublished}>
+            {t.metricSlotsPublished}
+          </span>
+          <span
+            className={`${getMetricValueClasses(String(totalPublishedSlots))} font-black text-emerald-600 mt-1 tracking-tight truncate w-full`}
+            title={String(totalPublishedSlots)}
+          >
+            {loading && filteredIntegrations.length === 0 ? (
+              <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+            ) : (
+              totalPublishedSlots
+            )}
+          </span>
+        </div>
+      )}
+      {allowedMetrics.includes('slots_remaining') && (
+        <div className="bg-white border border-neutral-200/90 rounded-xl px-2.5 py-3 shadow-2xs hover:border-neutral-300 transition flex flex-col justify-between min-w-0 overflow-hidden">
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider truncate" title={t.metricSlotsRemaining}>
+            {t.metricSlotsRemaining}
+          </span>
+          <span
+            className={`${getMetricValueClasses(String(totalRemainingSlots))} font-black text-amber-600 mt-1 tracking-tight truncate w-full`}
+            title={String(totalRemainingSlots)}
+          >
+            {loading && filteredIntegrations.length === 0 ? (
+              <span className="inline-block w-8 h-5 bg-neutral-200 animate-pulse rounded my-0.5" />
+            ) : (
+              totalRemainingSlots
+            )}
+          </span>
+        </div>
+      )}
+    </div>
+
+    {/* Primary Panels Layout */}
+    <div className="w-full">
+      {/* Selected Project Integrations Manager */}
       <div className="w-full">
-        {/* Selected Project Integrations Manager */}
-        <div className="w-full">
-          {selectedProject ? (
-            <div>
-              {/* Integrations Table Card */}
-              <div className="bg-white border border-neutral-200 rounded-xl shadow-xs overflow-hidden">
-                {/* RelationManager Title & Header */}
-                <div className="border-b border-neutral-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-neutral-50/50">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h3 className="text-sm font-black text-black">
-                      {selectedProject.name} <span className="text-neutral-400 font-normal">→ {t.integrationsTitle}</span>
-                    </h3>
+        {selectedProject ? (
+          <div>
+            {/* Integrations Table Card */}
+            <div className="bg-white border border-neutral-200 rounded-xl shadow-xs overflow-hidden">
+              {/* RelationManager Title & Header */}
+              <div className="border-b border-neutral-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-neutral-50/50">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h3 className="text-sm font-black text-black">
+                    {selectedProject.name} <span className="text-neutral-400 font-normal">→ {t.integrationsTitle}</span>
+                  </h3>
 
-                    {/* Active Campaigns vs All Filter Toggle */}
-                    <div className="inline-flex items-center gap-1 bg-neutral-100 p-1 rounded-xl border border-neutral-200/80 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => handleFilterChange('active')}
-                        className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer text-xs ${integrationFilter === 'active'
-                          ? 'bg-white text-black shadow-xs'
-                          : 'text-neutral-500 hover:text-black'
-                          }`}
-                      >
-                        {t.campaignsFilterActive || 'Активные кампании'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleFilterChange('all')}
-                        className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer text-xs flex items-center gap-1.5 ${integrationFilter === 'all'
-                          ? 'bg-white text-black shadow-xs'
-                          : 'text-neutral-500 hover:text-black'
-                          }`}
-                      >
-                        <span>{t.campaignsFilterAll || 'Все (включая лиды)'}</span>
-                        {activeProjectIntegrations.some(isPreliminaryLead) && (
-                          <span className="text-[10px] bg-neutral-200 text-neutral-700 px-1.5 py-0.2 rounded-full font-bold">
-                            {activeProjectIntegrations.length}
-                          </span>
-                        )}
-                      </button>
-                    </div>
+                  {/* Active Campaigns vs All Filter Toggle */}
+                  <div className="inline-flex items-center gap-1 bg-neutral-100 p-1 rounded-xl border border-neutral-200/80 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => handleFilterChange('active')}
+                      className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer text-xs ${integrationFilter === 'active'
+                        ? 'bg-white text-black shadow-xs'
+                        : 'text-neutral-500 hover:text-black'
+                        }`}
+                    >
+                      {t.campaignsFilterActive || 'Активные кампании'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFilterChange('all')}
+                      className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer text-xs flex items-center gap-1.5 ${integrationFilter === 'all'
+                        ? 'bg-white text-black shadow-xs'
+                        : 'text-neutral-500 hover:text-black'
+                        }`}
+                    >
+                      <span>{t.campaignsFilterAll || 'Все (включая лиды)'}</span>
+                      {activeProjectIntegrations.some(isPreliminaryLead) && (
+                        <span className="text-[10px] bg-neutral-200 text-neutral-700 px-1.5 py-0.2 rounded-full font-bold">
+                          {activeProjectIntegrations.length}
+                        </span>
+                      )}
+                    </button>
                   </div>
-
-                  <button
-                    id="add-integration-btn"
-                    onClick={openAddIntegration}
-                    className="flex items-center gap-1.5 bg-black hover:bg-neutral-950 text-white font-bold text-xs px-3 py-2 rounded-lg transition duration-150 shadow-xs"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-white" />
-                    <span>{t.newIntegration}</span>
-                  </button>
                 </div>
 
-                {/* Integrations Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50 text-[10px] font-bold text-neutral-500 uppercase tracking-wider select-none">
-                        <th className="py-3 px-6 whitespace-nowrap">{t.bloggerColumn}</th>
-                        <th className="py-3 px-4 whitespace-nowrap">{t.startDateColumn}</th>
-                        <th className="py-3 px-4 whitespace-nowrap">{t.priceColumn}</th>
-                        <th className="py-3 px-4 text-center whitespace-nowrap">
-                          {lang === 'ru' ? 'Купленные слоты' : lang === 'uz' ? 'Sotib olingan slotlar' : 'Bought Slots'}
-                        </th>
-                        <th className="py-3 px-4 whitespace-nowrap">{t.totalSumColumn}</th>
-                        <th className="py-3 px-4 whitespace-nowrap">{t.metricPaidToBlogger}</th>
-                        <th className="py-3 px-4 whitespace-nowrap">{t.metricRemainingToPay}</th>
-                        <th className="py-3 px-4 text-center whitespace-nowrap">{t.metricSlotsPublished}</th>
-                        <th className="py-3 px-4 text-center whitespace-nowrap">{t.metricSlotsRemaining}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
-                      {filteredIntegrations.map((item) => {
-                        const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
-                        const slotsSubmitted = (sub && sub.data)
-                          ? Object.entries(sub.data).filter(([key, val]) => /^slot_\d+$/.test(key) && typeof val === 'string' && val.trim() !== '').length
-                          : 0;
-                        const slotsRemaining = Math.max(0, item.slotsCount - slotsSubmitted);
+                <button
+                  id="add-integration-btn"
+                  onClick={openAddIntegration}
+                  className="flex items-center gap-1.5 bg-black hover:bg-neutral-950 text-white font-bold text-xs px-3 py-2 rounded-lg transition duration-150 shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5 text-white" />
+                  <span>{t.newIntegration}</span>
+                </button>
+              </div>
 
-                        return (
-                          <tr
-                            key={item.id}
-                            onClick={() => {
-                              console.log("Clicked integration row:", item);
-                              setSelectedIntegrationForDetails(item);
-                            }}
-                            className="hover:bg-neutral-50/60 transition duration-150 cursor-pointer"
-                          >
-                            {/* Blogger Name */}
-                            <td className="py-3.5 px-6 font-bold text-black whitespace-nowrap">
-                              <div className="flex flex-col">
-                                <div className="flex items-center gap-2">
-                                  <span>{item.bloggerName}</span>
-                                  {isPreliminaryLead(item) && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
-                                      {t.pipelineLeadBadge || 'Лид воронки'}
-                                    </span>
-                                  )}
-                                </div>
-                                {item.createdBy && (
-                                  <span className="text-[10px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
-                                    <User className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
-                                    <span>{item.createdBy}</span>
+              {/* Integrations Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-neutral-200 bg-neutral-50 text-[10px] font-bold text-neutral-500 uppercase tracking-wider select-none">
+                      <th className="py-3 px-6 whitespace-nowrap">{t.bloggerColumn}</th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.startDateColumn}</th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.priceColumn}</th>
+                      <th className="py-3 px-4 text-center whitespace-nowrap">
+                        {lang === 'ru' ? 'Купленные слоты' : lang === 'uz' ? 'Sotib olingan slotlar' : 'Bought Slots'}
+                      </th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.totalSumColumn}</th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.metricPaidToBlogger}</th>
+                      <th className="py-3 px-4 whitespace-nowrap">{t.metricRemainingToPay}</th>
+                      <th className="py-3 px-4 text-center whitespace-nowrap">{t.metricSlotsPublished}</th>
+                      <th className="py-3 px-4 text-center whitespace-nowrap">{t.metricSlotsRemaining}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
+                    {filteredIntegrations.map((item) => {
+                      const sub = (submissions || []).find(s => String(s.integrationId) === String(item.id));
+                      const slotsSubmitted = (sub && sub.data)
+                        ? Object.entries(sub.data).filter(([key, val]) => /^slot_\d+$/.test(key) && typeof val === 'string' && val.trim() !== '').length
+                        : 0;
+                      const slotsRemaining = Math.max(0, item.slotsCount - slotsSubmitted);
+
+                      return (
+                        <tr
+                          key={item.id}
+                          onClick={() => {
+                            console.log("Clicked integration row:", item);
+                            setSelectedIntegrationForDetails(item);
+                          }}
+                          className="hover:bg-neutral-50/60 transition duration-150 cursor-pointer"
+                        >
+                          {/* Blogger Name */}
+                          <td className="py-3.5 px-6 font-bold text-black whitespace-nowrap">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span>{item.bloggerName}</span>
+                                {isPreliminaryLead(item) && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+                                    {t.pipelineLeadBadge || 'Лид воронки'}
                                   </span>
                                 )}
                               </div>
-                            </td>
+                              {item.createdBy && (
+                                <span className="text-[10px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
+                                  <User className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
+                                  <span>{item.createdBy}</span>
+                                </span>
+                              )}
+                            </div>
+                          </td>
 
-                            {/* Start Date */}
-                            <td className="py-3.5 px-4 text-[11px] text-neutral-600 font-medium whitespace-nowrap">
-                              <span className="flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" /> {item.startDate}
-                              </span>
-                            </td>
+                          {/* Start Date */}
+                          <td className="py-3.5 px-4 text-[11px] text-neutral-600 font-medium whitespace-nowrap">
+                            <span className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" /> {item.startDate}
+                            </span>
+                          </td>
 
-                            {/* Price Per Slot */}
-                            <td className="py-3.5 px-4 font-semibold text-neutral-600 whitespace-nowrap">
-                              {item.pricePerSlot.toLocaleString('ru-RU')}
-                            </td>
+                          {/* Price Per Slot */}
+                          <td className="py-3.5 px-4 font-semibold text-neutral-600 whitespace-nowrap">
+                            {item.pricePerSlot.toLocaleString('ru-RU')}
+                          </td>
 
-                            {/* Bought Slots */}
-                            <td className="py-3.5 px-4 text-center font-bold text-black whitespace-nowrap">
-                              {item.slotsCount}
-                            </td>
+                          {/* Bought Slots */}
+                          <td className="py-3.5 px-4 text-center font-bold text-black whitespace-nowrap">
+                            {item.slotsCount}
+                          </td>
 
-                            {/* Total Sum */}
-                            <td className="py-3.5 px-4 font-extrabold text-black whitespace-nowrap">
-                              {formatPrice(item.totalAmount)}
-                            </td>
+                          {/* Total Sum */}
+                          <td className="py-3.5 px-4 font-extrabold text-black whitespace-nowrap">
+                            {formatPrice(item.totalAmount)}
+                          </td>
 
-                            {/* Paid to Blogger */}
-                            <td className="py-3.5 px-4 font-bold text-emerald-600 whitespace-nowrap">
-                              {formatPrice(item.paidAmount || 0)}
-                            </td>
+                          {/* Paid to Blogger */}
+                          <td className="py-3.5 px-4 font-bold text-emerald-600 whitespace-nowrap">
+                            {formatPrice(item.paidAmount || 0)}
+                          </td>
 
-                            {/* Remaining to Pay */}
-                            <td className="py-3.5 px-4 font-bold text-rose-600 whitespace-nowrap">
-                              <div className="flex items-center gap-1.5">
-                                <span>{formatPrice(Math.max(0, cleanAmount(item.totalAmount) - cleanAmount(item.paidAmount || 0)))}</span>
-                                {Math.max(0, item.totalAmount - (item.paidAmount || 0)) > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (onNavigateToReports) {
-                                        onNavigateToReports(item.projectId, item.bloggerName, 'remaining');
-                                      }
-                                    }}
-                                    className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold border border-rose-150 transition"
-                                  >
-                                    {lang === 'ru' ? 'Доплатить' : (lang === 'uz' ? 'To‘lash' : 'Pay remaining')}
-                                  </button>
-                                )}
-                              </div>
-                            </td>
+                          {/* Remaining to Pay */}
+                          <td className="py-3.5 px-4 font-bold text-rose-600 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <span>{formatPrice(Math.max(0, cleanAmount(item.totalAmount) - cleanAmount(item.paidAmount || 0)))}</span>
+                              {Math.max(0, item.totalAmount - (item.paidAmount || 0)) > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (onNavigateToReports) {
+                                      onNavigateToReports(item.projectId, item.bloggerName, 'remaining');
+                                    }
+                                  }}
+                                  className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold border border-rose-150 transition"
+                                >
+                                  {lang === 'ru' ? 'Доплатить' : (lang === 'uz' ? 'To‘lash' : 'Pay remaining')}
+                                </button>
+                              )}
+                            </div>
+                          </td>
 
-                            {/* Slots Published */}
-                            <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-extrabold text-[10px] border border-emerald-100/50">
-                                {slotsSubmitted}
-                              </span>
-                            </td>
+                          {/* Slots Published */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-extrabold text-[10px] border border-emerald-100/50">
+                              {slotsSubmitted}
+                            </span>
+                          </td>
 
-                            {/* Slots Remaining */}
-                            <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 font-extrabold text-[10px] border border-amber-100/50">
-                                {slotsRemaining}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {filteredIntegrations.length === 0 && (
-                        <tr>
-                          <td colSpan={9} className="py-12 px-6 text-center">
-                            <AlertCircle className="w-6 h-6 text-neutral-300 mx-auto mb-2" />
-                            <p className="text-xs font-bold text-neutral-600">{t.noIntegrationsYet}</p>
-                            <p className="text-[11px] text-neutral-400 mt-1">
-                              {t.createIntegrationPrompt}
-                            </p>
+                          {/* Slots Remaining */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 font-extrabold text-[10px] border border-amber-100/50">
+                              {slotsRemaining}
+                            </span>
                           </td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      );
+                    })}
+
+                    {filteredIntegrations.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="py-12 px-6 text-center">
+                          <AlertCircle className="w-6 h-6 text-neutral-300 mx-auto mb-2" />
+                          <p className="text-xs font-bold text-neutral-600">{t.noIntegrationsYet}</p>
+                          <p className="text-[11px] text-neutral-400 mt-1">
+                            {t.createIntegrationPrompt}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-          ) : (
-            <div className="p-12 text-center bg-white border border-neutral-200 rounded-xl shadow-xs">
-              <p className="text-xs text-neutral-500">{t.createProjectPrompt}</p>
+          </div>
+        ) : (
+          <div className="p-12 text-center bg-white border border-neutral-200 rounded-xl shadow-xs">
+            <p className="text-xs text-neutral-500">{t.createProjectPrompt}</p>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* --- MODAL 1: ADD PROJECT --- */}
+    {showAddProjectModal && (
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-100">
+          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
+            <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+              <Plus className="w-4 h-4 text-black" /> {t.addProjectTitle}
+            </h3>
+            <button
+              onClick={() => setShowAddProjectModal(false)}
+              className="text-neutral-400 hover:text-black font-bold text-sm"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmitProject} className="p-6 space-y-4 text-left">
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {t.projectNameLabel}
+              </label>
+              <input
+                type="text"
+                required
+                placeholder={t.projectNamePlaceholder}
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
             </div>
-          )}
+
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {t.projectDescLabel}
+              </label>
+              <textarea
+                placeholder={t.projectDescPlaceholder}
+                value={newProjectDesc}
+                onChange={(e) => setNewProjectDesc(e.target.value)}
+                rows={3}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {lang === 'ru' ? 'Telegram ID Темы (Thread ID)' : lang === 'uz' ? 'Telegram Mavzu ID (Thread ID)' : 'Telegram Thread ID'}
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 12345"
+                value={newProjectThreadId}
+                onChange={(e) => setNewProjectThreadId(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {t.monthlyLimit}
+              </label>
+              <input
+                type="number"
+                placeholder="e.g. 12131000"
+                value={newProjectMonthlyLimit}
+                onChange={(e) => setNewProjectMonthlyLimit(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {lang === 'ru' ? 'Субдомен (Subdomain)' : lang === 'uz' ? 'Subdomen' : 'Subdomain'}
+              </label>
+              <input
+                type="text"
+                placeholder="1"
+                value={newProjectSubdomain}
+                onChange={(e) => setNewProjectSubdomain(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+              <span className="text-[10px] text-neutral-400 mt-1 block">
+                {lang === 'ru' ? 'Например: 1 для 1.tezi.uz, 2 для 2.tezi.uz' : 'Masalan: 1 (1.tezi.uz uchun), 2 (2.tezi.uz uchun)'}
+              </span>
+            </div>
+
+            <div className="pt-2 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowAddProjectModal(false)}
+                className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
+              >
+                {t.cancelBtn}
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
+              >
+                {t.createBtn}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
+    )}
 
-      {/* --- MODAL 1: ADD PROJECT --- */}
-      {showAddProjectModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-100">
-            <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
-              <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-                <Plus className="w-4 h-4 text-black" /> {t.addProjectTitle}
-              </h3>
-              <button
-                onClick={() => setShowAddProjectModal(false)}
-                className="text-neutral-400 hover:text-black font-bold text-sm"
-              >
-                ✕
-              </button>
+    {/* --- MODAL 1B: EDIT PROJECT --- */}
+    {showEditProjectModal && (
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-100">
+          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
+            <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-black" /> {lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
+            </h3>
+            <button
+              onClick={() => setShowEditProjectModal(false)}
+              className="text-neutral-400 hover:text-black font-bold text-sm"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmitEditProject} className="p-6 space-y-4 text-left">
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {t.projectNameLabel}
+              </label>
+              <input
+                type="text"
+                required
+                placeholder={t.projectNamePlaceholder}
+                value={editProjectName}
+                onChange={(e) => setEditProjectName(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
             </div>
 
-            <form onSubmit={handleSubmitProject} className="p-6 space-y-4 text-left">
-              <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.projectNameLabel}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder={t.projectNamePlaceholder}
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                />
-              </div>
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {t.projectDescLabel}
+              </label>
+              <textarea
+                placeholder={t.projectDescPlaceholder}
+                value={editProjectDesc}
+                onChange={(e) => setEditProjectDesc(e.target.value)}
+                rows={3}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+            </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.projectDescLabel}
-                </label>
-                <textarea
-                  placeholder={t.projectDescPlaceholder}
-                  value={newProjectDesc}
-                  onChange={(e) => setNewProjectDesc(e.target.value)}
-                  rows={3}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                />
-              </div>
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {lang === 'ru' ? 'Telegram ID Темы (Thread ID)' : lang === 'uz' ? 'Telegram Mavzu ID (Thread ID)' : 'Telegram Thread ID'}
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 12345"
+                value={editProjectThreadId}
+                onChange={(e) => setEditProjectThreadId(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+            </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {lang === 'ru' ? 'Telegram ID Темы (Thread ID)' : lang === 'uz' ? 'Telegram Mavzu ID (Thread ID)' : 'Telegram Thread ID'}
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 12345"
-                  value={newProjectThreadId}
-                  onChange={(e) => setNewProjectThreadId(e.target.value)}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                />
-              </div>
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {t.monthlyLimit}
+              </label>
+              <input
+                type="number"
+                placeholder="e.g. 12131000"
+                value={editProjectMonthlyLimit}
+                onChange={(e) => setEditProjectMonthlyLimit(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+            </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.monthlyLimit}
-                </label>
-                <input
-                  type="number"
-                  placeholder="e.g. 12131000"
-                  value={newProjectMonthlyLimit}
-                  onChange={(e) => setNewProjectMonthlyLimit(e.target.value)}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                />
-              </div>
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {lang === 'ru' ? 'Субдомен (Subdomain)' : lang === 'uz' ? 'Subdomen' : 'Subdomain'}
+              </label>
+              <input
+                type="text"
+                placeholder="1"
+                value={editProjectSubdomain}
+                onChange={(e) => setEditProjectSubdomain(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+              <span className="text-[10px] text-neutral-400 mt-1 block">
+                {lang === 'ru' ? 'Например: 1 для 1.tezi.uz, 2 для 2.tezi.uz' : 'Masalan: 1 (1.tezi.uz uchun), 2 (2.tezi.uz uchun)'}
+              </span>
+            </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {lang === 'ru' ? 'Субдомен (Subdomain)' : lang === 'uz' ? 'Subdomen' : 'Subdomain'}
-                </label>
-                <input
-                  type="text"
-                  placeholder="1"
-                  value={newProjectSubdomain}
-                  onChange={(e) => setNewProjectSubdomain(e.target.value)}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                />
-                <span className="text-[10px] text-neutral-400 mt-1 block">
-                  {lang === 'ru' ? 'Например: 1 для 1.tezi.uz, 2 для 2.tezi.uz' : 'Masalan: 1 (1.tezi.uz uchun), 2 (2.tezi.uz uchun)'}
-                </span>
-              </div>
-
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddProjectModal(false)}
-                  className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
-                >
-                  {t.cancelBtn}
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
-                >
-                  {t.createBtn}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL 1B: EDIT PROJECT --- */}
-      {showEditProjectModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-100">
-            <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
-              <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-black" /> {lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
-              </h3>
+            <div className="pt-2 flex gap-3">
               <button
+                type="button"
                 onClick={() => setShowEditProjectModal(false)}
-                className="text-neutral-400 hover:text-black font-bold text-sm"
+                className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
               >
-                ✕
+                {t.cancelBtn}
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
+              >
+                {lang === 'ru' ? 'Сохранить' : lang === 'uz' ? 'Saqlash' : 'Save'}
               </button>
             </div>
+          </form>
+        </div>
+      </div>
+    )}
 
-            <form onSubmit={handleSubmitEditProject} className="p-6 space-y-4 text-left">
+    {/* --- MODAL 2: ADD/EDIT INTEGRATION --- */}
+    {(showAddIntegrationModal || editingIntegration) && (
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-2xl overflow-hidden animate-in fade-in duration-100">
+          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
+            <div className="flex items-center gap-3">
+              <h3 className="font-bold text-sm uppercase tracking-wider">
+                {editingIntegration ? t.editIntegration : t.newIntegration}
+              </h3>
+              {!editingIntegration && (
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 border border-neutral-200/80 rounded-lg text-[10px] text-neutral-600 font-medium">
+                  <User className="w-3 h-3 text-neutral-500 shrink-0" />
+                  <span>{t.creatingAsUser || 'Создает:'} <strong className="text-black font-bold">{currentUserName || currentUserEmail || 'Super Admin'}</strong></span>
+                </div>
+              )}
+              {editingIntegration && (
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 border border-neutral-200/80 rounded-lg text-[10px] text-neutral-600 font-medium">
+                  <User className="w-3 h-3 text-neutral-500 shrink-0" />
+                  <span>{t.kanbanCreatedByLabel || 'Создал:'} <strong className="text-black font-bold">{editingIntegration.createdBy || (t.kanbanNotSpecified || 'Не указан')}</strong></span>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setShowAddIntegrationModal(false);
+                setEditingIntegration(null);
+              }}
+              className="text-neutral-400 hover:text-black font-bold text-sm"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmitIntegration} className="p-6 space-y-4 text-left">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.projectNameLabel}
+                  {t.bloggerColumn} *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder={t.projectNamePlaceholder}
-                  value={editProjectName}
-                  onChange={(e) => setEditProjectName(e.target.value)}
+                  placeholder="e.g., Alex Fitness Hub"
+                  value={bloggerName}
+                  onChange={(e) => setBloggerName(e.target.value)}
                   className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.projectDescLabel}
+                  {t.platformColumn} *
                 </label>
-                <textarea
-                  placeholder={t.projectDescPlaceholder}
-                  value={editProjectDesc}
-                  onChange={(e) => setEditProjectDesc(e.target.value)}
-                  rows={3}
+                <select
+                  value={platform}
+                  onChange={(e) => setPlatform(e.target.value as any)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                >
+                  <option value="Telegram">Telegram</option>
+                  <option value="Instagram">Instagram</option>
+                  <option value="YouTube">YouTube</option>
+                  <option value="MAX">MAX</option>
+                  <option value="TikTok">TikTok</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера *' : lang === 'uz' ? 'Blogger sahifasi havolasi *' : 'Blogger Page Link *')}
+                </label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://instagram.com/alex_fit"
+                  value={bloggerPageLink}
+                  onChange={(e) => setBloggerPageLink(e.target.value)}
                   className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {lang === 'ru' ? 'Telegram ID Темы (Thread ID)' : lang === 'uz' ? 'Telegram Mavzu ID (Thread ID)' : 'Telegram Thread ID'}
+                  {t.referralLinkField}
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://saas-ai.com/join?utm_source=alex_fit"
+                  value={referralLink}
+                  onChange={(e) => setReferralLink(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  {lang === 'ru' ? 'Личный Telegram блогера' : lang === 'uz' ? 'Blogger shaxsiy Telegrami' : 'Personal Telegram'}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 12345"
-                  value={editProjectThreadId}
-                  onChange={(e) => setEditProjectThreadId(e.target.value)}
+                  placeholder="@username или https://t.me/..."
+                  value={telegramUsername}
+                  onChange={(e) => setTelegramUsername(e.target.value)}
                   className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
                 />
               </div>
+            </div>
 
+            <div>
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                {t.dateColumn || t.startDateColumn} *
+              </label>
+              <input
+                type="date"
+                required
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.monthlyLimit}
+                  {t.pricePerSlotField} *
                 </label>
                 <input
                   type="number"
-                  placeholder="e.g. 12131000"
-                  value={editProjectMonthlyLimit}
-                  onChange={(e) => setEditProjectMonthlyLimit(e.target.value)}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                  required
+                  min={0}
+                  value={pricePerSlot}
+                  onChange={(e) => setPricePerSlot(Number(e.target.value))}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150 font-bold text-black"
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {lang === 'ru' ? 'Субдомен (Subdomain)' : lang === 'uz' ? 'Subdomen' : 'Subdomain'}
+                  {t.slotsCountField} *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  value={slotsCount}
+                  onChange={(e) => setSlotsCount(Number(e.target.value))}
+                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150 font-bold text-black"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-black uppercase tracking-wider mb-1.5">
+                  {t.totalSumField}
                 </label>
                 <input
                   type="text"
-                  placeholder="1"
-                  value={editProjectSubdomain}
-                  onChange={(e) => setEditProjectSubdomain(e.target.value)}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
+                  disabled
+                  value={calculatedTotal.toLocaleString('ru-RU')}
+                  className="w-full px-4 py-2 bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-black select-none"
                 />
-                <span className="text-[10px] text-neutral-400 mt-1 block">
-                  {lang === 'ru' ? 'Например: 1 для 1.tezi.uz, 2 для 2.tezi.uz' : 'Masalan: 1 (1.tezi.uz uchun), 2 (2.tezi.uz uchun)'}
-                </span>
               </div>
+            </div>
 
-              <div className="pt-2 flex gap-3">
+            {/* Checkbox to Toggle Individual Slots Configuration */}
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="checkbox"
+                id="customize-slots-checkbox"
+                checked={customizeSlots}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setCustomizeSlots(checked);
+                  if (checked && slotGroups.length === 0) {
+                    setSlotGroups([{ quantity: slotsCount, platform: platform, format: getDefaultFormat(platform) }]);
+                  }
+                }}
+                className="w-3.5 h-3.5 accent-black rounded border-neutral-300 focus:ring-black cursor-pointer"
+              />
+              <label htmlFor="customize-slots-checkbox" className="text-[10px] font-bold text-neutral-600 select-none cursor-pointer">
+                {t.customizeSlotsLabel}
+              </label>
+            </div>
+
+            {/* Grouped Slots Configurer */}
+            {customizeSlots && (
+              <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-200 text-left space-y-2">
+                <div className="flex justify-between items-center border-b border-neutral-200 pb-1.5">
+                  <label className="block text-[9px] font-black text-neutral-500 uppercase tracking-wide">
+                    {t.configureSlotsTitle}
+                  </label>
+                  <span className="text-[9px] font-bold text-neutral-400">
+                    {slotGroups.reduce((acc, g) => acc + g.quantity, 0)} / {slotsCount}
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                  {slotGroups.map((group, index) => (
+                    <div key={index} className="flex items-center gap-1.5 p-1.5 bg-white border border-neutral-150 rounded-lg text-xs">
+                      {/* Quantity input */}
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        max={slotsCount}
+                        value={group.quantity}
+                        onChange={(e) => {
+                          const val = Math.max(1, Number(e.target.value));
+                          const otherSum = slotGroups.reduce((acc, g, idx) => idx === index ? acc : acc + g.quantity, 0);
+                          if (otherSum + val > slotsCount) {
+                            alert(lang === 'ru'
+                              ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!`
+                              : lang === 'uz'
+                                ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!`
+                                : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                            );
+                            return;
+                          }
+                          const nextGroups = [...slotGroups];
+                          nextGroups[index].quantity = val;
+                          setSlotGroups(nextGroups);
+                        }}
+                        className="w-12 bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none text-center"
+                        title="Quantity"
+                      />
+
+                      {/* Platform selector */}
+                      <select
+                        value={group.platform}
+                        onChange={(e) => {
+                          const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
+                          const nextGroups = [...slotGroups];
+                          nextGroups[index] = {
+                            ...nextGroups[index],
+                            platform: platVal,
+                            format: getDefaultFormat(platVal)
+                          };
+                          setSlotGroups(nextGroups);
+                        }}
+                        className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none"
+                      >
+                        <option value="Telegram">Telegram</option>
+                        <option value="Instagram">Instagram</option>
+                        <option value="YouTube">YouTube</option>
+                        <option value="MAX">MAX</option>
+                        <option value="TikTok">TikTok</option>
+                      </select>
+
+                      {/* Format Selector */}
+                      <select
+                        value={group.format}
+                        onChange={(e) => {
+                          const nextGroups = [...slotGroups];
+                          nextGroups[index].format = e.target.value;
+                          setSlotGroups(nextGroups);
+                        }}
+                        className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none flex-1"
+                      >
+                        {group.platform === 'Instagram' && (
+                          <>
+                            <option value="Stories">Instagram Stories</option>
+                            <option value="Reels">Instagram Reels</option>
+                            <option value="VideoBadge">{lang === 'ru' ? 'Плашка на видео' : lang === 'uz' ? 'Videodagi plashka' : 'Video badge'}</option>
+                          </>
+                        )}
+                        {group.platform === 'Telegram' && (
+                          <>
+                            <option value="Post">Telegram Post</option>
+                            <option value="Stories">Telegram Stories</option>
+                          </>
+                        )}
+                        {group.platform === 'YouTube' && (
+                          <>
+                            <option value="Shorts">YouTube Shorts</option>
+                            <option value="Integration">YouTube Integration</option>
+                          </>
+                        )}
+                        {group.platform === 'MAX' && (
+                          <>
+                            <option value="Post">MAX Post</option>
+                          </>
+                        )}
+                        {group.platform === 'TikTok' && (
+                          <>
+                            <option value="VideoPost">{lang === 'ru' ? 'TikTok Видео-Пост' : lang === 'uz' ? 'TikTok Video-Post' : 'TikTok Video Post'}</option>
+                          </>
+                        )}
+                      </select>
+
+                      {/* Delete group button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSlotGroups(slotGroups.filter((_, idx) => idx !== index));
+                        }}
+                        className="text-red-500 hover:bg-neutral-100 p-1 rounded text-xs font-bold"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add group button */}
                 <button
                   type="button"
-                  onClick={() => setShowEditProjectModal(false)}
-                  className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
+                  onClick={() => {
+                    const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
+                    if (currentSum + 1 > slotsCount) {
+                      alert(lang === 'ru'
+                        ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!`
+                        : lang === 'uz'
+                          ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!`
+                          : `Configured slots count cannot exceed total slots count (${slotsCount})!`
+                      );
+                      return;
+                    }
+                    setSlotGroups([...slotGroups, { quantity: 1, platform: platform, format: getDefaultFormat(platform) }]);
+                  }}
+                  className="w-full py-1.5 text-[10px] font-extrabold text-neutral-600 hover:text-black border border-dashed border-neutral-300 rounded hover:border-neutral-400 bg-white transition"
                 >
-                  {t.cancelBtn}
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
-                >
-                  {lang === 'ru' ? 'Сохранить' : lang === 'uz' ? 'Saqlash' : 'Save'}
+                  + {lang === 'ru' ? 'Добавить группу слотов' : lang === 'uz' ? 'Slotlar guruhini qo‘shish' : 'Add Slot Group'}
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* --- MODAL 2: ADD/EDIT INTEGRATION --- */}
-      {(showAddIntegrationModal || editingIntegration) && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-2xl overflow-hidden animate-in fade-in duration-100">
-            <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
-              <div className="flex items-center gap-3">
-                <h3 className="font-bold text-sm uppercase tracking-wider">
-                  {editingIntegration ? t.editIntegration : t.newIntegration}
-                </h3>
-                {!editingIntegration && (
-                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 border border-neutral-200/80 rounded-lg text-[10px] text-neutral-600 font-medium">
-                    <User className="w-3 h-3 text-neutral-500 shrink-0" />
-                    <span>{t.creatingAsUser || 'Создает:'} <strong className="text-black font-bold">{currentUserName || currentUserEmail || 'Super Admin'}</strong></span>
-                  </div>
-                )}
-                {editingIntegration && (
-                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 border border-neutral-200/80 rounded-lg text-[10px] text-neutral-600 font-medium">
-                    <User className="w-3 h-3 text-neutral-500 shrink-0" />
-                    <span>{t.kanbanCreatedByLabel || 'Создал:'} <strong className="text-black font-bold">{editingIntegration.createdBy || (t.kanbanNotSpecified || 'Не указан')}</strong></span>
-                  </div>
-                )}
-              </div>
+            <div className="pt-2 flex gap-3">
               <button
+                type="button"
                 onClick={() => {
                   setShowAddIntegrationModal(false);
                   setEditingIntegration(null);
                 }}
-                className="text-neutral-400 hover:text-black font-bold text-sm"
+                className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
               >
-                ✕
+                {t.cancelBtn}
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
+              >
+                {editingIntegration ? t.saveChangesBtn : t.addIntegrationBtn}
               </button>
             </div>
+          </form>
+        </div>
+      </div>
+    )}
 
-            <form onSubmit={handleSubmitIntegration} className="p-6 space-y-4 text-left">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {t.bloggerColumn} *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g., Alex Fitness Hub"
-                    value={bloggerName}
-                    onChange={(e) => setBloggerName(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {t.platformColumn} *
-                  </label>
-                  <select
-                    value={platform}
-                    onChange={(e) => setPlatform(e.target.value as any)}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                  >
-                    <option value="Telegram">Telegram</option>
-                    <option value="Instagram">Instagram</option>
-                    <option value="YouTube">YouTube</option>
-                    <option value="MAX">MAX</option>
-                    <option value="TikTok">TikTok</option>
-                  </select>
-                </div>
+    {/* Detailed Integration Info Modal */}
+    {selectedIntegrationForDetails && (
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 transition-all duration-200 animate-in fade-in">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh] text-left border border-neutral-200">
+          {/* Modal Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 bg-neutral-50/50">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block">
+                  {t.integrationDetailsTitle || 'Integration Details'}
+                </span>
+                {selectedIntegrationForDetails.createdBy && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-neutral-200/70 text-neutral-700 text-[10px] font-semibold">
+                    <User className="w-2.5 h-2.5 text-neutral-500" />
+                    <span>{selectedIntegrationForDetails.createdBy}</span>
+                  </span>
+                )}
               </div>
+              <span className="font-extrabold text-[13px] text-black uppercase tracking-tight">
+                {selectedIntegrationForDetails.bloggerName || ''}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedIntegrationForDetails(null)}
+              className="p-1 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Modal Content Scroll Area */}
+          <div className="p-5 overflow-y-auto space-y-4 text-xs">
+            {/* Main Fields Grid */}
+            <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200/50 space-y-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера *' : lang === 'uz' ? 'Blogger sahifasi havolasi *' : 'Blogger Page Link *')}
-                  </label>
-                  <input
-                    type="url"
-                    required
-                    placeholder="https://instagram.com/alex_fit"
-                    value={bloggerPageLink}
-                    onChange={(e) => setBloggerPageLink(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {t.referralLinkField}
-                  </label>
-                  <input
-                    type="url"
-                    placeholder="https://saas-ai.com/join?utm_source=alex_fit"
-                    value={referralLink}
-                    onChange={(e) => setReferralLink(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {lang === 'ru' ? 'Личный Telegram блогера' : lang === 'uz' ? 'Blogger shaxsiy Telegrami' : 'Personal Telegram'}
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="@username или https://t.me/..."
-                    value={telegramUsername}
-                    onChange={(e) => setTelegramUsername(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.dateColumn || t.startDateColumn} *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {t.pricePerSlotField} *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    value={pricePerSlot}
-                    onChange={(e) => setPricePerSlot(Number(e.target.value))}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150 font-bold text-black"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                    {t.slotsCountField} *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={slotsCount}
-                    onChange={(e) => setSlotsCount(Number(e.target.value))}
-                    className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150 font-bold text-black"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-black uppercase tracking-wider mb-1.5">
-                    {t.totalSumField}
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    value={calculatedTotal.toLocaleString('ru-RU')}
-                    className="w-full px-4 py-2 bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-black select-none"
-                  />
-                </div>
-              </div>
-
-              {/* Checkbox to Toggle Individual Slots Configuration */}
-              <div className="flex items-center gap-2 mb-2">
-                <input
-                  type="checkbox"
-                  id="customize-slots-checkbox"
-                  checked={customizeSlots}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setCustomizeSlots(checked);
-                    if (checked && slotGroups.length === 0) {
-                      setSlotGroups([{ quantity: slotsCount, platform: platform, format: getDefaultFormat(platform) }]);
-                    }
-                  }}
-                  className="w-3.5 h-3.5 accent-black rounded border-neutral-300 focus:ring-black cursor-pointer"
-                />
-                <label htmlFor="customize-slots-checkbox" className="text-[10px] font-bold text-neutral-600 select-none cursor-pointer">
-                  {t.customizeSlotsLabel}
-                </label>
-              </div>
-
-              {/* Grouped Slots Configurer */}
-              {customizeSlots && (
-                <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-200 text-left space-y-2">
-                  <div className="flex justify-between items-center border-b border-neutral-200 pb-1.5">
-                    <label className="block text-[9px] font-black text-neutral-500 uppercase tracking-wide">
-                      {t.configureSlotsTitle}
-                    </label>
-                    <span className="text-[9px] font-bold text-neutral-400">
-                      {slotGroups.reduce((acc, g) => acc + g.quantity, 0)} / {slotsCount}
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.platformColumn || 'Platform'}</p>
+                  <div className="mt-1">
+                    <span className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase ${getPlatformBadgeClasses(selectedIntegrationForDetails.platform)}`}>
+                      {selectedIntegrationForDetails.platform || '—'}
                     </span>
                   </div>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                    {t.createdByField || (lang === 'ru' ? 'Создан кем' : lang === 'uz' ? 'Kim tomonidan yaratildi' : 'Created By')}
+                  </p>
+                  <p className="font-bold text-neutral-800 mt-1 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                    <span className="truncate">{selectedIntegrationForDetails.createdBy || (t.kanbanNotSpecified || 'Не указан')}</span>
+                  </p>
+                </div>
+              </div>
+              <div className="border-t border-neutral-200/60 pt-2.5">
+                <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                  {t.dateColumn || t.startDateColumn || 'Date'}
+                </p>
+                <p className="font-bold text-neutral-800 mt-0.5 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+                  {selectedIntegrationForDetails.startDate || '—'}
+                </p>
+              </div>
+            </div>
 
-                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                    {slotGroups.map((group, index) => (
-                      <div key={index} className="flex items-center gap-1.5 p-1.5 bg-white border border-neutral-150 rounded-lg text-xs">
-                        {/* Quantity input */}
-                        <input
-                          type="number"
-                          required
-                          min={1}
-                          max={slotsCount}
-                          value={group.quantity}
-                          onChange={(e) => {
-                            const val = Math.max(1, Number(e.target.value));
-                            const otherSum = slotGroups.reduce((acc, g, idx) => idx === index ? acc : acc + g.quantity, 0);
-                            if (otherSum + val > slotsCount) {
-                              alert(lang === 'ru'
-                                ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!`
-                                : lang === 'uz'
-                                  ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!`
-                                  : `Configured slots count cannot exceed total slots count (${slotsCount})!`
-                              );
-                              return;
-                            }
-                            const nextGroups = [...slotGroups];
-                            nextGroups[index].quantity = val;
-                            setSlotGroups(nextGroups);
-                          }}
-                          className="w-12 bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none text-center"
-                          title="Quantity"
-                        />
-
-                        {/* Platform selector */}
-                        <select
-                          value={group.platform}
-                          onChange={(e) => {
-                            const platVal = e.target.value as 'Telegram' | 'Instagram' | 'YouTube' | 'MAX' | 'TikTok';
-                            const nextGroups = [...slotGroups];
-                            nextGroups[index] = {
-                              ...nextGroups[index],
-                              platform: platVal,
-                              format: getDefaultFormat(platVal)
-                            };
-                            setSlotGroups(nextGroups);
-                          }}
-                          className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none"
-                        >
-                          <option value="Telegram">Telegram</option>
-                          <option value="Instagram">Instagram</option>
-                          <option value="YouTube">YouTube</option>
-                          <option value="MAX">MAX</option>
-                          <option value="TikTok">TikTok</option>
-                        </select>
-
-                        {/* Format Selector */}
-                        <select
-                          value={group.format}
-                          onChange={(e) => {
-                            const nextGroups = [...slotGroups];
-                            nextGroups[index].format = e.target.value;
-                            setSlotGroups(nextGroups);
-                          }}
-                          className="bg-neutral-50 border border-neutral-200 rounded px-1.5 py-1 text-[10px] font-bold text-black focus:outline-none flex-1"
-                        >
-                          {group.platform === 'Instagram' && (
-                            <>
-                              <option value="Stories">Instagram Stories</option>
-                              <option value="Reels">Instagram Reels</option>
-                              <option value="VideoBadge">{lang === 'ru' ? 'Плашка на видео' : lang === 'uz' ? 'Videodagi plashka' : 'Video badge'}</option>
-                            </>
-                          )}
-                          {group.platform === 'Telegram' && (
-                            <>
-                              <option value="Post">Telegram Post</option>
-                              <option value="Stories">Telegram Stories</option>
-                            </>
-                          )}
-                          {group.platform === 'YouTube' && (
-                            <>
-                              <option value="Shorts">YouTube Shorts</option>
-                              <option value="Integration">YouTube Integration</option>
-                            </>
-                          )}
-                          {group.platform === 'MAX' && (
-                            <>
-                              <option value="Post">MAX Post</option>
-                            </>
-                          )}
-                          {group.platform === 'TikTok' && (
-                            <>
-                              <option value="VideoPost">{lang === 'ru' ? 'TikTok Видео-Пост' : lang === 'uz' ? 'TikTok Video-Post' : 'TikTok Video Post'}</option>
-                            </>
-                          )}
-                        </select>
-
-                        {/* Delete group button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSlotGroups(slotGroups.filter((_, idx) => idx !== index));
-                          }}
-                          className="text-red-500 hover:bg-neutral-100 p-1 rounded text-xs font-bold"
-                        >
-                          ✕
-                        </button>
+            {/* Financial Metrics */}
+            <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
+              <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5">
+                Финансы / Financials
+              </h4>
+              <div className="space-y-1.5">
+                <div className="flex justify-between py-0.5">
+                  <span className="text-neutral-500">{t.priceColumn || 'Price'}:</span>
+                  <span className="font-bold text-neutral-800">
+                    {Number(selectedIntegrationForDetails.pricePerSlot || 0).toLocaleString('ru-RU')} UZS
+                  </span>
+                </div>
+                <div className="flex justify-between py-0.5">
+                  <span className="text-neutral-500">{t.slotsColumn || 'Slots'}:</span>
+                  <span className="font-bold text-neutral-800">
+                    {Number(selectedIntegrationForDetails.slotsCount || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between py-0.5 border-t border-neutral-50 pt-1.5">
+                  <span className="text-neutral-500">{t.totalSumColumn || 'Total Sum'}:</span>
+                  <span className="font-black text-black">
+                    {formatPrice(selectedIntegrationForDetails.totalAmount || 0)} UZS
+                  </span>
+                </div>
+                {(allowedMetrics || []).includes('financial_metrics') && (
+                  <>
+                    <div className="flex justify-between py-0.5">
+                      <span className="text-neutral-500">{t.metricPaidToBlogger || 'Paid'}:</span>
+                      <span className="font-extrabold text-emerald-600">
+                        {formatPrice(selectedIntegrationForDetails.paidAmount || 0)} UZS
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-0.5 border-t border-neutral-50 pt-1.5">
+                      <span className="text-neutral-500 font-bold">{t.metricRemainingToPay || 'Remaining'}:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-rose-600">
+                          {formatPrice(Math.max(0, cleanAmount(selectedIntegrationForDetails.totalAmount || 0) - cleanAmount(selectedIntegrationForDetails.paidAmount || 0)))} UZS
+                        </span>
+                        {Math.max(0, Number(selectedIntegrationForDetails.totalAmount || 0) - Number(selectedIntegrationForDetails.paidAmount || 0)) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedIntegrationForDetails(null);
+                              if (onNavigateToReports) {
+                                onNavigateToReports(selectedIntegrationForDetails.projectId, selectedIntegrationForDetails.bloggerName, 'remaining');
+                              }
+                            }}
+                            className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold border border-rose-150 transition"
+                          >
+                            {lang === 'ru' ? 'Доплатить' : (lang === 'uz' ? 'To‘lash' : 'Pay remaining')}
+                          </button>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
 
-                  {/* Add group button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const currentSum = slotGroups.reduce((acc, g) => acc + g.quantity, 0);
-                      if (currentSum + 1 > slotsCount) {
-                        alert(lang === 'ru'
-                          ? `Количество настроенных слотов не должно превышать общее количество (${slotsCount})!`
-                          : lang === 'uz'
-                            ? `Sozlangan slotlar soni umumiy slotlar sonidan (${slotsCount}) oshib ketmasligi kerak!`
-                            : `Configured slots count cannot exceed total slots count (${slotsCount})!`
-                        );
-                        return;
-                      }
-                      setSlotGroups([...slotGroups, { quantity: 1, platform: platform, format: getDefaultFormat(platform) }]);
-                    }}
-                    className="w-full py-1.5 text-[10px] font-extrabold text-neutral-600 hover:text-black border border-dashed border-neutral-300 rounded hover:border-neutral-400 bg-white transition"
-                  >
-                    + {lang === 'ru' ? 'Добавить группу слотов' : lang === 'uz' ? 'Slotlar guruhini qo‘shish' : 'Add Slot Group'}
-                  </button>
+            {/* Links */}
+            <div className="space-y-3">
+              {selectedIntegrationForDetails.telegramUsername && (
+                <div className="space-y-1">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                    {lang === 'ru' ? 'Личный Telegram блогера' : lang === 'uz' ? 'Blogger shaxsiy Telegrami' : 'Personal Telegram'}
+                  </p>
+                  <div className="flex items-center justify-between gap-2 bg-sky-50/60 p-2 rounded-lg border border-sky-100">
+                    <span className="font-bold text-sky-900 text-xs flex items-center gap-1.5">
+                      <Send className="w-3.5 h-3.5 text-sky-500" />
+                      {formatTelegramHandle(selectedIntegrationForDetails.telegramUsername)}
+                    </span>
+                    <a
+                      href={formatTelegramLink(selectedIntegrationForDetails.telegramUsername)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-md text-[10px] font-bold inline-flex items-center gap-1 shadow-xs transition shrink-0"
+                      title="Открыть чат в Telegram"
+                    >
+                      <span>Написать</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
+                </div>
+              )}
+              {selectedIntegrationForDetails.bloggerPageLink && (
+                <div className="space-y-1">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                    {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера' : lang === 'uz' ? 'Blogger sahifasi havolasi' : 'Blogger Page Link')}
+                  </p>
+                  <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
+                    <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{selectedIntegrationForDetails.bloggerPageLink}</span>
+                    <a
+                      href={selectedIntegrationForDetails.bloggerPageLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
+                      title="Open link"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
                 </div>
               )}
 
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddIntegrationModal(false);
-                    setEditingIntegration(null);
-                  }}
-                  className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
-                >
-                  {t.cancelBtn}
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
-                >
-                  {editingIntegration ? t.saveChangesBtn : t.addIntegrationBtn}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Detailed Integration Info Modal */}
-      {selectedIntegrationForDetails && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 transition-all duration-200 animate-in fade-in">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh] text-left border border-neutral-200">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 bg-neutral-50/50">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block">
-                    {t.integrationDetailsTitle || 'Integration Details'}
-                  </span>
-                  {selectedIntegrationForDetails.createdBy && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-neutral-200/70 text-neutral-700 text-[10px] font-semibold">
-                      <User className="w-2.5 h-2.5 text-neutral-500" />
-                      <span>{selectedIntegrationForDetails.createdBy}</span>
-                    </span>
-                  )}
+              {selectedIntegrationForDetails.referralLink && (
+                <div className="space-y-1">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.referralLinkField || 'UTM Link'}</p>
+                  <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
+                    <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{selectedIntegrationForDetails.referralLink}</span>
+                    <a
+                      href={selectedIntegrationForDetails.referralLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
                 </div>
-                <span className="font-extrabold text-[13px] text-black uppercase tracking-tight">
-                  {selectedIntegrationForDetails.bloggerName || ''}
-                </span>
+              )}
+
+              <div className="space-y-1">
+                <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
+                  {lang === 'ru' ? 'Ссылка для отчета блогера' : lang === 'uz' ? 'Blogger hisoboti havolasi' : 'Blogger Execution Report Link'}
+                </p>
+                {(() => {
+                  const cabinetUrl = getCabinetUrl(selectedIntegrationForDetails.bloggerCabinetToken || selectedIntegrationForDetails.id);
+                  return (
+                    <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
+                      <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{cabinetUrl}</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await copyToClipboard(cabinetUrl);
+                          setCopiedCabinetLink(true);
+                          setTimeout(() => setCopiedCabinetLink(false), 2000);
+                        }}
+                        className={`p-1 rounded border transition shrink-0 cursor-pointer ${copiedCabinetLink
+                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                          : 'bg-white hover:bg-neutral-100 border-neutral-200 text-neutral-600'
+                          }`}
+                        title={copiedCabinetLink ? (lang === 'ru' ? 'Скопировано!' : 'Copied!') : (lang === 'ru' ? 'Копировать ссылку' : 'Copy link')}
+                      >
+                        {copiedCabinetLink ? <Check className="w-3.5 h-3.5 text-white" /> : <Link className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedIntegrationForDetails(null)}
-                className="p-1 rounded-full hover:bg-neutral-200 text-neutral-400 hover:text-black transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
-            {/* Modal Content Scroll Area */}
-            <div className="p-5 overflow-y-auto space-y-4 text-xs">
-              {/* Main Fields Grid */}
-              <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200/50 space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.platformColumn || 'Platform'}</p>
-                    <div className="mt-1">
-                      <span className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase ${getPlatformBadgeClasses(selectedIntegrationForDetails.platform)}`}>
-                        {selectedIntegrationForDetails.platform || '—'}
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                      {t.createdByField || (lang === 'ru' ? 'Создан кем' : lang === 'uz' ? 'Kim tomonidan yaratildi' : 'Created By')}
-                    </p>
-                    <p className="font-bold text-neutral-800 mt-1 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                      <span className="truncate">{selectedIntegrationForDetails.createdBy || (t.kanbanNotSpecified || 'Не указан')}</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="border-t border-neutral-200/60 pt-2.5">
-                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                    {t.dateColumn || t.startDateColumn || 'Date'}
-                  </p>
-                  <p className="font-bold text-neutral-800 mt-0.5 flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-neutral-400" />
-                    {selectedIntegrationForDetails.startDate || '—'}
-                  </p>
-                </div>
-              </div>
+            {/* Slots deliverables / submissions list */}
+            {(() => {
+              const sub = (Array.isArray(submissions) ? submissions : []).find(s => String(s.integrationId) === String(selectedIntegrationForDetails.id));
+              const slotsList = (selectedIntegrationForDetails.slotsConfig && Array.isArray(selectedIntegrationForDetails.slotsConfig) && selectedIntegrationForDetails.slotsConfig.length > 0)
+                ? selectedIntegrationForDetails.slotsConfig
+                : (selectedIntegrationForDetails.slotsCount || sub)
+                  ? Array.from({ length: selectedIntegrationForDetails.slotsCount || 1 }, () => ({
+                    platform: selectedIntegrationForDetails.platform || 'Instagram',
+                    format: 'Post'
+                  }))
+                  : [];
 
-              {/* Financial Metrics */}
-              <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
-                <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5">
-                  Финансы / Financials
-                </h4>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between py-0.5">
-                    <span className="text-neutral-500">{t.priceColumn || 'Price'}:</span>
-                    <span className="font-bold text-neutral-800">
-                      {Number(selectedIntegrationForDetails.pricePerSlot || 0).toLocaleString('ru-RU')} UZS
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-0.5">
-                    <span className="text-neutral-500">{t.slotsColumn || 'Slots'}:</span>
-                    <span className="font-bold text-neutral-800">
-                      {Number(selectedIntegrationForDetails.slotsCount || 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-0.5 border-t border-neutral-50 pt-1.5">
-                    <span className="text-neutral-500">{t.totalSumColumn || 'Total Sum'}:</span>
-                    <span className="font-black text-black">
-                      {formatPrice(selectedIntegrationForDetails.totalAmount || 0)} UZS
-                    </span>
-                  </div>
-                  {(allowedMetrics || []).includes('financial_metrics') && (
-                    <>
-                      <div className="flex justify-between py-0.5">
-                        <span className="text-neutral-500">{t.metricPaidToBlogger || 'Paid'}:</span>
-                        <span className="font-extrabold text-emerald-600">
-                          {formatPrice(selectedIntegrationForDetails.paidAmount || 0)} UZS
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-0.5 border-t border-neutral-50 pt-1.5">
-                        <span className="text-neutral-500 font-bold">{t.metricRemainingToPay || 'Remaining'}:</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-black text-rose-600">
-                            {formatPrice(Math.max(0, cleanAmount(selectedIntegrationForDetails.totalAmount || 0) - cleanAmount(selectedIntegrationForDetails.paidAmount || 0)))} UZS
-                          </span>
-                          {Math.max(0, Number(selectedIntegrationForDetails.totalAmount || 0) - Number(selectedIntegrationForDetails.paidAmount || 0)) > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedIntegrationForDetails(null);
-                                if (onNavigateToReports) {
-                                  onNavigateToReports(selectedIntegrationForDetails.projectId, selectedIntegrationForDetails.bloggerName, 'remaining');
-                                }
-                              }}
-                              className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold border border-rose-150 transition"
-                            >
-                              {lang === 'ru' ? 'Доплатить' : (lang === 'uz' ? 'To‘lash' : 'Pay remaining')}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
+              if (slotsList.length === 0) return null;
 
-              {/* Links */}
-              <div className="space-y-3">
-                {selectedIntegrationForDetails.telegramUsername && (
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                      {lang === 'ru' ? 'Личный Telegram блогера' : lang === 'uz' ? 'Blogger shaxsiy Telegrami' : 'Personal Telegram'}
-                    </p>
-                    <div className="flex items-center justify-between gap-2 bg-sky-50/60 p-2 rounded-lg border border-sky-100">
-                      <span className="font-bold text-sky-900 text-xs flex items-center gap-1.5">
-                        <Send className="w-3.5 h-3.5 text-sky-500" />
-                        {formatTelegramHandle(selectedIntegrationForDetails.telegramUsername)}
-                      </span>
-                      <a
-                        href={formatTelegramLink(selectedIntegrationForDetails.telegramUsername)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-md text-[10px] font-bold inline-flex items-center gap-1 shadow-xs transition shrink-0"
-                        title="Открыть чат в Telegram"
-                      >
-                        <span>Написать</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
-                    </div>
-                  </div>
-                )}
-                {selectedIntegrationForDetails.bloggerPageLink && (
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                      {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера' : lang === 'uz' ? 'Blogger sahifasi havolasi' : 'Blogger Page Link')}
-                    </p>
-                    <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
-                      <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{selectedIntegrationForDetails.bloggerPageLink}</span>
-                      <a
-                        href={selectedIntegrationForDetails.bloggerPageLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
-                        title="Open link"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  </div>
-                )}
+              const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
+              const threadId = parentProj?.telegramThreadId;
 
-                {selectedIntegrationForDetails.referralLink && (
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">{t.referralLinkField || 'UTM Link'}</p>
-                    <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
-                      <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{selectedIntegrationForDetails.referralLink}</span>
-                      <a
-                        href={selectedIntegrationForDetails.referralLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1 bg-white hover:bg-neutral-100 rounded border border-neutral-200 text-neutral-600 transition shrink-0"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">
-                    {lang === 'ru' ? 'Ссылка для отчета блогера' : lang === 'uz' ? 'Blogger hisoboti havolasi' : 'Blogger Execution Report Link'}
-                  </p>
-                  {(() => {
-                    const cabinetUrl = getCabinetUrl(selectedIntegrationForDetails.bloggerCabinetToken || selectedIntegrationForDetails.id);
-                    return (
-                      <div className="flex items-center gap-2 bg-neutral-50 p-2 rounded-lg border border-neutral-100">
-                        <span className="font-mono text-neutral-800 font-medium break-all flex-1 select-all">{cabinetUrl}</span>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await copyToClipboard(cabinetUrl);
-                            setCopiedCabinetLink(true);
-                            setTimeout(() => setCopiedCabinetLink(false), 2000);
-                          }}
-                          className={`p-1 rounded border transition shrink-0 cursor-pointer ${copiedCabinetLink
-                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
-                            : 'bg-white hover:bg-neutral-100 border-neutral-200 text-neutral-600'
-                            }`}
-                          title={copiedCabinetLink ? (lang === 'ru' ? 'Скопировано!' : 'Copied!') : (lang === 'ru' ? 'Копировать ссылку' : 'Copy link')}
-                        >
-                          {copiedCabinetLink ? <Check className="w-3.5 h-3.5 text-white" /> : <Link className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Slots deliverables / submissions list */}
-              {(() => {
-                const sub = (Array.isArray(submissions) ? submissions : []).find(s => String(s.integrationId) === String(selectedIntegrationForDetails.id));
-                const slotsList = (selectedIntegrationForDetails.slotsConfig && Array.isArray(selectedIntegrationForDetails.slotsConfig) && selectedIntegrationForDetails.slotsConfig.length > 0)
-                  ? selectedIntegrationForDetails.slotsConfig
-                  : (selectedIntegrationForDetails.slotsCount || sub)
-                    ? Array.from({ length: selectedIntegrationForDetails.slotsCount || 1 }, () => ({
-                      platform: selectedIntegrationForDetails.platform || 'Instagram',
-                      format: 'Post'
-                    }))
-                    : [];
-
-                if (slotsList.length === 0) return null;
-
-                const parentProj = projects.find(p => String(p.id) === String(selectedIntegrationForDetails.projectId));
-                const threadId = parentProj?.telegramThreadId;
-
-                // Dynamically resolve Telegram Group link from existing slot tg URLs or default submissions chat
-                let detectedTgChatId = '4424306910'; // Default submissions group: Reklama | Integratsiyalar
-                if (sub && sub.data) {
-                  for (const key of Object.keys(sub.data)) {
-                    if (key.endsWith('_tg_url') && typeof sub.data[key] === 'string') {
-                      const match = sub.data[key].match(/t\.me\/c\/(\d+)\//);
-                      if (match && match[1]) {
-                        detectedTgChatId = match[1];
-                        break;
-                      }
+              // Dynamically resolve Telegram Group link from existing slot tg URLs or default submissions chat
+              let detectedTgChatId = '4424306910'; // Default submissions group: Reklama | Integratsiyalar
+              if (sub && sub.data) {
+                for (const key of Object.keys(sub.data)) {
+                  if (key.endsWith('_tg_url') && typeof sub.data[key] === 'string') {
+                    const match = sub.data[key].match(/t\.me\/c\/(\d+)\//);
+                    if (match && match[1]) {
+                      detectedTgChatId = match[1];
+                      break;
                     }
                   }
                 }
+              }
 
-                const defaultTgUrl = threadId
-                  ? (threadId.startsWith('http') ? threadId : `https://t.me/c/${detectedTgChatId}/${threadId}`)
-                  : `https://t.me/c/${detectedTgChatId}`;
+              const defaultTgUrl = threadId
+                ? (threadId.startsWith('http') ? threadId : `https://t.me/c/${detectedTgChatId}/${threadId}`)
+                : `https://t.me/c/${detectedTgChatId}`;
 
-                const formatProofDate = (dateVal?: string) => {
-                  if (!dateVal) return '';
-                  try {
-                    const d = new Date(dateVal);
-                    if (isNaN(d.getTime())) return '';
-                    return d.toLocaleDateString(lang === 'uz' ? 'uz-UZ' : lang === 'en' ? 'en-US' : 'ru-RU', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    });
-                  } catch {
-                    return '';
-                  }
-                };
+              const formatProofDate = (dateVal?: string) => {
+                if (!dateVal) return '';
+                try {
+                  const d = new Date(dateVal);
+                  if (isNaN(d.getTime())) return '';
+                  return d.toLocaleDateString(lang === 'uz' ? 'uz-UZ' : lang === 'en' ? 'en-US' : 'ru-RU', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  });
+                } catch {
+                  return '';
+                }
+              };
 
-                return (
-                  <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
-                    <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5 flex justify-between items-center">
-                      <span>Публикации / Deliverables</span>
-                      <a
-                        href={defaultTgUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 hover:text-sky-700 transition"
-                        title="Открыть Telegram"
-                      >
-                        <Send className="w-3 h-3 text-sky-500" />
-                        <span>Telegram Группа</span>
-                      </a>
-                    </h4>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {slotsList.map((slot, index) => {
-                        if (!slot) return null;
-                        const slotKey = `slot_${index + 1}`;
-                        const submissionUrl = (sub && sub.data) ? sub.data[slotKey] : undefined;
-                        const slotTgUrl = (sub && sub.data) ? sub.data[`${slotKey}_tg_url`] : undefined;
-                        const slotSubmittedAt = (sub && sub.data && sub.data[`${slotKey}_submitted_at`])
-                          ? sub.data[`${slotKey}_submitted_at`]
-                          : (submissionUrl ? sub?.submittedAt : undefined);
-                        const tgUrl = slotTgUrl || defaultTgUrl;
+              return (
+                <div className="border border-neutral-100 rounded-xl p-4 space-y-2.5">
+                  <h4 className="font-bold text-[10px] text-neutral-400 uppercase tracking-wider border-b border-neutral-50 pb-1.5 flex justify-between items-center">
+                    <span>Публикации / Deliverables</span>
+                    <a
+                      href={defaultTgUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 hover:text-sky-700 transition"
+                      title="Открыть Telegram"
+                    >
+                      <Send className="w-3 h-3 text-sky-500" />
+                      <span>Telegram Группа</span>
+                    </a>
+                  </h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {slotsList.map((slot, index) => {
+                      if (!slot) return null;
+                      const slotKey = `slot_${index + 1}`;
+                      const submissionUrl = (sub && sub.data) ? sub.data[slotKey] : undefined;
+                      const slotTgUrl = (sub && sub.data) ? sub.data[`${slotKey}_tg_url`] : undefined;
+                      const slotSubmittedAt = (sub && sub.data && sub.data[`${slotKey}_submitted_at`])
+                        ? sub.data[`${slotKey}_submitted_at`]
+                        : (submissionUrl ? sub?.submittedAt : undefined);
+                      const tgUrl = slotTgUrl || defaultTgUrl;
 
-                        return (
-                          <div key={index} className="flex justify-between items-center py-1.5 border-b border-neutral-50 last:border-b-0 gap-2">
-                            <div className="shrink-0">
-                              <span className="font-bold text-neutral-700">{(t.slotNumberLabel || 'Slot') + ' #' + (index + 1)}: </span>
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${getPlatformBadgeClasses(slot.platform)}`}>
-                                {slot.platform || ''}
-                              </span>
-                              <span className="ml-1 text-[10px] font-bold text-neutral-600">
-                                {slot.format || ''}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 justify-end">
-                              {submissionUrl ? (
-                                <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                                  {slotSubmittedAt && (
-                                    <span
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 text-[10px] font-semibold border border-neutral-200/60"
-                                      title={`${t.proofSubmittedDateLabel || 'Дата сдачи'}: ${formatProofDate(slotSubmittedAt)}`}
-                                    >
-                                      <Clock className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
-                                      <span>{formatProofDate(slotSubmittedAt)}</span>
-                                    </span>
-                                  )}
-                                  <a
-                                    href={submissionUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-600 hover:underline"
+                      return (
+                        <div key={index} className="flex justify-between items-center py-1.5 border-b border-neutral-50 last:border-b-0 gap-2">
+                          <div className="shrink-0">
+                            <span className="font-bold text-neutral-700">{(t.slotNumberLabel || 'Slot') + ' #' + (index + 1)}: </span>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${getPlatformBadgeClasses(slot.platform)}`}>
+                              {slot.platform || ''}
+                            </span>
+                            <span className="ml-1 text-[10px] font-bold text-neutral-600">
+                              {slot.format || ''}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 justify-end">
+                            {submissionUrl ? (
+                              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                {slotSubmittedAt && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 text-[10px] font-semibold border border-neutral-200/60"
+                                    title={`${t.proofSubmittedDateLabel || 'Дата сдачи'}: ${formatProofDate(slotSubmittedAt)}`}
                                   >
-                                    <span>{t.publicationLinkLabel || 'Link'}</span>
-                                    <ExternalLink className="w-3 h-3 text-blue-500" />
-                                  </a>
-                                  {slotTgUrl && (
-                                    <a
-                                      href={slotTgUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold text-[9px] border border-sky-150 transition cursor-pointer"
-                                      title="Открыть сообщение отчета в Telegram"
-                                    >
-                                      <Send className="w-2.5 h-2.5 text-sky-500" />
-                                      <span>Telegram</span>
-                                    </a>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] text-neutral-400 italic font-medium">{t.notPublishedLabel || 'Not published'}</span>
+                                    <Clock className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
+                                    <span>{formatProofDate(slotSubmittedAt)}</span>
+                                  </span>
+                                )}
+                                <a
+                                  href={submissionUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-600 hover:underline"
+                                >
+                                  <span>{t.publicationLinkLabel || 'Link'}</span>
+                                  <ExternalLink className="w-3 h-3 text-blue-500" />
+                                </a>
+                                {slotTgUrl && (
                                   <a
-                                    href={tgUrl}
+                                    href={slotTgUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold text-[9px] border border-sky-150 transition cursor-pointer"
-                                    title="Перейти в Telegram"
+                                    title="Открыть сообщение отчета в Telegram"
                                   >
                                     <Send className="w-2.5 h-2.5 text-sky-500" />
                                     <span>Telegram</span>
                                   </a>
-                                </div>
-                              )}
-                            </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-neutral-400 italic font-medium">{t.notPublishedLabel || 'Not published'}</span>
+                                <a
+                                  href={tgUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold text-[9px] border border-sky-150 transition cursor-pointer"
+                                  title="Перейти в Telegram"
+                                >
+                                  <Send className="w-2.5 h-2.5 text-sky-500" />
+                                  <span>Telegram</span>
+                                </a>
+                              </div>
+                            )}
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })()}
-            </div>
+                </div>
+              );
+            })()}
+          </div>
 
-            {/* Modal Footer */}
-            <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50/50 flex justify-between items-center">
-              {/* Actions: Edit & Delete */}
-              <div className="flex gap-2">
+          {/* Modal Footer */}
+          <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50/50 flex justify-between items-center">
+            {/* Actions: Edit & Delete */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedIntegrationForDetails(null);
+                  openEditIntegration(selectedIntegrationForDetails);
+                }}
+                className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer border border-neutral-200"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-neutral-600" />
+                <span>{lang === 'ru' ? 'Редактировать' : lang === 'uz' ? 'Tahrirlash' : 'Edit'}</span>
+              </button>
+              {userRole === 'super_admin' && (
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedIntegrationForDetails(null);
-                    openEditIntegration(selectedIntegrationForDetails);
+                    if (confirm(t.confirmDeleteIntegration)) {
+                      onDeleteIntegration(selectedIntegrationForDetails.id);
+                      setSelectedIntegrationForDetails(null);
+                    }
                   }}
-                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer border border-neutral-200"
+                  className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer border border-red-100"
                 >
-                  <Edit3 className="w-3.5 h-3.5 text-neutral-600" />
-                  <span>{lang === 'ru' ? 'Редактировать' : lang === 'uz' ? 'Tahrirlash' : 'Edit'}</span>
+                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                  <span>{lang === 'ru' ? 'Удалить' : lang === 'uz' ? 'O‘chirish' : 'Delete'}</span>
                 </button>
-                {userRole === 'super_admin' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (confirm(t.confirmDeleteIntegration)) {
-                        onDeleteIntegration(selectedIntegrationForDetails.id);
-                        setSelectedIntegrationForDetails(null);
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer border border-red-100"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                    <span>{lang === 'ru' ? 'Удалить' : lang === 'uz' ? 'O‘chirish' : 'Delete'}</span>
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedIntegrationForDetails(null)}
-                className="px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
-              >
-                {lang === 'ru' ? 'Закрыть' : lang === 'uz' ? 'Yopish' : 'Close'}
-              </button>
+              )}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setSelectedIntegrationForDetails(null)}
+              className="px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
+            >
+              {lang === 'ru' ? 'Закрыть' : lang === 'uz' ? 'Yopish' : 'Close'}
+            </button>
           </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+);
 }

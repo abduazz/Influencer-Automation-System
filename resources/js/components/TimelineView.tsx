@@ -24,6 +24,7 @@ import {
   Columns3,
   Eye,
   ExternalLink,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   Project,
@@ -36,7 +37,7 @@ import {
 } from '../data/mockData';
 import { Language } from '../translations';
 
-export type SlotKanbanStage = 'planned' | 'review' | 'published';
+export type SlotKanbanStage = 'unscheduled' | 'planned' | 'review' | 'published';
 
 export interface SlotScheduleUpdatePayload {
   scheduledDate?: string | null;
@@ -379,6 +380,7 @@ export default function TimelineView({
   const [modalPublishedUrl, setModalPublishedUrl] = useState<string>('');
   const [modalPublishedAt, setModalPublishedAt] = useState<string>('');
   const [isSavingSlot, setIsSavingSlot] = useState<boolean>(false);
+  const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
 
   // Day Picker Modal for assigning an unscheduled slot to a clicked calendar day / hour
   const [assigningToDate, setAssigningToDate] = useState<string | null>(null);
@@ -442,7 +444,9 @@ export default function TimelineView({
           ? 'published'
           : cfg.stage === 'review'
             ? 'review'
-            : 'planned';
+            : !scheduledDate
+              ? 'unscheduled'
+              : 'planned';
 
         const rawPublishedAt = cfg.publishedAt || (isPublished ? subSubmittedAt : null) || null;
         const publishedAt = rawPublishedAt ? String(rawPublishedAt).slice(0, 10) : null;
@@ -552,8 +556,10 @@ export default function TimelineView({
         Boolean(slot.scheduledDate) ||
         slot.isPublished;
 
+      // In 'active' mode, deals on main Kanban only enter Slots Kanban & Timeline once they reach 'paid_in_progress' ("Оплачено / В работе") or have paid/scheduled slots
+      // Any slot that has actually been published is always preserved so that completed deliverables in the period are never hidden from reports
       const matchesCampaign =
-        campaignFilter === 'all' || (slot.dealStatus === 'active' && isEnteredInWork);
+        campaignFilter === 'all' || (slot.dealStatus === 'active' && isEnteredInWork) || slot.isPublished;
 
       return matchesProject && matchesCampaign;
     });
@@ -644,7 +650,10 @@ export default function TimelineView({
         !prePaymentStages.includes(item.kanbanStage) ||
         (Number(item.paidSlotsCount) || 0) > 0 ||
         (Number(item.paidAmount) || 0) > 0;
-      const matchesCampaign = campaignFilter === 'all' || (item.status === 'active' && isEnteredInWork);
+      const matchesCampaign =
+        campaignFilter === 'all' ||
+        (item.status === 'active' && isEnteredInWork) ||
+        item.status === 'completed';
       return matchesProject && matchesCampaign;
     });
 
@@ -791,8 +800,24 @@ export default function TimelineView({
 
     const remainingLimit = monthlyLimit !== null ? monthlyLimit - monthlySpend : null;
 
+    const dealsInPeriodCount = new Set(
+      projectScopedSlots
+        .filter((slot) => {
+          if (!hasDateFilter) return true;
+          const refDate = slot.scheduledDate || slot.effectivePublishDate || slot.integration.startDate || '';
+          const ymd = refDate.slice(0, 10);
+          if (!ymd) return false;
+          if (startDateFilter && ymd < startDateFilter) return false;
+          if (endDateFilter && ymd > endDateFilter) return false;
+          return true;
+        })
+        .map((s) => s.integrationId)
+    ).size;
+
+    const dealsCount = hasDateFilter ? dealsInPeriodCount : scopedIntegrations.length;
+
     return {
-      dealsCount: scopedIntegrations.length,
+      dealsCount,
       totalSpend,
       monthlySpend,
       cashFilteredSpend,
@@ -1164,7 +1189,11 @@ export default function TimelineView({
     e.preventDefault();
     if (!editingSlotKey) return;
     setIsSavingSlot(true);
-    const effectiveStage: SlotKanbanStage = modalIsPublished ? 'published' : modalStage === 'published' ? 'planned' : modalStage;
+    const backendStage: 'planned' | 'review' | 'published' = modalIsPublished
+      ? 'published'
+      : modalStage === 'review'
+        ? 'review'
+        : 'planned';
     try {
       await onUpdateSlotSchedule(editingSlotKey.integrationId, editingSlotKey.slotNumber, {
         scheduledDate: modalScheduledDate || null,
@@ -1175,7 +1204,7 @@ export default function TimelineView({
         projectId: modalProjectId || null,
         topic: modalTopic.trim() || null,
         notes: modalNotes.trim() || null,
-        stage: effectiveStage,
+        stage: backendStage,
         isPublished: modalIsPublished,
         publishedUrl: modalIsPublished ? modalPublishedUrl.trim() || null : null,
         publishedAt: modalIsPublished ? modalPublishedAt || modalScheduledDate || todayYmd : null,
@@ -1229,8 +1258,23 @@ export default function TimelineView({
   ) => {
     if (slotObj.slotStage === targetStage) return;
     const isPub = targetStage === 'published';
+    const isUnscheduled = targetStage === 'unscheduled';
+
+    if (targetStage === 'planned' && !slotObj.scheduledDate) {
+      openSlotModal(slotObj, todayYmd);
+      return;
+    }
+
+    const backendStage: 'planned' | 'review' | 'published' = isPub
+      ? 'published'
+      : targetStage === 'review'
+        ? 'review'
+        : 'planned';
+
     await onUpdateSlotSchedule(slotObj.integrationId, slotObj.slotNumber, {
-      stage: targetStage,
+      stage: backendStage,
+      scheduledDate: isUnscheduled ? null : slotObj.scheduledDate,
+      scheduledTime: isUnscheduled ? null : slotObj.scheduledTime,
       isPublished: isPub,
       publishedAt: isPub ? slotObj.publishedAt || slotObj.scheduledDate || todayYmd : null,
       prManager:
@@ -1332,59 +1376,154 @@ export default function TimelineView({
     }
   };
 
-  // Export Schedule to CSV
-  const handleExportCsv = () => {
-    const headers = [
-      'Дата выхода',
-      'Время',
-      'Блогер',
-      'Слот',
-      'Проект',
-      'Платформа',
-      'Формат',
-      'PR-менеджер',
-      'Стоимость слота (UZS)',
-      'Статус SLA',
-      'Дата фактической публикации',
-      'Ссылка на публикацию',
-      'Тема / Заметка',
-    ];
+  // Export Schedule to Excel (.xlsx)
+  const handleExportExcel = async () => {
+    setIsExportingExcel(true);
+    try {
+      const XLSX = await import('xlsx');
 
-    const statusLabelMap: Record<SlotSlaStatus, string> = {
-      published_on_time: 'Опубликовано вовремя',
-      published_late: 'Опубликовано с опозданием',
-      published: 'Опубликовано',
-      due_today: 'Выход сегодня',
-      overdue: 'Просрочено (SLA)',
-      scheduled: 'В графике',
-      unscheduled: 'Без даты',
-    };
+      const stageLabelMap: Record<SlotKanbanStage, string> = {
+        unscheduled: 'Не в графике (Ожидает дату)',
+        planned: 'Planned (В графике)',
+        review: 'Review (На согласовании)',
+        published: 'Published (Опубликовано)',
+      };
 
-    const rows = filteredSlots.map((s) => [
-      s.scheduledDate || 'Не назначена',
-      s.scheduledTime || '—',
-      `"${(s.bloggerName || '').replace(/"/g, '""')}"`,
-      `Слот #${s.slotNumber}/${s.totalSlotsInDeal}`,
-      `"${(s.projectName || '').replace(/"/g, '""')}"`,
-      s.platform,
-      s.format,
-      `"${(s.prManager || '').replace(/"/g, '""')}"`,
-      s.pricePerSlot,
-      statusLabelMap[s.slaStatus],
-      s.publishedAt || '—',
-      s.publishedUrl || '—',
-      `"${(s.topic || '').replace(/"/g, '""')}"`,
-    ]);
+      const statusLabelMap: Record<SlotSlaStatus, string> = {
+        published_on_time: 'Опубликовано вовремя',
+        published_late: 'Опубликовано с опозданием',
+        published: 'Опубликовано',
+        due_today: 'Выход сегодня',
+        overdue: 'Просрочено (SLA)',
+        scheduled: 'В графике',
+        unscheduled: 'Без даты',
+      };
 
-    const csvContent =
-      '\uFEFF' + [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `timeline_slots_${activeMonthPrefix}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const projectNameText =
+        selectedProjectId === 'all'
+          ? 'Все проекты'
+          : projects.find((p) => String(p.id) === String(selectedProjectId))?.name || 'Проект';
+
+      const periodText =
+        startDateFilter || endDateFilter
+          ? `${startDateFilter || '...'} — ${endDateFilter || '...'}`
+          : `Все даты (${monthNamesList[calendarMonthDate.getMonth()]} ${calendarMonthDate.getFullYear()} г.)`;
+
+      const headers = [
+        'Дата выхода',
+        'Время',
+        'Блогер',
+        'Слот',
+        'Проект',
+        'Платформа',
+        'Формат',
+        'PR-менеджер',
+        'Стоимость слота (UZS)',
+        'Этап Канбана',
+        'Статус SLA',
+        'Фактическая дата выхода',
+        'Ссылка на публикацию',
+        'Тема / Креатив',
+        'Заметки',
+      ];
+
+      const rows: (string | number)[][] = filteredSlots.map((s) => [
+        s.scheduledDate || 'Не назначена',
+        s.scheduledTime || '—',
+        s.bloggerName || '',
+        `Слот #${s.slotNumber}/${s.totalSlotsInDeal}`,
+        s.projectName || '',
+        s.platform,
+        s.format,
+        s.prManager && s.prManager !== 'Не назначен' ? s.prManager : 'Не назначен',
+        Number(s.pricePerSlot) || 0,
+        stageLabelMap[s.slotStage] || s.slotStage,
+        statusLabelMap[s.slaStatus] || s.slaStatus,
+        s.publishedAt || (s.isPublished ? s.effectivePublishDate || '—' : '—'),
+        s.publishedUrl || '—',
+        s.topic || '',
+        s.notes || '',
+      ]);
+
+      const totalBudget = filteredSlots.reduce(
+        (sum, s) => sum + (Number(s.pricePerSlot) || 0),
+        0
+      );
+      const totalPublishedBudget = filteredSlots
+        .filter((s) => s.isPublished)
+        .reduce((sum, s) => sum + (Number(s.pricePerSlot) || 0), 0);
+
+      const uniqueBloggersCount = new Set(filteredSlots.map((s) => s.bloggerName)).size;
+
+      const summaryRow: (string | number)[] = [
+        'ИТОГО:',
+        '',
+        `${uniqueBloggersCount} блогеров`,
+        `${filteredSlots.length} слотов`,
+        '',
+        '',
+        '',
+        '',
+        totalBudget,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+      ];
+
+      const aoa: (string | number)[][] = [
+        [`График выходов и таймлайн слотов — ${projectNameText}`],
+        [
+          `Период: ${periodText} | Экспортировано слотов: ${filteredSlots.length} | Бюджет слотов: ${totalBudget.toLocaleString('ru-RU')} сум | Факт по выходу: ${totalPublishedBudget.toLocaleString('ru-RU')} сум`,
+        ],
+        [],
+        headers,
+        ...rows,
+        [],
+        summaryRow,
+      ];
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+      const colWidths = headers.map((h, i) => {
+        let maxLen = h.length;
+        rows.forEach((r) => {
+          const val = r[i] != null ? String(r[i]) : '';
+          if (val.length > maxLen) maxLen = Math.min(val.length, 50);
+        });
+        return { wch: Math.max(maxLen + 3, 12) };
+      });
+      ws['!cols'] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, 'График слотов');
+
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const cleanProj = (projectNameText || 'all_projects')
+        .toLowerCase()
+        .replace(/[^a-z0-9а-яё]/gi, '_');
+      const dateSuffix =
+        startDateFilter && endDateFilter
+          ? `${startDateFilter}_${endDateFilter}`
+          : activeMonthPrefix || new Date().toISOString().slice(0, 7);
+      link.href = url;
+      link.setAttribute('download', `grafik_vyhodov_${cleanProj}_${dateSuffix}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export Excel:', err);
+    } finally {
+      setIsExportingExcel(false);
+    }
   };
 
   // Render SLA Badge
@@ -1470,8 +1609,8 @@ export default function TimelineView({
                 type="button"
                 onClick={() => setViewMode('week')}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${viewMode === 'week'
-                    ? 'bg-white text-neutral-900 shadow-2xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
+                  ? 'bg-white text-neutral-900 shadow-2xs'
+                  : 'text-neutral-600 hover:text-neutral-900'
                   }`}
               >
                 <Clock className="w-3.5 h-3.5" />
@@ -1481,8 +1620,8 @@ export default function TimelineView({
                 type="button"
                 onClick={() => setViewMode('month')}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${viewMode === 'month'
-                    ? 'bg-white text-neutral-900 shadow-2xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
+                  ? 'bg-white text-neutral-900 shadow-2xs'
+                  : 'text-neutral-600 hover:text-neutral-900'
                   }`}
               >
                 <LayoutGrid className="w-3.5 h-3.5" />
@@ -1492,8 +1631,8 @@ export default function TimelineView({
                 type="button"
                 onClick={() => setViewMode('kanban')}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${viewMode === 'kanban'
-                    ? 'bg-indigo-600 text-white shadow-2xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-neutral-600 hover:text-neutral-900'
                   }`}
               >
                 <Columns3 className="w-3.5 h-3.5" />
@@ -1509,18 +1648,18 @@ export default function TimelineView({
                 type="button"
                 onClick={() => setSelectedProjectId('all')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${selectedProjectId === 'all'
-                    ? 'bg-neutral-900 text-white shadow-2xs'
-                    : 'bg-neutral-100/80 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/70'
+                  ? 'bg-neutral-900 text-white shadow-2xs'
+                  : 'bg-neutral-100/80 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/70'
                   }`}
               >
                 Все проекты
                 <span
                   className={`ml-1.5 px-1.5 py-0.2 rounded text-[10px] tabular-nums font-bold ${selectedProjectId === 'all'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-neutral-200/80 text-neutral-700'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-neutral-200/80 text-neutral-700'
                     }`}
                 >
-                  {allSlots.filter((s) => campaignFilter === 'all' || s.dealStatus === 'active').length}
+                  {allSlots.filter((s) => campaignFilter === 'all' || s.dealStatus === 'active' || s.isPublished).length}
                 </span>
               </button>
 
@@ -1530,7 +1669,7 @@ export default function TimelineView({
                   (s) =>
                     (String(s.projectId) === String(project.id) ||
                       String(s.integration.projectId) === String(project.id)) &&
-                    (campaignFilter === 'all' || s.dealStatus === 'active')
+                    (campaignFilter === 'all' || s.dealStatus === 'active' || s.isPublished)
                 ).length;
 
                 return (
@@ -1539,15 +1678,15 @@ export default function TimelineView({
                     type="button"
                     onClick={() => setSelectedProjectId(String(project.id))}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${isSelected
-                        ? 'bg-neutral-900 text-white shadow-2xs'
-                        : 'bg-neutral-100/80 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/70'
+                      ? 'bg-neutral-900 text-white shadow-2xs'
+                      : 'bg-neutral-100/80 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/70'
                       }`}
                   >
                     <span>{project.name}</span>
                     <span
                       className={`px-1.5 py-0.2 rounded text-[10px] tabular-nums font-bold ${isSelected
-                          ? 'bg-white/20 text-white'
-                          : 'bg-neutral-200/80 text-neutral-700'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-neutral-200/80 text-neutral-700'
                         }`}
                     >
                       {projectSlotCount}
@@ -1569,8 +1708,8 @@ export default function TimelineView({
                   type="button"
                   onClick={() => handleSetAccountingMode('cash')}
                   className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${accountingMode === 'cash'
-                      ? 'bg-white text-neutral-900 shadow-2xs'
-                      : 'text-neutral-500 hover:text-neutral-900'
+                    ? 'bg-white text-neutral-900 shadow-2xs'
+                    : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                 >
                   Касса
@@ -1579,8 +1718,8 @@ export default function TimelineView({
                   type="button"
                   onClick={() => handleSetAccountingMode('published_slots')}
                   className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 cursor-pointer ${accountingMode === 'published_slots'
-                      ? 'bg-indigo-600 text-white shadow-2xs'
-                      : 'text-neutral-600 hover:text-neutral-900'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
                     }`}
                 >
                   <Sparkles className="w-3 h-3" />
@@ -1594,8 +1733,8 @@ export default function TimelineView({
                 type="button"
                 onClick={() => setCampaignFilter('active')}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${campaignFilter === 'active'
-                    ? 'bg-white text-neutral-900 shadow-2xs'
-                    : 'text-neutral-500 hover:text-neutral-900'
+                  ? 'bg-white text-neutral-900 shadow-2xs'
+                  : 'text-neutral-500 hover:text-neutral-900'
                   }`}
               >
                 Активные
@@ -1604,8 +1743,8 @@ export default function TimelineView({
                 type="button"
                 onClick={() => setCampaignFilter('all')}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${campaignFilter === 'all'
-                    ? 'bg-white text-neutral-900 shadow-2xs'
-                    : 'text-neutral-500 hover:text-neutral-900'
+                  ? 'bg-white text-neutral-900 shadow-2xs'
+                  : 'text-neutral-500 hover:text-neutral-900'
                   }`}
               >
                 Все
@@ -1622,8 +1761,8 @@ export default function TimelineView({
                 <span className="text-neutral-500 font-medium">Остаток:</span>
                 <span
                   className={`font-bold tabular-nums ${(financialIndicators.remainingLimit || 0) < 0
-                      ? 'text-rose-600'
-                      : 'text-emerald-600'
+                    ? 'text-rose-600'
+                    : 'text-emerald-600'
                     }`}
                 >
                   {formatCompactMoney(financialIndicators.remainingLimit || 0)}
@@ -1657,8 +1796,8 @@ export default function TimelineView({
                 type="button"
                 onClick={() => setIsUnscheduledPanelOpen((prev) => !prev)}
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${isUnscheduledPanelOpen
-                    ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-2xs'
-                    : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
+                  ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-2xs'
+                  : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
                   }`}
                 title="Очередь слотов без назначенной даты выхода"
               >
@@ -1672,12 +1811,13 @@ export default function TimelineView({
 
             <button
               type="button"
-              onClick={handleExportCsv}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
-              title="Скачать график выходов в CSV (Excel)"
+              onClick={handleExportExcel}
+              disabled={isExportingExcel}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-white text-emerald-800 border border-emerald-200/90 hover:bg-emerald-50 hover:border-emerald-300 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+              title="Скачать график выходов в Excel (.xlsx)"
             >
-              <Download className="w-3.5 h-3.5 text-neutral-500" />
-              <span className="hidden xl:inline">CSV</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden xl:inline">{isExportingExcel ? 'Экспорт...' : 'Excel'}</span>
             </button>
 
             {/* Language Switcher */}
@@ -1688,8 +1828,8 @@ export default function TimelineView({
                   type="button"
                   onClick={() => handleSelectLang(l)}
                   className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase transition-all cursor-pointer ${activeLang === l
-                      ? 'bg-neutral-900 text-white shadow-2xs'
-                      : 'text-neutral-500 hover:text-neutral-900'
+                    ? 'bg-neutral-900 text-white shadow-2xs'
+                    : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                   title={l === 'ru' ? 'Русский' : l === 'uz' ? "O'zbekcha" : 'English'}
                 >
@@ -1851,8 +1991,8 @@ export default function TimelineView({
                 type="button"
                 onClick={() => applyDatePreset('today')}
                 className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${startDateFilter === todayYmd && endDateFilter === todayYmd
-                    ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
-                    : 'text-neutral-600 hover:text-neutral-900'
+                  ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+                  : 'text-neutral-600 hover:text-neutral-900'
                   }`}
               >
                 Сегодня
@@ -1892,7 +2032,7 @@ export default function TimelineView({
                 {financialIndicators.dealsCount}
               </div>
               <p className="text-[11px] text-neutral-400 mt-1">
-                Активных интеграций в выборке
+                {startDateFilter || endDateFilter ? 'Сделок со слотами в периоде' : 'Активных интеграций в выборке'}
               </p>
             </div>
           </div>
@@ -1902,8 +2042,8 @@ export default function TimelineView({
         {canShowMetric('spend') && (
           <div
             className={`p-4 rounded-2xl border shadow-xs flex flex-col justify-between transition-colors ${(startDateFilter || endDateFilter) && accountingMode === 'published_slots'
-                ? 'bg-indigo-50/35 border-indigo-200/90'
-                : 'bg-white border-neutral-200/80'
+              ? 'bg-indigo-50/35 border-indigo-200/90'
+              : 'bg-white border-neutral-200/80'
               }`}
           >
             <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -1913,8 +2053,8 @@ export default function TimelineView({
               {(startDateFilter || endDateFilter) && (
                 <span
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${accountingMode === 'published_slots'
-                      ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-neutral-100 text-neutral-600'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-neutral-100 text-neutral-600'
                     }`}
                 >
                   {accountingMode === 'published_slots' ? 'По выходу' : 'Касса'}
@@ -1940,8 +2080,8 @@ export default function TimelineView({
         {canShowMetric('spend') && (
           <div
             className={`p-4 rounded-2xl border shadow-xs flex flex-col justify-between transition-colors ${accountingMode === 'published_slots'
-                ? 'bg-indigo-50/45 border-indigo-300/90 ring-1 ring-indigo-500/10'
-                : 'bg-white border-neutral-200/80'
+              ? 'bg-indigo-50/45 border-indigo-300/90 ring-1 ring-indigo-500/10'
+              : 'bg-white border-neutral-200/80'
               }`}
           >
             <div className="flex items-center justify-between gap-1.5 mb-1.5">
@@ -1950,8 +2090,8 @@ export default function TimelineView({
               </span>
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${accountingMode === 'published_slots'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                   }`}
               >
                 {accountingMode === 'published_slots' ? 'По выходу' : 'Касса'}
@@ -2055,8 +2195,8 @@ export default function TimelineView({
         {canShowMetric('slots_remaining') && (
           <div
             className={`p-4 rounded-2xl border shadow-xs flex flex-col justify-between ${slotMetrics.overdue > 0
-                ? 'bg-rose-50/40 border-rose-200'
-                : 'bg-white border-neutral-200/80'
+              ? 'bg-rose-50/40 border-rose-200'
+              : 'bg-white border-neutral-200/80'
               }`}
           >
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -2072,11 +2212,10 @@ export default function TimelineView({
                 onClick={() =>
                   setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue')
                 }
-                className={`text-left p-2 rounded-xl border transition-colors cursor-pointer ${
-                  statusFilter === 'overdue'
+                className={`text-left p-2 rounded-xl border transition-colors cursor-pointer ${statusFilter === 'overdue'
                     ? 'bg-rose-100 border-rose-300 ring-2 ring-rose-400/40 shadow-2xs'
                     : 'bg-rose-50/80 hover:bg-rose-100/80 border-rose-200/60'
-                }`}
+                  }`}
               >
                 <div className="text-base font-bold text-rose-600 tabular-nums leading-none">
                   {slotMetrics.overdue}
@@ -2090,11 +2229,10 @@ export default function TimelineView({
                 onClick={() =>
                   setStatusFilter(statusFilter === 'unscheduled' ? 'all' : 'unscheduled')
                 }
-                className={`text-left p-2 rounded-xl border transition-colors cursor-pointer ${
-                  statusFilter === 'unscheduled'
+                className={`text-left p-2 rounded-xl border transition-colors cursor-pointer ${statusFilter === 'unscheduled'
                     ? 'bg-amber-100 border-amber-300 ring-2 ring-amber-400/40 shadow-2xs'
                     : 'bg-amber-50/80 hover:bg-amber-100/80 border-amber-200/60'
-                }`}
+                  }`}
               >
                 <div className="text-base font-bold text-amber-700 tabular-nums leading-none">
                   {slotMetrics.unscheduled}
@@ -2249,12 +2387,12 @@ export default function TimelineView({
                         handleDropOnDate(cell.ymd);
                       }}
                       className={`min-h-[150px] sm:min-h-[175px] p-2 flex flex-col justify-between transition-colors group relative cursor-pointer ${!cell.isCurrentMonth
-                          ? 'bg-neutral-50/60 text-neutral-400 hover:bg-neutral-100/60'
-                          : cell.isToday
-                            ? 'bg-rose-50/15 hover:bg-indigo-50/25'
-                            : cell.isInFilterRange
-                              ? 'bg-amber-50/20 hover:bg-amber-50/40'
-                              : 'bg-white hover:bg-neutral-50/80'
+                        ? 'bg-neutral-50/60 text-neutral-400 hover:bg-neutral-100/60'
+                        : cell.isToday
+                          ? 'bg-rose-50/15 hover:bg-indigo-50/25'
+                          : cell.isInFilterRange
+                            ? 'bg-amber-50/20 hover:bg-amber-50/40'
+                            : 'bg-white hover:bg-neutral-50/80'
                         } ${isDragTarget
                           ? 'ring-2 ring-inset ring-indigo-500 bg-indigo-50/50'
                           : ''
@@ -2272,10 +2410,10 @@ export default function TimelineView({
                                 openDayInWeekTimeline(cell.ymd);
                               }}
                               className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center tabular-nums transition-transform group-hover:scale-105 cursor-pointer ${cell.isToday
-                                  ? 'bg-[#FF3B30] text-white shadow-xs'
-                                  : cell.isCurrentMonth
-                                    ? 'text-neutral-900 group-hover:bg-neutral-900 group-hover:text-white'
-                                    : 'text-neutral-400 group-hover:bg-neutral-200 group-hover:text-neutral-700'
+                                ? 'bg-[#FF3B30] text-white shadow-xs'
+                                : cell.isCurrentMonth
+                                  ? 'text-neutral-900 group-hover:bg-neutral-900 group-hover:text-white'
+                                  : 'text-neutral-400 group-hover:bg-neutral-200 group-hover:text-neutral-700'
                                 }`}
                             >
                               {cell.dayNumber}
@@ -2504,32 +2642,32 @@ export default function TimelineView({
                       type="button"
                       onClick={() => setFocusedDayYmd(col.ymd)}
                       className={`py-2.5 px-1 sm:px-2 flex flex-col sm:flex-row items-center justify-center gap-1 transition-colors cursor-pointer ${col.isFocused && !col.isToday
-                          ? 'bg-indigo-50/70'
-                          : col.isToday
-                            ? 'bg-rose-50/20'
-                            : 'hover:bg-neutral-100/70'
+                        ? 'bg-indigo-50/70'
+                        : col.isToday
+                          ? 'bg-rose-50/20'
+                          : 'hover:bg-neutral-100/70'
                         }`}
                     >
                       <span
                         className={`text-xs sm:text-sm font-medium ${col.isToday
-                            ? 'text-neutral-900 font-semibold'
-                            : col.isFocused
-                              ? 'text-indigo-700 font-semibold'
-                              : col.isWeekend
-                                ? 'text-neutral-400'
-                                : 'text-neutral-600'
+                          ? 'text-neutral-900 font-semibold'
+                          : col.isFocused
+                            ? 'text-indigo-700 font-semibold'
+                            : col.isWeekend
+                              ? 'text-neutral-400'
+                              : 'text-neutral-600'
                           }`}
                       >
                         {col.weekdayShort},
                       </span>
                       <span
                         className={`w-7 h-7 rounded-full text-xs sm:text-sm font-bold inline-flex items-center justify-center tabular-nums transition-all ${col.isToday
-                            ? 'bg-[#FF3B30] text-white shadow-xs'
-                            : col.isFocused
-                              ? 'bg-indigo-600 text-white shadow-xs'
-                              : col.isWeekend
-                                ? 'text-neutral-400'
-                                : 'text-neutral-900'
+                          ? 'bg-[#FF3B30] text-white shadow-xs'
+                          : col.isFocused
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : col.isWeekend
+                              ? 'text-neutral-400'
+                              : 'text-neutral-900'
                           }`}
                       >
                         {col.dayNumber}
@@ -2656,10 +2794,10 @@ export default function TimelineView({
                       <div
                         key={col.ymd}
                         className={`relative ${col.isFocused && !col.isToday
-                            ? 'bg-indigo-50/20'
-                            : col.isWeekend
-                              ? 'bg-neutral-50/30'
-                              : 'bg-white'
+                          ? 'bg-indigo-50/20'
+                          : col.isWeekend
+                            ? 'bg-neutral-50/30'
+                            : 'bg-white'
                           }`}
                       >
                         {/* 24 Hour Background Cells (Click or Drop on any hour) */}
@@ -2692,8 +2830,8 @@ export default function TimelineView({
                                 handleDropOnDate(col.ymd, hourStr);
                               }}
                               className={`border-b border-neutral-100 transition-colors group/hour relative cursor-pointer ${isCellDragOver
-                                  ? 'bg-indigo-100/70 ring-1 ring-inset ring-indigo-500'
-                                  : 'hover:bg-neutral-50/90'
+                                ? 'bg-indigo-100/70 ring-1 ring-inset ring-indigo-500'
+                                : 'hover:bg-neutral-50/90'
                                 }`}
                               title={`${formatReadableDateRu(col.ymd)}, ${hourStr} — нажмите, чтобы назначить выход`}
                             >
@@ -2827,7 +2965,7 @@ export default function TimelineView({
                       </span>
                     </div>
                     <p className="text-xs text-neutral-500 mt-0.5">
-                      Перетаскивайте слоты блогеров между <b className="text-neutral-700">Planned</b>,{' '}
+                      Перетаскивайте слоты блогеров между <b className="text-amber-800">Не в графике / Ожидают даты</b>, <b className="text-neutral-700">Planned</b>,{' '}
                       <b className="text-violet-700">Review</b> и{' '}
                       <b className="text-emerald-700">Published</b>. При переходе в Published стоимость слота сразу учитывается в расходе «По выходу (Факт)».
                     </p>
@@ -2870,15 +3008,15 @@ export default function TimelineView({
                     type="button"
                     onClick={() => setSelectedBloggerDealId('all')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${selectedBloggerDealId === 'all'
-                        ? 'bg-neutral-900 text-white shadow-2xs'
-                        : 'bg-white text-neutral-700 border border-neutral-200/80 hover:border-neutral-300'
+                      ? 'bg-neutral-900 text-white shadow-2xs'
+                      : 'bg-white text-neutral-700 border border-neutral-200/80 hover:border-neutral-300'
                       }`}
                   >
                     <span>Все блогеры</span>
                     <span
                       className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums ${selectedBloggerDealId === 'all'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-neutral-100 text-neutral-600'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-neutral-100 text-neutral-600'
                         }`}
                     >
                       {projectScopedSlots.length} сл.
@@ -2895,16 +3033,16 @@ export default function TimelineView({
                           setSelectedBloggerDealId(isActive ? 'all' : String(deal.integrationId))
                         }
                         className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-2 ${isActive
-                            ? 'bg-indigo-600 text-white shadow-2xs'
-                            : 'bg-white text-neutral-700 border border-neutral-200/80 hover:border-indigo-300'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'bg-white text-neutral-700 border border-neutral-200/80 hover:border-indigo-300'
                           }`}
                         title={`${deal.bloggerName} (${deal.projectName}) — ${deal.slotsCount} слотов по ${deal.pricePerSlot.toLocaleString('ru-RU')} сум (Всего: ${deal.totalDealBudget.toLocaleString('ru-RU')} сум)`}
                       >
                         <span className="truncate max-w-[140px]">{deal.bloggerName}</span>
                         <span
                           className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums ${isActive
-                              ? 'bg-white/20 text-white'
-                              : 'bg-indigo-50 text-indigo-700'
+                            ? 'bg-white/20 text-white'
+                            : 'bg-indigo-50 text-indigo-700'
                             }`}
                         >
                           {deal.publishedCount}/{deal.slotsCount} сл.
@@ -2923,18 +3061,29 @@ export default function TimelineView({
                 </div>
               )}
 
-              {/* 3. Three Containers Grid: Planned | Review | Published */}
-              <div className="p-4 sm:p-6 bg-neutral-50/40 grid grid-cols-1 lg:grid-cols-3 gap-5">
+              {/* 3. Four Containers Grid: Unscheduled | Planned | Review | Published */}
+              <div className="p-4 sm:p-6 bg-neutral-50/40 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
                 {(
                   [
                     {
+                      stage: 'unscheduled' as SlotKanbanStage,
+                      title: 'Не в графике / Ожидают назначения даты',
+                      subtitle: 'Без даты выхода · Ожидают назначения даты в календарь',
+                      badgeBg: 'bg-amber-500 text-white shadow-2xs',
+                      headerBg: 'bg-gradient-to-r from-amber-100/90 via-amber-50/80 to-orange-50/60 border-amber-200/90',
+                      ringActive: 'ring-2 ring-amber-500 bg-amber-50/40',
+                      dotColor: 'bg-amber-500',
+                      isUnscheduled: true,
+                    },
+                    {
                       stage: 'planned' as SlotKanbanStage,
                       title: 'Planned',
-                      subtitle: 'Запланировано · В очереди на подготовку и выход',
+                      subtitle: 'В графике · Имеют назначенную дату выхода',
                       badgeBg: 'bg-indigo-600 text-white',
                       headerBg: 'bg-indigo-50/70 border-indigo-200/80',
                       ringActive: 'ring-2 ring-indigo-500 bg-indigo-50/40',
                       dotColor: 'bg-indigo-600',
+                      isUnscheduled: false,
                     },
                     {
                       stage: 'review' as SlotKanbanStage,
@@ -2944,6 +3093,7 @@ export default function TimelineView({
                       headerBg: 'bg-violet-50/70 border-violet-200/80',
                       ringActive: 'ring-2 ring-violet-500 bg-violet-50/40',
                       dotColor: 'bg-violet-600',
+                      isUnscheduled: false,
                     },
                     {
                       stage: 'published' as SlotKanbanStage,
@@ -2953,6 +3103,7 @@ export default function TimelineView({
                       headerBg: 'bg-emerald-50/70 border-emerald-200/80',
                       ringActive: 'ring-2 ring-emerald-500 bg-emerald-50/40',
                       dotColor: 'bg-emerald-600',
+                      isUnscheduled: false,
                     },
                   ] as const
                 ).map((col) => {
@@ -2992,46 +3143,79 @@ export default function TimelineView({
                         e.preventDefault();
                         handleDropOnKanbanStage(col.stage);
                       }}
-                      className={`rounded-2xl border border-neutral-200/90 bg-neutral-100/60 flex flex-col min-h-[640px] transition-all ${isDragOverCol ? col.ringActive : ''
-                        }`}
+                      className={`rounded-2xl flex flex-col min-h-[640px] transition-all ${col.isUnscheduled
+                          ? 'border-2 border-dashed border-amber-300/90 bg-gradient-to-b from-amber-50/30 via-orange-50/15 to-neutral-50/60 shadow-xs'
+                          : 'border border-neutral-200/90 bg-neutral-100/60'
+                        } ${isDragOverCol ? col.ringActive : ''}`}
                     >
                       {/* Container Header */}
                       <div className={`p-4 rounded-t-2xl border-b ${col.headerBg}`}>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2.5 h-2.5 rounded-full ${col.dotColor}`} />
-                            <h3 className="text-base font-extrabold tracking-tight text-neutral-900">
-                              {col.title}
-                            </h3>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs font-bold tabular-nums ${col.badgeBg}`}
-                            >
-                              {colSlots.length}
-                            </span>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {col.isUnscheduled ? (
+                                <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                              ) : (
+                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.dotColor}`} />
+                              )}
+                              <h3 className="text-sm sm:text-[15px] font-extrabold tracking-tight text-neutral-900 leading-snug">
+                                {col.title}
+                              </h3>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-xs font-bold tabular-nums shrink-0 ${col.badgeBg}`}
+                              >
+                                {colSlots.length}
+                              </span>
+                              {col.isUnscheduled && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-200/90 text-amber-900 border border-amber-300 font-bold text-[9.5px] uppercase tracking-wider shrink-0">
+                                  Требует дату
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-neutral-600 mt-1 leading-snug">{col.subtitle}</p>
                           </div>
 
                           {canShowMetric('spend') && (
                             <span
-                              className="px-2.5 py-1 rounded-lg bg-white/90 border border-black/5 text-xs font-bold text-neutral-800 tabular-nums shadow-2xs"
+                              className={`px-2 py-1 rounded-lg border text-xs font-bold tabular-nums shadow-2xs shrink-0 whitespace-nowrap self-start ${col.isUnscheduled
+                                  ? 'bg-amber-100/90 border-amber-300/90 text-amber-950 font-extrabold'
+                                  : 'bg-white/90 border-black/5 text-neutral-800'
+                                }`}
                               title={`Сумма слотов в контейнере ${col.title}: ${colBudget.toLocaleString('ru-RU')} сум`}
                             >
                               {colBudget.toLocaleString('ru-RU')} сум
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-neutral-600 mt-1">{col.subtitle}</p>
                       </div>
 
                       {/* Container Cards List */}
                       <div className="p-3 space-y-2.5 flex-1 max-h-[780px] overflow-y-auto custom-scrollbar">
                         {colSlots.length === 0 ? (
-                          <div className="h-56 rounded-xl border-2 border-dashed border-neutral-200/90 flex flex-col items-center justify-center p-6 text-center text-neutral-400">
-                            <Columns3 className="w-7 h-7 mb-2 opacity-50" />
-                            <div className="text-xs font-bold text-neutral-600">
+                          <div
+                            className={`h-56 rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-6 text-center ${col.isUnscheduled
+                                ? 'border-amber-300/80 bg-amber-50/30 text-amber-600'
+                                : 'border-neutral-200/90 text-neutral-400'
+                              }`}
+                          >
+                            {col.isUnscheduled ? (
+                              <CalendarClock className="w-8 h-8 mb-2 opacity-70 text-amber-600" />
+                            ) : (
+                              <Columns3 className="w-7 h-7 mb-2 opacity-50" />
+                            )}
+                            <div
+                              className={`text-xs font-bold ${col.isUnscheduled ? 'text-amber-900' : 'text-neutral-600'
+                                }`}
+                            >
                               В контейнере {col.title} пока нет слотов
                             </div>
-                            <p className="text-[11px] text-neutral-400 mt-1">
-                              Перетащите карточку слота сюда или измените этап внутри карточки
+                            <p
+                              className={`text-[11px] mt-1 ${col.isUnscheduled ? 'text-amber-700/80' : 'text-neutral-400'
+                                }`}
+                            >
+                              {col.isUnscheduled
+                                ? 'Все слоты распределены по календарю и имеют дату выхода'
+                                : 'Перетащите карточку слота сюда или измените этап внутри карточки'}
                             </p>
                           </div>
                         ) : (
@@ -3046,7 +3230,10 @@ export default function TimelineView({
                                 })
                               }
                               onClick={() => openSlotModal(slot)}
-                              className="p-3.5 rounded-xl bg-white border border-neutral-200/80 hover:border-neutral-300 hover:shadow-xs transition-all duration-150 cursor-pointer group flex flex-col justify-between gap-2.5"
+                              className={`p-3.5 rounded-xl bg-white border hover:shadow-xs transition-all duration-150 cursor-pointer group flex flex-col justify-between gap-2.5 ${col.isUnscheduled
+                                  ? 'border-amber-200/90 hover:border-amber-400 ring-1 ring-amber-400/10'
+                                  : 'border-neutral-200/80 hover:border-neutral-300'
+                                }`}
                             >
                               <div>
                                 {/* Top Row: Blogger Name + Slot #X/N */}
@@ -3125,9 +3312,9 @@ export default function TimelineView({
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        openSlotModal(slot);
+                                        openSlotModal(slot, todayYmd);
                                       }}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50/70 hover:bg-amber-100/80 text-amber-800 border border-amber-200/60 font-medium transition-colors cursor-pointer"
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-medium transition-colors cursor-pointer"
                                     >
                                       <Clock className="w-3 h-3 text-amber-600" />
                                       <span>Назначить дату</span>
@@ -3150,7 +3337,32 @@ export default function TimelineView({
 
                                 {/* Quick 1-Click Stage Transition Buttons */}
                                 <div className="mt-2 pt-2 border-t border-neutral-100 flex items-center justify-between gap-1.5">
-                                  {col.stage !== 'planned' ? (
+                                  {col.stage === 'unscheduled' ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openSlotModal(slot, todayYmd);
+                                      }}
+                                      className="text-[11px] text-indigo-700 hover:text-indigo-800 font-semibold px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                      title="Назначить дату и переместить в Planned"
+                                    >
+                                      <CalendarIcon className="w-3 h-3 text-indigo-600" />
+                                      <span>В Planned →</span>
+                                    </button>
+                                  ) : col.stage === 'planned' ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleMoveSlotToKanbanStage(slot, 'unscheduled');
+                                      }}
+                                      className="text-[11px] text-neutral-500 hover:text-amber-800 font-medium px-2 py-1 rounded-md hover:bg-amber-50 transition-colors cursor-pointer"
+                                      title="Убрать дату выхода и вернуть в «Не в графике»"
+                                    >
+                                      ← Не в графике
+                                    </button>
+                                  ) : (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -3161,10 +3373,6 @@ export default function TimelineView({
                                     >
                                       ← В Planned
                                     </button>
-                                  ) : (
-                                    <span className="text-[10px] text-neutral-400 font-medium">
-                                      Этап 1/3
-                                    </span>
                                   )}
 
                                   <div className="flex items-center gap-1.5">
@@ -3435,8 +3643,8 @@ export default function TimelineView({
                         type="button"
                         onClick={() => openSlotModal(sib)}
                         className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer ${active
-                            ? 'bg-indigo-600 text-white shadow-2xs'
-                            : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
                           }`}
                       >
                         Слот #{sib.slotNumber}
@@ -3473,8 +3681,8 @@ export default function TimelineView({
                         type="button"
                         onClick={() => setModalScheduledDate(chip.ymd)}
                         className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${modalScheduledDate === chip.ymd
-                            ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
-                            : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
+                          ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                          : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
                           }`}
                       >
                         {chip.label}
@@ -3500,8 +3708,8 @@ export default function TimelineView({
                         type="button"
                         onClick={() => setModalScheduledTime(tVal)}
                         className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border tabular-nums transition-colors cursor-pointer ${modalScheduledTime === tVal
-                            ? 'bg-neutral-900 text-white border-neutral-900'
-                            : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
+                          ? 'bg-neutral-900 text-white border-neutral-900'
+                          : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
                           }`}
                       >
                         {tVal}
@@ -3619,10 +3827,10 @@ export default function TimelineView({
               {/* Row 5: Slot Kanban Stage (Planned | Review | Published) + Fact Verification */}
               <div
                 className={`p-4 rounded-2xl border transition-colors ${modalIsPublished
-                    ? 'bg-emerald-50/60 border-emerald-300'
-                    : modalStage === 'review'
-                      ? 'bg-violet-50/60 border-violet-300'
-                      : 'bg-neutral-50 border-neutral-200'
+                  ? 'bg-emerald-50/60 border-emerald-300'
+                  : modalStage === 'review'
+                    ? 'bg-violet-50/60 border-violet-300'
+                    : 'bg-neutral-50 border-neutral-200'
                   }`}
               >
                 <div className="mb-3">
@@ -3637,8 +3845,8 @@ export default function TimelineView({
                         setModalIsPublished(false);
                       }}
                       className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${!modalIsPublished && modalStage === 'planned'
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                          : 'bg-white text-neutral-700 border-neutral-200 hover:border-indigo-300'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                        : 'bg-white text-neutral-700 border-neutral-200 hover:border-indigo-300'
                         }`}
                     >
                       1. Planned
@@ -3650,8 +3858,8 @@ export default function TimelineView({
                         setModalIsPublished(false);
                       }}
                       className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${!modalIsPublished && modalStage === 'review'
-                          ? 'bg-violet-600 text-white border-violet-600 shadow-2xs'
-                          : 'bg-white text-neutral-700 border-neutral-200 hover:border-violet-300'
+                        ? 'bg-violet-600 text-white border-violet-600 shadow-2xs'
+                        : 'bg-white text-neutral-700 border-neutral-200 hover:border-violet-300'
                         }`}
                     >
                       2. Review
@@ -3666,8 +3874,8 @@ export default function TimelineView({
                         }
                       }}
                       className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${modalIsPublished
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                          : 'bg-white text-neutral-700 border-neutral-200 hover:border-emerald-300'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                        : 'bg-white text-neutral-700 border-neutral-200 hover:border-emerald-300'
                         }`}
                     >
                       3. Published ✓

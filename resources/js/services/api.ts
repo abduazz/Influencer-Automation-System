@@ -190,6 +190,7 @@ export function updateIntegrationSlotSchedule(
     format?: string | null;
     projectId?: string | null;
     topic?: string | null;
+    stage?: 'planned' | 'review' | 'published' | null;
     isPublished?: boolean | null;
     publishedUrl?: string | null;
     publishedAt?: string | null;

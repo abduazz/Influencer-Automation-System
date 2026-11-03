@@ -55,6 +55,12 @@ class BloggerSubmission extends Model
                     'status' => 'completed',
                 ]);
                 \Illuminate\Support\Facades\Log::info("Integration ID {$integration->id} ({$integration->blogger_name}) auto-completed: all {$totalSlots} slots submitted.");
+            } elseif (!$allFilled && ($integration->kanban_stage === 'completed' || $integration->status === 'completed')) {
+                $integration->update([
+                    'kanban_stage' => 'paid_in_progress',
+                    'status' => 'active',
+                ]);
+                \Illuminate\Support\Facades\Log::info("Integration ID {$integration->id} ({$integration->blogger_name}) auto-reopened: slots added or incomplete.");
             }
         });
     }

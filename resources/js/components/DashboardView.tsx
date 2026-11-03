@@ -277,6 +277,32 @@ export default function DashboardView({
     setShowAddIntegrationModal(true);
   };
 
+  const handleReorderIntegration = (integration: Integration) => {
+    setEditingIntegration(null);
+    setBloggerName(integration.bloggerName);
+    setBloggerPageLink(integration.bloggerPageLink || '');
+    setTelegramUsername(integration.telegramUsername || '');
+    setStartDate(new Date().toISOString().split('T')[0]);
+
+    const defaultEnd = new Date();
+    defaultEnd.setDate(defaultEnd.getDate() + 14);
+    setEndDate(defaultEnd.toISOString().split('T')[0]);
+
+    setPlatform(integration.platform);
+    setReferralLink(integration.referralLink || '');
+    const price = Number(integration.pricePerSlot) || 0;
+    const slots = integration.slotsCount && integration.slotsCount > 0 ? integration.slotsCount : 4;
+    setPricePerSlot(price);
+    setSlotsCount(slots);
+    setCalculatedTotal(price * slots);
+    setCustomizeSlots(false);
+    setSlotGroups([]);
+    if (integration.projectId) {
+      setSelectedProjectId(integration.projectId);
+    }
+    setShowAddIntegrationModal(true);
+  };
+
   const openEditIntegration = (integration: Integration) => {
     setEditingIntegration(integration);
     setBloggerName(integration.bloggerName);
@@ -1374,9 +1400,25 @@ return (
 
                           {/* Slots Remaining */}
                           <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 font-extrabold text-[10px] border border-amber-100/50">
-                              {slotsRemaining}
-                            </span>
+                            <div className="inline-flex items-center justify-center gap-1.5">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 font-extrabold text-[10px] border border-amber-100/50">
+                                {slotsRemaining}
+                              </span>
+                              {slotsRemaining === 0 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReorderIntegration(item);
+                                  }}
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black hover:bg-neutral-800 text-white font-bold text-[9px] transition cursor-pointer shadow-2xs"
+                                  title={lang === 'ru' ? 'Докупить новые слоты (создать отдельную интеграцию)' : lang === 'uz' ? 'Yangi slotlar xarid qilish (alohida integratsiya yaratish)' : 'Buy more slots'}
+                                >
+                                  <Plus className="w-2.5 h-2.5 text-white" />
+                                  <span>{lang === 'ru' ? 'Докупить' : lang === 'uz' ? 'Qayta xarid' : 'Re-order'}</span>
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2333,8 +2375,21 @@ return (
 
           {/* Modal Footer */}
           <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50/50 flex justify-between items-center">
-            {/* Actions: Edit & Delete */}
-            <div className="flex gap-2">
+            {/* Actions: Re-order, Edit & Delete */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const deal = selectedIntegrationForDetails;
+                  setSelectedIntegrationForDetails(null);
+                  handleReorderIntegration(deal);
+                }}
+                className="px-3 py-1.5 bg-black hover:bg-neutral-900 text-white font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
+                title={lang === 'ru' ? 'Создать новую отдельную интеграцию для этого блогера' : lang === 'uz' ? 'Ushbu blogger uchun yangi alohida integratsiya yaratish' : 'Create a separate new integration for this blogger'}
+              >
+                <Plus className="w-3.5 h-3.5 text-white" />
+                <span>{lang === 'ru' ? 'Докупить слоты' : lang === 'uz' ? 'Qayta xarid' : 'Buy more slots'}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {

@@ -105,4 +105,16 @@ chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 chmod -R 777 storage/logs 2>/dev/null || true
 chmod 666 storage/logs/*.log 2>/dev/null || true
 
+echo "⏰ Ensuring Laravel scheduler cron job is active..."
+PROJECT_DIR="$(pwd)"
+PHP_BIN="$(command -v php || echo "/usr/bin/php")"
+CRON_ENTRY="* * * * * cd $PROJECT_DIR && $PHP_BIN artisan schedule:run >> /dev/null 2>&1"
+
+if ! crontab -l 2>/dev/null | grep -q "artisan schedule:run"; then
+    echo "Adding scheduler cron to crontab..."
+    (crontab -l 2>/dev/null; echo "$CRON_ENTRY") | crontab - || true
+else
+    echo "Scheduler cron already present in user crontab."
+fi
+
 echo "🎉 Deployment completed successfully!"

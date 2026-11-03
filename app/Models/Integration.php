@@ -110,7 +110,8 @@ class Integration extends Model
             ->where('platform', $this->platform)
             ->get()
             ->filter(function ($r) use ($cleanName, $normalizedName) {
-                if (!$r->channel_blogger) return false;
+                if (!$r->channel_blogger)
+                    return false;
                 $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
                 $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
                 return $rClean === $cleanName || $rNorm === $normalizedName;
@@ -151,7 +152,7 @@ class Integration extends Model
             if (!empty($rep->destination)) {
                 $latestReferralLink = $rep->destination;
             }
-            if ($rep->price_per_slot !== null && (float)$rep->price_per_slot > 0) {
+            if ($rep->price_per_slot !== null && (float) $rep->price_per_slot > 0) {
                 $latestPricePerSlot = (float) $rep->price_per_slot;
             }
 
@@ -160,7 +161,7 @@ class Integration extends Model
             $repPrice = (float) ($rep->price_per_slot ?? 0);
             $repPaidSlots = (int) ($rep->paid_slots_count ?? 0);
 
-            if ($rep->payment_type === 'full' || ($repPaidSlots > 0 && $repPaidSlots >= (int)$rep->slots_count)) {
+            if ($rep->payment_type === 'full' || ($repPaidSlots > 0 && $repPaidSlots >= (int) $rep->slots_count)) {
                 $repPaid = $repTotal;
             } elseif ($repPaid <= 0 && $repPrice > 0 && $repPaidSlots > 0) {
                 $repPaid = $repPrice * $repPaidSlots;
@@ -257,7 +258,21 @@ class Integration extends Model
         if ($maxDate) {
             $this->end_date = $maxDate->copy()->addDays(14);
         }
-        if (empty($this->kanban_stage) || in_array($this->kanban_stage, ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'], true)) {
+        $publishedSlotsCount = 0;
+        $sub = $this->submissions()->first();
+        if ($sub && is_array($sub->data)) {
+            foreach ($sub->data as $k => $v) {
+                if (preg_match('/^slot_\d+$/', $k) && is_string($v) && trim($v) !== '') {
+                    $publishedSlotsCount++;
+                }
+            }
+        }
+
+        $allDone = ($slotsCount > 0 && $publishedSlotsCount >= $slotsCount);
+        if (!$allDone && ($this->kanban_stage === 'completed' || $this->status === 'completed')) {
+            $this->kanban_stage = 'paid_in_progress';
+            $this->status = 'active';
+        } elseif (empty($this->kanban_stage) || in_array($this->kanban_stage, ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'], true)) {
             $this->kanban_stage = 'paid_in_progress';
         }
 
@@ -275,7 +290,8 @@ class Integration extends Model
                     ->where('platform', $integration->platform)
                     ->get()
                     ->contains(function ($r) use ($cleanName, $normalizedName) {
-                        if (!$r->channel_blogger) return false;
+                        if (!$r->channel_blogger)
+                            return false;
                         $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
                         $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
                         return $rClean === $cleanName || $rNorm === $normalizedName;
@@ -302,7 +318,17 @@ class Integration extends Model
             }
 
             if (blank($integration->blogger_cabinet_token)) {
-                $integration->blogger_cabinet_token = self::generateCabinetToken($integration->blogger_name);
+                $cleanBlogger = strtolower(trim(str_replace(['@', '#'], '', $integration->blogger_name ?? '')));
+                $existingToken = null;
+                if ($integration->project_id && $cleanBlogger !== '') {
+                    $existingToken = self::where('project_id', $integration->project_id)
+                        ->where(function ($q) use ($cleanBlogger) {
+                            $q->whereRaw("LOWER(TRIM(REPLACE(REPLACE(blogger_name, '@', ''), '#', ''))) = ?", [$cleanBlogger]);
+                        })
+                        ->whereNotNull('blogger_cabinet_token')
+                        ->value('blogger_cabinet_token');
+                }
+                $integration->blogger_cabinet_token = $existingToken ?: self::generateCabinetToken($integration->blogger_name ?? 'blogger');
             }
         });
     }

@@ -642,10 +642,11 @@ export default function App() {
       const isTarget = (newRep.integrationId && String(item.id) === String(newRep.integrationId)) ||
         (!newRep.integrationId && newRep.channelBlogger && item.bloggerName.toLowerCase().trim() === newRep.channelBlogger.toLowerCase().trim() && String(item.projectId) === String(newRep.projectId));
 
-      if (isTarget && item.kanbanStage !== 'completed') {
+      if (isTarget) {
         return {
           ...item,
           kanbanStage: 'paid_in_progress',
+          status: 'active',
           updatedAt: nowIso,
           createdBy: item.createdBy || newRep.createdBy || currentUserName || currentUserEmail || undefined
         };

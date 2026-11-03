@@ -316,6 +316,7 @@ Artisan::command('integrations:sync-reports {--id= : Specific integration ID to 
 })->purpose('Recalculate and sync integrations financials and slots from reports');
 
 Artisan::command('db:backup {--telegram : Send backup to Telegram topic #597} {--local-only : Only create local backup}', function () {
+    \Illuminate\Support\Facades\Log::info("[BACKUP] Starting database backup execution...");
     $service = new \App\Services\DatabaseBackupService();
     $this->info("Creating database backup snapshot...");
     $file = $service->createBackup();
@@ -326,12 +327,21 @@ Artisan::command('db:backup {--telegram : Send backup to Telegram topic #597} {-
         $res = $service->sendToTelegram($file);
         if ($res['success']) {
             $this->info("Backup successfully sent to Telegram: " . $res['file']);
+            \App\Services\ActivityLogger::backup('TELEGRAM_SENT', "Резервная копия базы данных успешно отправлена в Telegram (тема #597)", [
+                'file_name' => $res['file'] ?? basename($file),
+                'source' => 'scheduler',
+            ]);
         } else {
-            $this->error("Failed to send backup to Telegram: " . ($res['error'] ?? 'Unknown error'));
+            $err = $res['error'] ?? 'Unknown error';
+            $this->error("Failed to send backup to Telegram: " . $err);
+            \App\Services\ActivityLogger::backup('TELEGRAM_FAILED', "Ошибка при отправке бэкапа в Telegram: " . $err, [
+                'source' => 'scheduler',
+            ], 'error');
         }
     }
 })->purpose('Create database backup snapshot and upload to Telegram topic #597')
-  ->dailyAt('03:00');
+  ->dailyAt('03:00')
+  ->timezone(config('app.timezone', 'Asia/Tashkent'));
 
 
 

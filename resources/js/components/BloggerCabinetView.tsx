@@ -5,12 +5,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { BloggerSubmission, Integration, Project } from '../data/mockData';
-import { 
-  Upload, 
-  Link, 
-  Send, 
-  CheckCircle, 
-  FileText, 
+import {
+  Upload,
+  Link,
+  Send,
+  CheckCircle,
+  FileText,
   ExternalLink,
   AlertCircle,
   Check,
@@ -98,8 +98,8 @@ export default function BloggerCabinetView({
   // Resolve initial integration synchronously from URL parameters or first available item
   const initialMatched = React.useMemo(() => {
     if (urlParams?.integrationId) {
-      const matches = integrations.filter(i => 
-        String(i.id) === String(urlParams.integrationId) || 
+      const matches = integrations.filter(i =>
+        String(i.id) === String(urlParams.integrationId) ||
         i.bloggerCabinetToken === urlParams.integrationId
       );
       if (matches.length > 0) {
@@ -179,7 +179,7 @@ export default function BloggerCabinetView({
         }
       }
     }
-    
+
     if (urlParams?.platform) {
       const p = urlParams.platform as any;
       if (['Telegram', 'Instagram', 'YouTube'].includes(p)) {
@@ -314,7 +314,7 @@ export default function BloggerCabinetView({
     for (let i = 1; i <= activeSlotsCount; i++) {
       const key = `slot_${i}`;
       initialData[key] = submittedData[key] || '';
-      
+
       // If it's a base64 image submission, load it directly into previews; otherwise mock preview
       if (submittedData[key] && submittedData[key].startsWith('data:image/')) {
         initialPreviews[key] = submittedData[key];
@@ -467,8 +467,8 @@ export default function BloggerCabinetView({
   };
 
   const validateSlotUrl = (
-    url: string, 
-    platform: string, 
+    url: string,
+    platform: string,
     _format?: string
   ): { valid: boolean; errorKey?: 'cabinetUrlForbidden' | 'invalidPlatformUrl' } => {
     if (!url || typeof url !== 'string' || !url.trim()) {
@@ -487,10 +487,10 @@ export default function BloggerCabinetView({
     const lower = trimmed.toLowerCase();
 
     // 1. Block cabinet links
-    const isCabinetLink = lower.includes('/c/') || 
-                          lower.includes('cabinet') || 
-                          (typeof window !== 'undefined' && window.location.host && lower.includes(window.location.host.toLowerCase())) || 
-                          lower.includes('khalilovdev.uz');
+    const isCabinetLink = lower.includes('/c/') ||
+      lower.includes('cabinet') ||
+      (typeof window !== 'undefined' && window.location.host && lower.includes(window.location.host.toLowerCase())) ||
+      lower.includes('khalilovdev.uz');
     if (isCabinetLink) {
       return { valid: false, errorKey: 'cabinetUrlForbidden' };
     }
@@ -546,11 +546,11 @@ export default function BloggerCabinetView({
     });
 
     if (!hasNewInput) {
-      alert(lang === 'ru' 
-        ? "Пожалуйста, заполните хотя бы один новый слот перед отправкой!" 
-        : lang === 'uz' 
-        ? "Iltimos, yuborishdan oldin kamida bitta yangi slotni to‘ldiring!" 
-        : "Please fill at least one new slot before submitting!"
+      alert(lang === 'ru'
+        ? "Пожалуйста, заполните хотя бы один новый слот перед отправкой!"
+        : lang === 'uz'
+          ? "Iltimos, yuborishdan oldin kamida bitta yangi slotni to‘ldiring!"
+          : "Please fill at least one new slot before submitting!"
       );
       return;
     }
@@ -565,10 +565,10 @@ export default function BloggerCabinetView({
         const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
         const slotFormat = slotConfig ? slotConfig.format : (
           activePlatform === 'Instagram' ? 'Stories' :
-          activePlatform === 'Telegram' ? 'Post' :
-          activePlatform === 'YouTube' ? 'Shorts' :
-          activePlatform === 'TikTok' ? 'VideoPost' :
-          'Post'
+            activePlatform === 'Telegram' ? 'Post' :
+              activePlatform === 'YouTube' ? 'Shorts' :
+                activePlatform === 'TikTok' ? 'VideoPost' :
+                  'Post'
         );
         const validation = validateSlotUrl(val, slotPlatform, slotFormat);
         if (!validation.valid) {
@@ -586,12 +586,12 @@ export default function BloggerCabinetView({
 
 
   const handleFinalSubmit = async () => {
-    const confirmText = lang === 'ru' 
-      ? "Вы уверены, что хотите отправить материалы? Отправленные материалы будут заблокированы и их нельзя будет изменить!" 
-      : lang === 'uz' 
-      ? "Materiallarni yuborishga ishonchingiz komilmi? Yuborilgan materiallar bloklanadi va ularni o‘zgartirib bo‘lmaydi!" 
-      : "Are you sure you want to submit? Submitted materials will be locked and cannot be edited!";
-   
+    const confirmText = lang === 'ru'
+      ? "Вы уверены, что хотите отправить материалы? Отправленные материалы будут заблокированы и их нельзя будет изменить!"
+      : lang === 'uz'
+        ? "Materiallarni yuborishga ishonchingiz komilmi? Yuborilgan materiallar bloklanadi va ularni o‘zgartirib bo‘lmaydi!"
+        : "Are you sure you want to submit? Submitted materials will be locked and cannot be edited!";
+
     if (!window.confirm(confirmText)) {
       return;
     }
@@ -669,7 +669,7 @@ export default function BloggerCabinetView({
               ))}
             </select>
           </div>
-          
+
           <button
             onClick={async () => {
               const tokenOrId = selectedIntegration?.bloggerCabinetToken || selectedIntegrationId;
@@ -680,15 +680,14 @@ export default function BloggerCabinetView({
                 setTimeout(() => setCopiedCabinetLink(false), 2000);
               }
             }}
-            className={`px-3.5 py-1.5 font-extrabold rounded-lg transition duration-150 flex items-center gap-1.5 cursor-pointer ${
-              copiedCabinetLink
+            className={`px-3.5 py-1.5 font-extrabold rounded-lg transition duration-150 flex items-center gap-1.5 cursor-pointer ${copiedCabinetLink
                 ? 'bg-emerald-600 text-white'
                 : 'bg-black hover:bg-neutral-900 text-white'
-            }`}
+              }`}
           >
             {copiedCabinetLink ? <Check className="w-3.5 h-3.5 text-white" /> : <Link className="w-3.5 h-3.5" />}
             <span>
-              {copiedCabinetLink 
+              {copiedCabinetLink
                 ? (lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!')
                 : (lang === 'ru' ? 'Копировать ссылку для блогера' : lang === 'uz' ? 'Blogger havolasini nusxalash' : 'Copy Blogger Link')}
             </span>
@@ -699,350 +698,346 @@ export default function BloggerCabinetView({
       {/* The Interactive Guest Web Page Frame */}
       <div className="space-y-6">
         <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
-            {/* Blogger Portal Inside Content */}
-            <div className="p-6 text-left bg-neutral-50 min-h-[420px] flex flex-col justify-between">
-              {formSubmitted ? (
-                /* Success Screen */
-                <div className="max-w-md mx-auto text-center py-10 space-y-4">
-                  <div className="w-12 h-12 rounded-full bg-black text-white flex items-center justify-center mx-auto">
-                    <CheckCircle className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-black">{t.alreadySubmittedTitle}</h3>
-                    <p className="text-xs text-neutral-500 mt-1">
-                      {t.alreadySubmittedDesc}
-                    </p>
-                  </div>
-                  
-                  <div className="p-3.5 bg-white border border-neutral-200 rounded-lg text-[11px] text-neutral-600 max-w-sm mx-auto text-left">
-                    <p className="font-bold text-black mb-1.5 border-b border-neutral-100 pb-1">Data:</p>
-                    {Object.entries(formData).map(([key, val]) => (
-                      <div key={key} className="flex justify-between py-1 border-b border-neutral-50 last:border-0 font-mono">
-                        <span className="text-neutral-400">{key}:</span>
-                        <span className="font-bold text-black truncate max-w-[180px]">
-                          {typeof val === 'string' && val.startsWith('data:image/') 
-                            ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
-                            : val}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={() => setFormSubmitted(false)}
-                    className="px-5 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded transition duration-150"
-                  >
-                    {t.resubmitBtn}
-                  </button>
+          {/* Blogger Portal Inside Content */}
+          <div className="p-6 text-left bg-neutral-50 min-h-[420px] flex flex-col justify-between">
+            {formSubmitted ? (
+              /* Success Screen */
+              <div className="max-w-md mx-auto text-center py-10 space-y-4">
+                <div className="w-12 h-12 rounded-full bg-black text-white flex items-center justify-center mx-auto">
+                  <CheckCircle className="w-6 h-6 text-white" />
                 </div>
-              ) : showConfirm ? (
-                /* Confirmation Review Screen */
-                <div className="space-y-4 max-w-xl mx-auto w-full text-left">
-                  <div className="text-center">
-                    <h2 className="text-base font-black text-black tracking-tight">
-                      {lang === 'ru' ? 'Подтверждение отправки' : lang === 'uz' ? 'Yuborishni tasdiqlash' : 'Confirm Submission'}
-                    </h2>
-                    <p className="text-xs text-neutral-500 mt-1">
-                      {lang === 'ru' ? 'Пожалуйста, проверьте правильность введенных ссылок. После отправки редактирование невозможно.' : 
-                       lang === 'uz' ? 'Iltimos, kiritilgan havolalar to‘g‘riligini tekshiring. Yuborilganidan so‘ng tahrirlab bo‘lmaydi.' : 
-                       'Please review your links. You will not be able to modify them after submission.'}
-                    </p>
-                  </div>
+                <div>
+                  <h3 className="text-base font-black text-black">{t.alreadySubmittedTitle}</h3>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    {t.alreadySubmittedDesc}
+                  </p>
+                </div>
 
-                  <div className="p-4 bg-white border border-neutral-200 rounded-xl space-y-3 shadow-2xs">
-                    {sortedSlotIndices.map((index) => {
-                      const slotNum = index + 1;
-                      const slotKey = `slot_${slotNum}`;
-                      const slotConfig = selectedIntegration?.slotsConfig?.[index];
-                      const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
-                      const slotFormat = slotConfig ? slotConfig.format : (
-                        activePlatform === 'Instagram' ? 'Stories' :
+                <div className="p-3.5 bg-white border border-neutral-200 rounded-lg text-[11px] text-neutral-600 max-w-sm mx-auto text-left">
+                  <p className="font-bold text-black mb-1.5 border-b border-neutral-100 pb-1">Data:</p>
+                  {Object.entries(formData).map(([key, val]) => (
+                    <div key={key} className="flex justify-between py-1 border-b border-neutral-50 last:border-0 font-mono">
+                      <span className="text-neutral-400">{key}:</span>
+                      <span className="font-bold text-black truncate max-w-[180px]">
+                        {typeof val === 'string' && val.startsWith('data:image/')
+                          ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
+                          : val}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setFormSubmitted(false)}
+                  className="px-5 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded transition duration-150"
+                >
+                  {t.resubmitBtn}
+                </button>
+              </div>
+            ) : showConfirm ? (
+              /* Confirmation Review Screen */
+              <div className="space-y-4 max-w-xl mx-auto w-full text-left">
+                <div className="text-center">
+                  <h2 className="text-base font-black text-black tracking-tight">
+                    {lang === 'ru' ? 'Подтверждение отправки' : lang === 'uz' ? 'Yuborishni tasdiqlash' : 'Confirm Submission'}
+                  </h2>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    {lang === 'ru' ? 'Пожалуйста, проверьте правильность введенных ссылок. После отправки редактирование невозможно.' :
+                      lang === 'uz' ? 'Iltimos, kiritilgan havolalar to‘g‘riligini tekshiring. Yuborilganidan so‘ng tahrirlab bo‘lmaydi.' :
+                        'Please review your links. You will not be able to modify them after submission.'}
+                  </p>
+                </div>
+
+                <div className="p-4 bg-white border border-neutral-200 rounded-xl space-y-3 shadow-2xs">
+                  {sortedSlotIndices.map((index) => {
+                    const slotNum = index + 1;
+                    const slotKey = `slot_${slotNum}`;
+                    const slotConfig = selectedIntegration?.slotsConfig?.[index];
+                    const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
+                    const slotFormat = slotConfig ? slotConfig.format : (
+                      activePlatform === 'Instagram' ? 'Stories' :
                         activePlatform === 'Telegram' ? 'Post' :
-                        activePlatform === 'YouTube' ? 'Shorts' :
-                        activePlatform === 'TikTok' ? 'VideoPost' :
-                        'Post'
-                      );
-                      const isPaid = selectedIntegration 
-                        ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
-                        : true;
+                          activePlatform === 'YouTube' ? 'Shorts' :
+                            activePlatform === 'TikTok' ? 'VideoPost' :
+                              'Post'
+                    );
+                    const isPaid = selectedIntegration
+                      ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
+                      : true;
 
-                      const value = formData[slotKey];
-                      if (!value && !isPaid) return null;
+                    const value = formData[slotKey];
+                    if (!value && !isPaid) return null;
 
-                      return (
-                        <div key={slotKey} className="flex justify-between items-center py-1.5 border-b border-neutral-100 last:border-0 last:pb-0 text-xs">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-neutral-700">Слот #{slotNum}:</span>
-                            <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 uppercase">
-                              {slotPlatform} - {slotFormat}
-                            </span>
-                          </div>
-                          <span className="font-mono text-black truncate max-w-[240px] select-all font-bold">
-                            {formData[slotKey]?.startsWith('data:image/') 
-                              ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
-                              : formData[slotKey] || '—'}
+                    return (
+                      <div key={slotKey} className="flex justify-between items-center py-1.5 border-b border-neutral-100 last:border-0 last:pb-0 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-neutral-700">Слот #{slotNum}:</span>
+                          <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 uppercase">
+                            {slotPlatform} - {slotFormat}
                           </span>
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={() => setShowConfirm(false)}
-                      className="flex-1 py-2.5 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
-                    >
-                      {lang === 'ru' ? 'Назад / Изменить' : lang === 'uz' ? 'Orqaga / O‘zgartirish' : 'Back / Edit'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={handleFinalSubmit}
-                      className="flex-1 py-2.5 bg-black hover:bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      {isSubmitting ? (
-                        <span>{lang === 'ru' ? 'Отправка...' : lang === 'uz' ? 'Yuborilmoqda...' : 'Submitting...'}</span>
-                      ) : (
-                        <span>{lang === 'ru' ? 'Подтверждаю отправку' : lang === 'uz' ? 'Yuborishni tasdiqlayman' : 'Confirm & Submit'}</span>
-                      )}
-                    </button>
-                  </div>
+                        <span className="font-mono text-black truncate max-w-[240px] select-all font-bold">
+                          {formData[slotKey]?.startsWith('data:image/')
+                            ? (lang === 'ru' ? '📸 Скриншот' : lang === 'uz' ? '📸 Skrinshot' : '📸 Screenshot')
+                            : formData[slotKey] || '—'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ) : (
-                /* Interactive Submission Form */
-                <form onSubmit={handleSubmit} className="space-y-4 max-w-xl mx-auto w-full">
-                  <div className="flex justify-between items-center border-b border-neutral-100 pb-3 mb-4">
-                    <div className="text-left">
-                      <h2 className="text-base font-black text-black tracking-tight flex items-center gap-2">
-                        <span>{t.bloggerCabinetTitle} {projectName ? `— ${projectName}` : ''}</span>
-                      </h2>
-                      {selectedIntegration && (
-                        <div className="flex items-center gap-2 mt-1 text-xs font-bold text-neutral-700 flex-wrap">
-                          {selectedIntegration.bloggerName && (
-                            <span className="shrink-0">👤 {selectedIntegration.bloggerName}</span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const refLink = selectedIntegration.referralLink?.trim();
-                              if (!refLink) {
-                                alert(
-                                  lang === 'ru' 
-                                    ? 'Реферальная ссылка пока не указана' 
-                                    : lang === 'uz' 
-                                    ? 'Referal havola hali ko‘rsatilmagan' 
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => setShowConfirm(false)}
+                    className="flex-1 py-2.5 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
+                  >
+                    {lang === 'ru' ? 'Назад / Изменить' : lang === 'uz' ? 'Orqaga / O‘zgartirish' : 'Back / Edit'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleFinalSubmit}
+                    className="flex-1 py-2.5 bg-black hover:bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting ? (
+                      <span>{lang === 'ru' ? 'Отправка...' : lang === 'uz' ? 'Yuborilmoqda...' : 'Submitting...'}</span>
+                    ) : (
+                      <span>{lang === 'ru' ? 'Подтверждаю отправку' : lang === 'uz' ? 'Yuborishni tasdiqlayman' : 'Confirm & Submit'}</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Interactive Submission Form */
+              <form onSubmit={handleSubmit} className="space-y-4 max-w-xl mx-auto w-full">
+                <div className="flex justify-between items-center border-b border-neutral-100 pb-3 mb-4">
+                  <div className="text-left">
+                    <h2 className="text-base font-black text-black tracking-tight flex items-center gap-2">
+                      <span>{t.bloggerCabinetTitle} {projectName ? `— ${projectName}` : ''}</span>
+                    </h2>
+                    {selectedIntegration && (
+                      <div className="flex items-center gap-2 mt-1 text-xs font-bold text-neutral-700 flex-wrap">
+                        {selectedIntegration.bloggerName && (
+                          <span className="shrink-0">👤 {selectedIntegration.bloggerName}</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const refLink = selectedIntegration.referralLink?.trim();
+                            if (!refLink) {
+                              alert(
+                                lang === 'ru'
+                                  ? 'Реферальная ссылка пока не указана'
+                                  : lang === 'uz'
+                                    ? 'Referal havola hali ko‘rsatilmagan'
                                     : 'Referral link is not specified yet'
-                                );
-                                return;
-                              }
-                              const ok = await copyToClipboard(refLink);
-                              if (ok) {
-                                setCopiedReferralLink(true);
-                                setTimeout(() => setCopiedReferralLink(false), 2000);
-                              }
-                            }}
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-extrabold transition cursor-pointer select-none ${
-                              copiedReferralLink
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                                : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-200 text-neutral-800'
-                            }`}
-                            title={
-                              selectedIntegration.referralLink
-                                ? selectedIntegration.referralLink
-                                : (lang === 'ru' ? 'Реферальная ссылка не указана' : lang === 'uz' ? 'Referal havola ko‘rsatilmagan' : 'Referral link not set')
+                              );
+                              return;
                             }
-                          >
-                            {copiedReferralLink ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-600" />
-                                <span>{lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!'}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3 text-neutral-500" />
-                                <span>{lang === 'ru' ? 'Копировать реферальную ссылку' : lang === 'uz' ? 'Referal havolani nusxalash' : 'Copy referral link'}</span>
-                              </>
-                            )}
-                          </button>
-                          <a
-                            href="https://t.me/globalpr_admin"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-[10px] text-sky-700 font-extrabold hover:bg-sky-500 hover:text-white transition group cursor-pointer"
-                            title={lang === 'ru' ? 'Открыть диалог с менеджером в Telegram (@globalpr_admin)' : lang === 'uz' ? 'Telegramda menejer bilan bog‘lanish (@globalpr_admin)' : 'Open Telegram chat with manager (@globalpr_admin)'}
-                          >
-                            <Send className="w-2.5 h-2.5 text-sky-500 group-hover:text-white" />
-                            <span>{lang === 'ru' ? 'Чат с менеджером' : lang === 'uz' ? 'Menejer bilan Telegram chat' : 'Telegram chat with manager'}</span>
-                            <ExternalLink className="w-2.5 h-2.5 text-sky-400 group-hover:text-white" />
-                          </a>
-                        </div>
-                      )}
-                      <p className="text-[10px] text-neutral-500 mt-1">
-                        {lang === 'ru' ? 'Слоты по платформам' : lang === 'uz' ? 'Platformalar bo‘yicha slotlar' : 'Slots by Platform'}:{' '}
-                        <span className="font-bold text-black">{getSlotSummaryString()}</span>
-                      </p>
-                    </div>
-                    {/* Compact Language Switcher */}
-                    {setLang && (
-                      <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-200 shrink-0">
-                        {(['ru', 'uz', 'en'] as const).map((l) => (
-                          <button
-                            key={l}
-                            type="button"
-                            onClick={() => setLang(l)}
-                            className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${
-                              lang === l
-                                ? 'bg-white text-black shadow-sm'
-                                : 'text-neutral-400 hover:text-neutral-600'
+                            const ok = await copyToClipboard(refLink);
+                            if (ok) {
+                              setCopiedReferralLink(true);
+                              setTimeout(() => setCopiedReferralLink(false), 2000);
+                            }
+                          }}
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-extrabold transition cursor-pointer select-none ${copiedReferralLink
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                              : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-200 text-neutral-800'
                             }`}
-                          >
-                            {l}
-                          </button>
-                        ))}
+                          title={
+                            selectedIntegration.referralLink
+                              ? selectedIntegration.referralLink
+                              : (lang === 'ru' ? 'Реферальная ссылка не указана' : lang === 'uz' ? 'Referal havola ko‘rsatilmagan' : 'Referral link not set')
+                          }
+                        >
+                          {copiedReferralLink ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span>{lang === 'ru' ? 'Ссылка скопирована!' : lang === 'uz' ? 'Havola nusxalandi!' : 'Link copied!'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 text-neutral-500" />
+                              <span>{lang === 'ru' ? 'Копировать реферальную ссылку' : lang === 'uz' ? 'Referal havolani nusxalash' : 'Copy referral link'}</span>
+                            </>
+                          )}
+                        </button>
+                        <a
+                          href="https://t.me/globalpr_admin"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-[10px] text-sky-700 font-extrabold hover:bg-sky-500 hover:text-white transition group cursor-pointer"
+                          title={lang === 'ru' ? 'Открыть диалог с менеджером в Telegram (@globalpr_admin)' : lang === 'uz' ? 'Telegramda menejer bilan bog‘lanish (@globalpr_admin)' : 'Open Telegram chat with manager (@globalpr_admin)'}
+                        >
+                          <Send className="w-2.5 h-2.5 text-sky-500 group-hover:text-white" />
+                          <span>{lang === 'ru' ? 'Чат с менеджером' : lang === 'uz' ? 'Menejer bilan Telegram chat' : 'Telegram chat with manager'}</span>
+                          <ExternalLink className="w-2.5 h-2.5 text-sky-400 group-hover:text-white" />
+                        </a>
                       </div>
                     )}
+                    <p className="text-[10px] text-neutral-500 mt-1">
+                      {lang === 'ru' ? 'Слоты по платформам' : lang === 'uz' ? 'Platformalar bo‘yicha slotlar' : 'Slots by Platform'}:{' '}
+                      <span className="font-bold text-black">{getSlotSummaryString()}</span>
+                    </p>
                   </div>
-
-                  {/* Paste Notification Toast */}
-                  {pasteNotification && (
-                    <div className="mb-3 flex items-center justify-between gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold animate-in fade-in">
-                      <div className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span>{pasteNotification}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setPasteNotification(null)}
-                        className="text-emerald-500 hover:text-emerald-800 text-xs font-bold leading-none cursor-pointer"
-                      >
-                        ✕
-                      </button>
+                  {/* Compact Language Switcher */}
+                  {setLang && (
+                    <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-200 shrink-0">
+                      {(['ru', 'uz', 'en'] as const).map((l) => (
+                        <button
+                          key={l}
+                          type="button"
+                          onClick={() => setLang(l)}
+                          className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${lang === l
+                              ? 'bg-white text-black shadow-sm'
+                              : 'text-neutral-400 hover:text-neutral-600'
+                            }`}
+                        >
+                          {l}
+                        </button>
+                      ))}
                     </div>
                   )}
+                </div>
 
-                  <div className="space-y-3 pt-4 border-t border-neutral-200">
-                    {/* Generates activeSlotsCount fields: empty (unsubmitted) slots first, completed slots below */}
-                    {sortedSlotIndices.map((index, renderIdx) => {
-                      const slotNum = index + 1;
-                      const slotKey = `slot_${slotNum}`;
+                {/* Paste Notification Toast */}
+                {pasteNotification && (
+                  <div className="mb-3 flex items-center justify-between gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{pasteNotification}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPasteNotification(null)}
+                      className="text-emerald-500 hover:text-emerald-800 text-xs font-bold leading-none cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
 
-                      const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
-                      const submittedData = existingSub?.data || {};
-                      const isSlotSubmitted = !!(submittedData[slotKey]);
+                <div className="space-y-3 pt-4 border-t border-neutral-200">
+                  {/* Generates activeSlotsCount fields: empty (unsubmitted) slots first, completed slots below */}
+                  {sortedSlotIndices.map((index, renderIdx) => {
+                    const slotNum = index + 1;
+                    const slotKey = `slot_${slotNum}`;
 
-                      const prevIndex = renderIdx > 0 ? sortedSlotIndices[renderIdx - 1] : null;
-                      const isFirstCompleted = isSlotSubmitted && (prevIndex === null || !submittedData[`slot_${prevIndex + 1}`]);
+                    const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
+                    const submittedData = existingSub?.data || {};
+                    const isSlotSubmitted = !!(submittedData[slotKey]);
 
-                      // Retrieve individual slot configuration if set in Report Form
-                      const slotConfig = selectedIntegration?.slotsConfig?.[index];
-                      const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
-                      const slotFormat = slotConfig ? slotConfig.format : (
-                        activePlatform === 'Instagram' ? 'Stories' :
+                    const prevIndex = renderIdx > 0 ? sortedSlotIndices[renderIdx - 1] : null;
+                    const isFirstCompleted = isSlotSubmitted && (prevIndex === null || !submittedData[`slot_${prevIndex + 1}`]);
+
+                    // Retrieve individual slot configuration if set in Report Form
+                    const slotConfig = selectedIntegration?.slotsConfig?.[index];
+                    const slotPlatform = slotConfig ? slotConfig.platform : activePlatform;
+                    const slotFormat = slotConfig ? slotConfig.format : (
+                      activePlatform === 'Instagram' ? 'Stories' :
                         activePlatform === 'Telegram' ? 'Post' :
-                        activePlatform === 'YouTube' ? 'Shorts' :
-                        activePlatform === 'TikTok' ? 'VideoPost' :
-                        'Post'
-                      );
+                          activePlatform === 'YouTube' ? 'Shorts' :
+                            activePlatform === 'TikTok' ? 'VideoPost' :
+                              'Post'
+                    );
 
-                      // Check if slot is prepaid based on selectedIntegration
-                      const isPaid = selectedIntegration 
-                        ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
-                        : true; // fallback to true if no integration mapped
+                    // Check if slot is prepaid based on selectedIntegration
+                    const isPaid = selectedIntegration
+                      ? (index < (selectedIntegration.paidSlotsCount ?? selectedIntegration.slotsCount))
+                      : true; // fallback to true if no integration mapped
 
-                      const slotVal = formData[slotKey] || '';
-                      const isImageValue = slotVal.startsWith('data:image/') || slotVal.startsWith('mock') || !!filePreviews[slotKey];
-                      const currentMode = slotInputModes[slotKey] || (
-                        isImageValue 
-                          ? 'screenshot' 
-                          : (slotPlatform === 'Instagram' && slotFormat === 'Stories' ? 'screenshot' : 'link')
-                      );
+                    const slotVal = formData[slotKey] || '';
+                    const isImageValue = slotVal.startsWith('data:image/') || slotVal.startsWith('mock') || !!filePreviews[slotKey];
+                    const currentMode = slotInputModes[slotKey] || (
+                      isImageValue
+                        ? 'screenshot'
+                        : (slotPlatform === 'Instagram' && slotFormat === 'Stories' ? 'screenshot' : 'link')
+                    );
 
-                      return (
-                        <React.Fragment key={slotKey}>
-                          {isFirstCompleted && renderIdx > 0 && (
-                            <div className="pt-4 pb-2 flex items-center gap-2 select-none">
-                              <div className="h-px bg-neutral-200 flex-1" />
-                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>{lang === 'ru' ? 'Выполненные слоты' : lang === 'uz' ? 'Bajarilgan slotlar' : 'Completed slots'}</span>
-                              </span>
-                              <div className="h-px bg-neutral-200 flex-1" />
-                            </div>
-                          )}
+                    return (
+                      <React.Fragment key={slotKey}>
+                        {isFirstCompleted && renderIdx > 0 && (
+                          <div className="pt-4 pb-2 flex items-center gap-2 select-none">
+                            <div className="h-px bg-neutral-200 flex-1" />
+                            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{lang === 'ru' ? 'Выполненные слоты' : lang === 'uz' ? 'Bajarilgan slotlar' : 'Completed slots'}</span>
+                            </span>
+                            <div className="h-px bg-neutral-200 flex-1" />
+                          </div>
+                        )}
 
-                          <div 
-                            data-slot-key={slotKey}
-                            tabIndex={0}
-                            onFocus={() => setActiveFocusedSlotKey(slotKey)}
-                            onClick={() => setActiveFocusedSlotKey(slotKey)}
-                            onDragOver={(e) => {
+                        <div
+                          data-slot-key={slotKey}
+                          tabIndex={0}
+                          onFocus={() => setActiveFocusedSlotKey(slotKey)}
+                          onClick={() => setActiveFocusedSlotKey(slotKey)}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDraggingOverSlotKey(slotKey);
+                          }}
+                          onDragEnter={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDraggingOverSlotKey(slotKey);
+                          }}
+                          onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (draggingOverSlotKey === slotKey) setDraggingOverSlotKey(null);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDraggingOverSlotKey(null);
+                            const images = extractImagesFromDataTransfer(e.dataTransfer);
+                            if (images.length > 0) {
+                              handleFileProcess(slotKey, images[0]);
+                              setPasteNotification(
+                                lang === 'ru'
+                                  ? `✓ Скриншот слота #${slotNum} успешно загружен`
+                                  : lang === 'uz'
+                                    ? `✓ Слот #${slotNum} skrinshoti yuklandi`
+                                    : `✓ Slot #${slotNum} screenshot uploaded`
+                              );
+                            }
+                          }}
+                          onPaste={(e) => {
+                            const images = extractImagesFromDataTransfer(e.clipboardData);
+                            if (images.length > 0) {
                               e.preventDefault();
                               e.stopPropagation();
-                              setDraggingOverSlotKey(slotKey);
-                            }}
-                            onDragEnter={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDraggingOverSlotKey(slotKey);
-                            }}
-                            onDragLeave={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (draggingOverSlotKey === slotKey) setDraggingOverSlotKey(null);
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDraggingOverSlotKey(null);
-                              const images = extractImagesFromDataTransfer(e.dataTransfer);
-                              if (images.length > 0) {
-                                handleFileProcess(slotKey, images[0]);
-                                setPasteNotification(
-                                  lang === 'ru'
-                                    ? `✓ Скриншот слота #${slotNum} успешно загружен`
-                                    : lang === 'uz'
-                                      ? `✓ Слот #${slotNum} skrinshoti yuklandi`
-                                      : `✓ Slot #${slotNum} screenshot uploaded`
-                                );
-                              }
-                            }}
-                            onPaste={(e) => {
-                              const images = extractImagesFromDataTransfer(e.clipboardData);
-                              if (images.length > 0) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleFileProcess(slotKey, images[0]);
-                                setPasteNotification(
-                                  lang === 'ru'
-                                    ? `✓ Скриншот слота #${slotNum} добавлен из буфера обмена (Ctrl+V / ⌘V)`
-                                    : lang === 'uz'
-                                      ? `✓ Слот #${slotNum} skrinshoti buferdan qo‘shildi (Ctrl+V / ⌘V)`
-                                      : `✓ Slot #${slotNum} screenshot added from clipboard (Ctrl+V / ⌘V)`
-                                );
-                              }
-                            }}
-                            className={`p-4 bg-white border rounded-xl space-y-3 transition duration-150 ${
-                              draggingOverSlotKey === slotKey
-                                ? 'border-black ring-2 ring-black/10 bg-neutral-50/80 shadow-md'
-                                : 'border-neutral-200 shadow-2xs'
+                              handleFileProcess(slotKey, images[0]);
+                              setPasteNotification(
+                                lang === 'ru'
+                                  ? `✓ Скриншот слота #${slotNum} добавлен из буфера обмена (Ctrl+V / ⌘V)`
+                                  : lang === 'uz'
+                                    ? `✓ Слот #${slotNum} skrinshoti buferdan qo‘shildi (Ctrl+V / ⌘V)`
+                                    : `✓ Slot #${slotNum} screenshot added from clipboard (Ctrl+V / ⌘V)`
+                              );
+                            }
+                          }}
+                          className={`p-4 bg-white border rounded-xl space-y-3 transition duration-150 ${draggingOverSlotKey === slotKey
+                              ? 'border-black ring-2 ring-black/10 bg-neutral-50/80 shadow-md'
+                              : 'border-neutral-200 shadow-2xs'
                             }`}
-                          >
+                        >
                           <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[10px] font-black text-black uppercase tracking-wider">
                                 {t.slotLabel} #{slotNum}
                               </span>
-                              
+
                               {/* Specific Platform & Format Badge */}
-                              <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wide border ${
-                                slotPlatform === 'Instagram'
+                              <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wide border ${slotPlatform === 'Instagram'
                                   ? 'bg-pink-50 text-pink-600 border-pink-100'
                                   : slotPlatform === 'Telegram'
-                                  ? 'bg-sky-50 text-sky-600 border-sky-100'
-                                  : 'bg-red-50 text-red-600 border-red-100'
-                              }`}>
+                                    ? 'bg-sky-50 text-sky-600 border-sky-100'
+                                    : 'bg-red-50 text-red-600 border-red-100'
+                                }`}>
                                 {slotPlatform} - {slotFormat}
                               </span>
 
@@ -1067,9 +1062,8 @@ export default function BloggerCabinetView({
                               <button
                                 type="button"
                                 onClick={() => setSlotInputModes(prev => ({ ...prev, [slotKey]: 'link' }))}
-                                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer ${
-                                  currentMode === 'link' ? 'bg-white text-black shadow-2xs' : 'text-neutral-500 hover:text-black'
-                                }`}
+                                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer ${currentMode === 'link' ? 'bg-white text-black shadow-2xs' : 'text-neutral-500 hover:text-black'
+                                  }`}
                               >
                                 <Link className="w-3 h-3" />
                                 <span>{lang === 'ru' ? 'Ссылка на пост' : lang === 'uz' ? 'Post havolasi' : 'Post Link'}</span>
@@ -1077,9 +1071,8 @@ export default function BloggerCabinetView({
                               <button
                                 type="button"
                                 onClick={() => setSlotInputModes(prev => ({ ...prev, [slotKey]: 'screenshot' }))}
-                                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer ${
-                                  currentMode === 'screenshot' ? 'bg-white text-black shadow-2xs' : 'text-neutral-500 hover:text-black'
-                                }`}
+                                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer ${currentMode === 'screenshot' ? 'bg-white text-black shadow-2xs' : 'text-neutral-500 hover:text-black'
+                                  }`}
                               >
                                 <Upload className="w-3 h-3" />
                                 <span>{lang === 'ru' ? 'Фото / Скриншот' : lang === 'uz' ? 'Rasm / Skrinshot' : 'Photo / Screenshot'}</span>
@@ -1092,7 +1085,7 @@ export default function BloggerCabinetView({
                             /* Already submitted slot */
                             isImageValue ? (
                               <div className="flex items-center gap-3 p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl select-none text-left">
-                                <div 
+                                <div
                                   className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 cursor-pointer hover:opacity-80 transition flex items-center justify-center"
                                   onClick={() => {
                                     const src = filePreviews[slotKey] || slotVal;
@@ -1126,9 +1119,9 @@ export default function BloggerCabinetView({
                                   <Link className="w-4 h-4 text-neutral-500" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <a 
-                                    href={slotVal.startsWith('http') ? slotVal : `https://${slotVal}`} 
-                                    target="_blank" 
+                                  <a
+                                    href={slotVal.startsWith('http') ? slotVal : `https://${slotVal}`}
+                                    target="_blank"
                                     rel="noreferrer"
                                     className="text-[11px] font-bold text-blue-600 hover:underline truncate block"
                                   >
@@ -1146,7 +1139,7 @@ export default function BloggerCabinetView({
                             <div className="space-y-1">
                               {filePreviews[slotKey] || slotVal.startsWith('data:image/') ? (
                                 <div className="flex items-center gap-2.5 p-1.5 bg-neutral-50 border border-neutral-200 rounded-md">
-                                  <div 
+                                  <div
                                     className="w-8 h-8 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 cursor-pointer"
                                     onClick={() => {
                                       const src = filePreviews[slotKey] || slotVal;
@@ -1266,9 +1259,9 @@ export default function BloggerCabinetView({
                                       placeholder={
                                         slotPlatform === 'Instagram'
                                           ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
-                                          : slotPlatform === 'Telegram' 
-                                          ? `e.g. https://t.me/channel_name/123 (${slotFormat})` 
-                                          : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
+                                          : slotPlatform === 'Telegram'
+                                            ? `e.g. https://t.me/channel_name/123 (${slotFormat})`
+                                            : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
                                       }
                                       value={slotVal}
                                       onChange={(e) => handleLinkChange(slotKey, e.target.value)}
@@ -1278,11 +1271,10 @@ export default function BloggerCabinetView({
                                           handleLinkChange(slotKey, `https://${v}`);
                                         }
                                       }}
-                                      className={`w-full pl-9 pr-10 py-1.5 border focus:outline-none rounded-md text-xs transition ${
-                                        isInvalid
+                                      className={`w-full pl-9 pr-10 py-1.5 border focus:outline-none rounded-md text-xs transition ${isInvalid
                                           ? 'bg-red-50 border-red-500 text-red-900 focus:border-red-600'
                                           : 'bg-white border-neutral-200 text-black font-medium focus:border-black'
-                                      }`}
+                                        }`}
                                     />
                                   );
                                 })()}
@@ -1319,120 +1311,119 @@ export default function BloggerCabinetView({
                       </React.Fragment>
                     );
                   })}
-                  </div>
+                </div>
 
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition"
-                  >
-                    <Send className="w-3.5 h-3.5 text-white" />
-                    <span>{t.submitAllDeliverablesBtn} ({activeSlotsCount} {t.slotsColumn.toLowerCase()})</span>
-                  </button>
-                </form>
-              )}
-            </div>
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition"
+                >
+                  <Send className="w-3.5 h-3.5 text-white" />
+                  <span>{t.submitAllDeliverablesBtn} ({activeSlotsCount} {t.slotsColumn.toLowerCase()})</span>
+                </button>
+              </form>
+            )}
           </div>
+        </div>
 
-          {/* ACTIVE SUBMISSIONS LOG TABLE - ONLY FOR MANAGERS */}
-          {userRole === 'super_admin' && (
-            <div className="space-y-3 text-left">
-              <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
-                {t.viewSubmissionTitle} ({visibleSubmissions.length})
-              </h3>
+        {/* ACTIVE SUBMISSIONS LOG TABLE - ONLY FOR MANAGERS */}
+        {userRole === 'super_admin' && (
+          <div className="space-y-3 text-left">
+            <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
+              {t.viewSubmissionTitle} ({visibleSubmissions.length})
+            </h3>
 
-              <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50 text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
-                        <th className="py-2.5 px-5">{t.bloggerColumn}</th>
-                        <th className="py-2.5 px-4">{t.startDateColumn}</th>
-                        <th className="py-2.5 px-4">Status</th>
-                        <th className="py-2.5 px-5">Assets</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
-                      {visibleSubmissions.map((sub) => {
-                        const matchingInt = integrations.find(i => String(i.id) === String(sub.integrationId));
+            <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-neutral-200 bg-neutral-50 text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <th className="py-2.5 px-5">{t.bloggerColumn}</th>
+                      <th className="py-2.5 px-4">{t.startDateColumn}</th>
+                      <th className="py-2.5 px-4">Status</th>
+                      <th className="py-2.5 px-5">Assets</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
+                    {visibleSubmissions.map((sub) => {
+                      const matchingInt = integrations.find(i => String(i.id) === String(sub.integrationId));
 
-                        return (
-                          <tr key={sub.id}>
-                            <td className="py-3 px-5 font-bold text-black">
-                              {matchingInt?.bloggerName || 'Simulated Influencer'}
-                              <span className="text-[9px] text-neutral-400 font-normal block mt-0.5">
-                                Platform: {matchingInt?.platform || 'Unknown'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 font-semibold text-neutral-500 text-[11px]">
-                              {new Date(sub.submittedAt).toLocaleDateString()} {new Date(sub.submittedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className={`px-2 py-0.5 rounded font-bold text-[9px] border uppercase ${
-                                sub.status === 'approved'
-                                  ? 'bg-black text-white border-black'
-                                  : 'bg-white text-neutral-600 border-neutral-200'
+                      return (
+                        <tr key={sub.id}>
+                          <td className="py-3 px-5 font-bold text-black">
+                            {matchingInt?.bloggerName || 'Simulated Influencer'}
+                            <span className="text-[9px] text-neutral-400 font-normal block mt-0.5">
+                              Platform: {matchingInt?.platform || 'Unknown'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-neutral-500 text-[11px]">
+                            {new Date(sub.submittedAt).toLocaleDateString()} {new Date(sub.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded font-bold text-[9px] border uppercase ${sub.status === 'approved'
+                                ? 'bg-black text-white border-black'
+                                : 'bg-white text-neutral-600 border-neutral-200'
                               }`}>
-                                {sub.status === 'approved' ? t.statusApproved : t.statusPending}
-                              </span>
-                            </td>
-                            <td className="py-3 px-5 space-y-1">
-                              {Object.entries(sub.data).map(([key, val]) => (
-                                <div key={key} className="flex items-center gap-1.5 font-medium">
-                                  <span className="font-mono text-neutral-400 uppercase text-[8px] bg-neutral-50 border border-neutral-200 px-1 py-0.2 rounded">{key}:</span>
-                                  {typeof val === 'string' && val.startsWith('data:image/') ? (
-                                    <div className="flex items-center gap-2">
-                                      <img 
-                                        src={val} 
-                                        alt="Screenshot" 
-                                        onClick={() => {
-                                          const w = window.open();
-                                          if (w) w.document.write(`<img src="${val}" style="max-width:100%; height:auto;" />`);
-                                        }}
-                                        className="w-8 h-8 object-cover rounded border border-neutral-250 cursor-pointer hover:border-black transition" 
-                                      />
-                                      <span className="text-[10px] text-neutral-500 font-bold">
-                                        {lang === 'ru' ? 'Скриншот' : lang === 'uz' ? 'Skrinshot' : 'Screenshot'}
-                                      </span>
-                                    </div>
-                                  ) : typeof val === 'string' && val.startsWith('http') ? (
-                                    <a
-                                      href={val}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-[11px] text-black hover:underline font-bold flex items-center gap-0.5 truncate max-w-[200px]"
-                                    >
-                                      <span className="truncate">{val}</span>
-                                      <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                                    </a>
-                                  ) : (
-                                    <div className="text-[11px] text-neutral-700 flex items-center gap-1 truncate max-w-[200px]">
-                                      <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                                      <span className="truncate">{val || ''}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {visibleSubmissions.length === 0 && (
-                        <tr>
-                          <td colSpan={4} className="py-8 px-5 text-center text-neutral-400">
-                            <AlertCircle className="w-5 h-5 text-neutral-300 mx-auto mb-1" />
-                            <p className="font-bold text-xs text-neutral-500">No Submissions Recorded</p>
-                            <p className="text-[10px] text-neutral-400 mt-0.5">Submit integration coordinates above to log them.</p>
+                              {sub.status === 'approved' ? t.statusApproved : t.statusPending}
+                            </span>
+                          </td>
+                          <td className="py-3 px-5 space-y-1">
+                            {Object.entries(sub.data).map(([key, val]) => (
+                              <div key={key} className="flex items-center gap-1.5 font-medium">
+                                <span className="font-mono text-neutral-400 uppercase text-[8px] bg-neutral-50 border border-neutral-200 px-1 py-0.2 rounded">{key}:</span>
+                                {typeof val === 'string' && val.startsWith('data:image/') ? (
+                                  <div className="flex items-center gap-2">
+                                    <img
+                                      src={val}
+                                      alt="Screenshot"
+                                      onClick={() => {
+                                        const w = window.open();
+                                        if (w) w.document.write(`<img src="${val}" style="max-width:100%; height:auto;" />`);
+                                      }}
+                                      className="w-8 h-8 object-cover rounded border border-neutral-250 cursor-pointer hover:border-black transition"
+                                    />
+                                    <span className="text-[10px] text-neutral-500 font-bold">
+                                      {lang === 'ru' ? 'Скриншот' : lang === 'uz' ? 'Skrinshot' : 'Screenshot'}
+                                    </span>
+                                  </div>
+                                ) : typeof val === 'string' && val.startsWith('http') ? (
+                                  <a
+                                    href={val}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[11px] text-black hover:underline font-bold flex items-center gap-0.5 truncate max-w-[200px]"
+                                  >
+                                    <span className="truncate">{val}</span>
+                                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                  </a>
+                                ) : (
+                                  <div className="text-[11px] text-neutral-700 flex items-center gap-1 truncate max-w-[200px]">
+                                    <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                                    <span className="truncate">{val || ''}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                           </td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      );
+                    })}
+
+                    {visibleSubmissions.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-8 px-5 text-center text-neutral-400">
+                          <AlertCircle className="w-5 h-5 text-neutral-300 mx-auto mb-1" />
+                          <p className="font-bold text-xs text-neutral-500">No Submissions Recorded</p>
+                          <p className="text-[10px] text-neutral-400 mt-0.5">Submit integration coordinates above to log them.</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
+    </div>
   );
 }

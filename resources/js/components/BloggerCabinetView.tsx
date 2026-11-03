@@ -98,11 +98,16 @@ export default function BloggerCabinetView({
   // Resolve initial integration synchronously from URL parameters or first available item
   const initialMatched = React.useMemo(() => {
     if (urlParams?.integrationId) {
-      const found = integrations.find(i => 
+      const matches = integrations.filter(i => 
         String(i.id) === String(urlParams.integrationId) || 
         i.bloggerCabinetToken === urlParams.integrationId
       );
-      if (found) return found;
+      if (matches.length > 0) {
+        // Prioritize active (uncompleted) integration so new slots are immediately visible
+        const active = matches.find(i => i.status !== 'completed' && i.kanbanStage !== 'completed');
+        if (active) return active;
+        return matches[matches.length - 1];
+      }
     }
     return integrations[0];
   }, [integrations, urlParams?.integrationId]);
@@ -126,6 +131,22 @@ export default function BloggerCabinetView({
   const resolvedProject = projects.find(p => p.id === selectedIntegration?.projectId);
   const projectName = resolvedProject?.name || '';
 
+  const currentSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
+  const currentSubmittedData = currentSub?.data || {};
+
+  // Sort slot indices: empty (unsubmitted) slots at the top, completed (submitted) slots at the bottom
+  const sortedSlotIndices = React.useMemo(() => {
+    const indices = Array.from({ length: activeSlotsCount }, (_, i) => i);
+    return indices.sort((a, b) => {
+      const aSubmitted = !!(currentSubmittedData[`slot_${a + 1}`]);
+      const bSubmitted = !!(currentSubmittedData[`slot_${b + 1}`]);
+      if (aSubmitted === bSubmitted) {
+        return a - b;
+      }
+      return aSubmitted ? 1 : -1;
+    });
+  }, [activeSlotsCount, currentSubmittedData]);
+
   const getSlotSummaryString = () => {
     if (selectedIntegration?.slotsConfig && selectedIntegration.slotsConfig.length > 0) {
       const counts: Record<string, number> = {};
@@ -147,12 +168,15 @@ export default function BloggerCabinetView({
   // Load state from URL parameters if present
   useEffect(() => {
     if (urlParams?.integrationId) {
-      const matched = integrations.find(i => String(i.id) === String(urlParams.integrationId) || i.bloggerCabinetToken === urlParams.integrationId);
-      if (matched && matched.id !== selectedIntegrationId) {
-        setSelectedIntegrationId(matched.id);
-        setActivePlatform(matched.platform);
-        setActiveSlotsCount(matched.slotsCount);
-        return;
+      const matches = integrations.filter(i => String(i.id) === String(urlParams.integrationId) || i.bloggerCabinetToken === urlParams.integrationId);
+      if (matches.length > 0) {
+        const matched = matches.find(i => i.status !== 'completed' && i.kanbanStage !== 'completed') || matches[matches.length - 1];
+        if (matched && matched.id !== selectedIntegrationId) {
+          setSelectedIntegrationId(matched.id);
+          setActivePlatform(matched.platform);
+          setActiveSlotsCount(matched.slotsCount);
+          return;
+        }
       }
     }
     
@@ -218,7 +242,48 @@ export default function BloggerCabinetView({
   });
 
   const [slotInputModes, setSlotInputModes] = useState<Record<string, 'link' | 'screenshot'>>({});
+  const [activeFocusedSlotKey, setActiveFocusedSlotKey] = useState<string | null>(null);
+  const [draggingOverSlotKey, setDraggingOverSlotKey] = useState<string | null>(null);
+  const [pasteNotification, setPasteNotification] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Auto-dismiss paste notification after 3.5 seconds
+  useEffect(() => {
+    if (!pasteNotification) return;
+    const timer = setTimeout(() => {
+      setPasteNotification(null);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [pasteNotification]);
+
+  // Extract all image files from DataTransfer (files or items from clipboard / drag-and-drop)
+  const extractImagesFromDataTransfer = (data: DataTransfer | null): File[] => {
+    if (!data) return [];
+    const files: File[] = [];
+
+    if (data.files && data.files.length > 0) {
+      for (let i = 0; i < data.files.length; i++) {
+        const file = data.files[i];
+        if (file && file.type.startsWith('image/')) {
+          files.push(file);
+        }
+      }
+    }
+
+    if (files.length === 0 && data.items && data.items.length > 0) {
+      for (let i = 0; i < data.items.length; i++) {
+        const item = data.items[i];
+        if (item && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            files.push(file);
+          }
+        }
+      }
+    }
+
+    return files;
+  };
 
   const [formSubmitted, setFormSubmitted] = useState<boolean>(() => {
     const effId = initialMatched?.id || 'int-2';
@@ -275,38 +340,112 @@ export default function BloggerCabinetView({
     setShowConfirm(false);
   }, [activePlatform, activeSlotsCount, selectedIntegrationId, submissions, integrations]);
 
+  // Process an image file from file input, drop or clipboard paste
+  const handleFileProcess = async (slotKey: string, file: File) => {
+    if (!file) return;
+    // Automatically switch this slot to screenshot mode so the user sees the preview immediately
+    setSlotInputModes(prev => ({ ...prev, [slotKey]: 'screenshot' }));
+    try {
+      const compressedBase64 = await compressImage(file, 1200, 1200, 0.7);
+      setFilePreviews(prev => ({
+        ...prev,
+        [slotKey]: compressedBase64
+      }));
+      setFormData(prev => ({
+        ...prev,
+        [slotKey]: compressedBase64
+      }));
+    } catch (err) {
+      console.error('Image compression failed:', err);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = (reader.result as string) || '';
+        setFilePreviews(prev => ({
+          ...prev,
+          [slotKey]: base64String
+        }));
+        setFormData(prev => ({
+          ...prev,
+          [slotKey]: base64String
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Handle file picker simulation (converting screenshot to base64 with compression)
   const handleFileChangeSim = async (slotKey: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      try {
-        const compressedBase64 = await compressImage(file);
-        setFilePreviews(prev => ({
-          ...prev,
-          [slotKey]: compressedBase64
-        }));
-        setFormData(prev => ({
-          ...prev,
-          [slotKey]: compressedBase64
-        }));
-      } catch (err) {
-        console.error('Image compression failed:', err);
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64String = reader.result as string;
-          setFilePreviews(prev => ({
-            ...prev,
-            [slotKey]: base64String
-          }));
-          setFormData(prev => ({
-            ...prev,
-            [slotKey]: base64String
-          }));
-        };
-        reader.readAsDataURL(file);
-      }
+      await handleFileProcess(slotKey, file);
     }
   };
+
+  // Global paste handler for Blogger Cabinet (Ctrl+V / Cmd+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (formSubmitted) return;
+      const activeEl = document.activeElement;
+      const isTextInput = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        (activeEl as HTMLElement).isContentEditable
+      );
+      const textData = e.clipboardData?.getData('text/plain') || '';
+      // If typing in a text input and clipboard contains text, allow standard paste
+      if (isTextInput && textData.trim().length > 0) return;
+
+      const images = extractImagesFromDataTransfer(e.clipboardData);
+      if (images.length === 0) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Check which slot to target:
+      // 1. Element inside a slot container
+      let targetSlotKey: string | null = null;
+      if (activeEl) {
+        const slotEl = activeEl.closest('[data-slot-key]');
+        if (slotEl) {
+          targetSlotKey = slotEl.getAttribute('data-slot-key');
+        }
+      }
+
+      // 2. Focused/clicked slot recorded in state
+      if (!targetSlotKey && activeFocusedSlotKey) {
+        targetSlotKey = activeFocusedSlotKey;
+      }
+
+      // 3. First unfilled slot
+      if (!targetSlotKey) {
+        for (let i = 1; i <= activeSlotsCount; i++) {
+          const key = `slot_${i}`;
+          if (!formData[key]) {
+            targetSlotKey = key;
+            break;
+          }
+        }
+      }
+
+      // 4. Default to slot_1
+      if (!targetSlotKey) {
+        targetSlotKey = 'slot_1';
+      }
+
+      handleFileProcess(targetSlotKey, images[0]);
+      const slotNumStr = targetSlotKey.replace('slot_', '');
+      setPasteNotification(
+        lang === 'ru'
+          ? `✓ Скриншот слота #${slotNumStr} добавлен из буфера обмена (Ctrl+V / ⌘V)`
+          : lang === 'uz'
+            ? `✓ Слот #${slotNumStr} skrinshoti buferdan qo‘shildi (Ctrl+V / ⌘V)`
+            : `✓ Slot #${slotNumStr} screenshot added from clipboard (Ctrl+V / ⌘V)`
+      );
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [formSubmitted, activeSlotsCount, formData, activeFocusedSlotKey, lang]);
 
   const handleClearSlot = (slotKey: string) => {
     setFilePreviews(prev => {
@@ -611,7 +750,7 @@ export default function BloggerCabinetView({
                   </div>
 
                   <div className="p-4 bg-white border border-neutral-200 rounded-xl space-y-3 shadow-2xs">
-                    {Array.from({ length: activeSlotsCount }).map((_, index) => {
+                    {sortedSlotIndices.map((index) => {
                       const slotNum = index + 1;
                       const slotKey = `slot_${slotNum}`;
                       const slotConfig = selectedIntegration?.slotsConfig?.[index];
@@ -766,15 +905,35 @@ export default function BloggerCabinetView({
                     )}
                   </div>
 
+                  {/* Paste Notification Toast */}
+                  {pasteNotification && (
+                    <div className="mb-3 flex items-center justify-between gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold animate-in fade-in">
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>{pasteNotification}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPasteNotification(null)}
+                        className="text-emerald-500 hover:text-emerald-800 text-xs font-bold leading-none cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+
                   <div className="space-y-3 pt-4 border-t border-neutral-200">
-                    {/* Generates EXACTLY activeSlotsCount fields according to configuration */}
-                    {Array.from({ length: activeSlotsCount }).map((_, index) => {
+                    {/* Generates activeSlotsCount fields: empty (unsubmitted) slots first, completed slots below */}
+                    {sortedSlotIndices.map((index, renderIdx) => {
                       const slotNum = index + 1;
                       const slotKey = `slot_${slotNum}`;
 
                       const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
                       const submittedData = existingSub?.data || {};
                       const isSlotSubmitted = !!(submittedData[slotKey]);
+
+                      const prevIndex = renderIdx > 0 ? sortedSlotIndices[renderIdx - 1] : null;
+                      const isFirstCompleted = isSlotSubmitted && (prevIndex === null || !submittedData[`slot_${prevIndex + 1}`]);
 
                       // Retrieve individual slot configuration if set in Report Form
                       const slotConfig = selectedIntegration?.slotsConfig?.[index];
@@ -801,10 +960,75 @@ export default function BloggerCabinetView({
                       );
 
                       return (
-                        <div 
-                          key={slotKey} 
-                          className="p-4 bg-white border border-neutral-200 shadow-2xs rounded-xl space-y-3 transition duration-150"
-                        >
+                        <React.Fragment key={slotKey}>
+                          {isFirstCompleted && renderIdx > 0 && (
+                            <div className="pt-4 pb-2 flex items-center gap-2 select-none">
+                              <div className="h-px bg-neutral-200 flex-1" />
+                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>{lang === 'ru' ? 'Выполненные слоты' : lang === 'uz' ? 'Bajarilgan slotlar' : 'Completed slots'}</span>
+                              </span>
+                              <div className="h-px bg-neutral-200 flex-1" />
+                            </div>
+                          )}
+
+                          <div 
+                            data-slot-key={slotKey}
+                            tabIndex={0}
+                            onFocus={() => setActiveFocusedSlotKey(slotKey)}
+                            onClick={() => setActiveFocusedSlotKey(slotKey)}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDraggingOverSlotKey(slotKey);
+                            }}
+                            onDragEnter={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDraggingOverSlotKey(slotKey);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (draggingOverSlotKey === slotKey) setDraggingOverSlotKey(null);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDraggingOverSlotKey(null);
+                              const images = extractImagesFromDataTransfer(e.dataTransfer);
+                              if (images.length > 0) {
+                                handleFileProcess(slotKey, images[0]);
+                                setPasteNotification(
+                                  lang === 'ru'
+                                    ? `✓ Скриншот слота #${slotNum} успешно загружен`
+                                    : lang === 'uz'
+                                      ? `✓ Слот #${slotNum} skrinshoti yuklandi`
+                                      : `✓ Slot #${slotNum} screenshot uploaded`
+                                );
+                              }
+                            }}
+                            onPaste={(e) => {
+                              const images = extractImagesFromDataTransfer(e.clipboardData);
+                              if (images.length > 0) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleFileProcess(slotKey, images[0]);
+                                setPasteNotification(
+                                  lang === 'ru'
+                                    ? `✓ Скриншот слота #${slotNum} добавлен из буфера обмена (Ctrl+V / ⌘V)`
+                                    : lang === 'uz'
+                                      ? `✓ Слот #${slotNum} skrinshoti buferdan qo‘shildi (Ctrl+V / ⌘V)`
+                                      : `✓ Slot #${slotNum} screenshot added from clipboard (Ctrl+V / ⌘V)`
+                                );
+                              }
+                            }}
+                            className={`p-4 bg-white border rounded-xl space-y-3 transition duration-150 ${
+                              draggingOverSlotKey === slotKey
+                                ? 'border-black ring-2 ring-black/10 bg-neutral-50/80 shadow-md'
+                                : 'border-neutral-200 shadow-2xs'
+                            }`}
+                          >
                           <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[10px] font-black text-black uppercase tracking-wider">
@@ -919,11 +1143,11 @@ export default function BloggerCabinetView({
                             )
                           ) : currentMode === 'screenshot' ? (
                             /* SCREENSHOT FILE UPLOAD COMPONENT */
-                            <div className="space-y-2">
+                            <div className="space-y-1">
                               {filePreviews[slotKey] || slotVal.startsWith('data:image/') ? (
-                                <div className="flex items-center gap-3 p-2 bg-neutral-50 border border-neutral-200 rounded-lg">
+                                <div className="flex items-center gap-2.5 p-1.5 bg-neutral-50 border border-neutral-200 rounded-md">
                                   <div 
-                                    className="w-10 h-10 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 cursor-pointer"
+                                    className="w-8 h-8 rounded bg-white overflow-hidden border border-neutral-200 shrink-0 cursor-pointer"
                                     onClick={() => {
                                       const src = filePreviews[slotKey] || slotVal;
                                       if (src) {
@@ -940,16 +1164,16 @@ export default function BloggerCabinetView({
                                     <p className="text-[11px] font-bold text-black truncate">
                                       {lang === 'ru' ? 'Фото-пруф загружен' : lang === 'uz' ? 'Rasm yuklandi' : 'Photo proof loaded'}
                                     </p>
-                                    <p className="text-[9px] text-emerald-600 font-medium">
+                                    <p className="text-[8.5px] text-emerald-600 font-medium">
                                       {lang === 'ru' ? 'Готово к отправке' : lang === 'uz' ? 'Yuborishga tayyor' : 'Ready to submit'}
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
-                                    <label className="text-[10px] font-bold text-black hover:bg-neutral-50 px-2.5 py-1 bg-white border border-neutral-200 rounded cursor-pointer transition">
+                                    <label className="text-[9.5px] font-bold text-black hover:bg-neutral-50 px-2 py-0.5 bg-white border border-neutral-200 rounded cursor-pointer transition">
                                       {lang === 'ru' ? 'Заменить' : lang === 'uz' ? 'O‘zgartirish' : 'Change'}
                                       <input
                                         type="file"
-                                        accept="image/*"
+                                        accept="image/*,image/jpeg,image/png,image/webp,image/heic,image/heif"
                                         onChange={(e) => handleFileChangeSim(slotKey, e)}
                                         className="hidden"
                                       />
@@ -957,7 +1181,7 @@ export default function BloggerCabinetView({
                                     <button
                                       type="button"
                                       onClick={() => handleClearSlot(slotKey)}
-                                      className="text-[10px] font-bold text-red-600 hover:bg-red-50 px-2 py-1 bg-white border border-neutral-200 rounded cursor-pointer transition"
+                                      className="text-[9.5px] font-bold text-red-600 hover:bg-red-50 px-1.5 py-0.5 bg-white border border-neutral-200 rounded cursor-pointer transition"
                                       title={lang === 'ru' ? 'Очистить' : 'Tozalash'}
                                     >
                                       ✕
@@ -965,24 +1189,54 @@ export default function BloggerCabinetView({
                                   </div>
                                 </div>
                               ) : (
-                                <div className="border border-dashed border-neutral-200 hover:border-black rounded-lg p-5 transition duration-150 bg-neutral-50/50 flex flex-col items-center justify-center cursor-pointer text-center relative group">
-                                  <Upload className="w-5 h-5 text-neutral-300 group-hover:text-black mb-1.5 transition" />
-                                  <p className="text-[11px] font-bold text-neutral-600">
-                                    {t.uploadProof} ({slotPlatform} - {slotFormat})
-                                  </p>
-                                  <p className="text-[9px] text-neutral-400 mt-0.5">PNG, JPG up to 15MB</p>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => handleFileChangeSim(slotKey, e)}
-                                    className="absolute inset-0 opacity-0 cursor-pointer"
-                                  />
+                                <div className="space-y-1">
+                                  <div
+                                    onDragOver={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      const images = extractImagesFromDataTransfer(e.dataTransfer);
+                                      if (images.length > 0) {
+                                        handleFileProcess(slotKey, images[0]);
+                                        setPasteNotification(
+                                          lang === 'ru'
+                                            ? `✓ Скриншот слота #${slotNum} успешно загружен`
+                                            : lang === 'uz'
+                                              ? `✓ Слот #${slotNum} skrinshoti yuklandi`
+                                              : `✓ Slot #${slotNum} screenshot uploaded`
+                                        );
+                                      }
+                                    }}
+                                    className="w-full border border-dashed border-neutral-300 hover:border-black rounded-md py-1.5 px-3 transition duration-150 bg-white hover:bg-neutral-50 flex items-center justify-center gap-2 cursor-pointer relative group text-xs text-neutral-600"
+                                  >
+                                    <Upload className="w-3.5 h-3.5 text-neutral-400 group-hover:text-black transition shrink-0" />
+                                    <span className="text-xs font-medium text-neutral-700 truncate">
+                                      {t.uploadProof} ({slotPlatform} - {slotFormat})
+                                    </span>
+                                    <input
+                                      type="file"
+                                      accept="image/*,image/jpeg,image/png,image/webp,image/heic,image/heif"
+                                      onChange={(e) => handleFileChangeSim(slotKey, e)}
+                                      className="absolute inset-0 opacity-0 cursor-pointer"
+                                    />
+                                  </div>
+                                  <div className="flex items-center justify-between text-[7.5px] text-neutral-400 px-0.5">
+                                    <span>{lang === 'ru' ? 'или вставьте скриншот (до 15 МБ):' : lang === 'uz' ? 'yoki skrinshotni qo‘ying:' : 'or paste screenshot:'}</span>
+                                    <span className="inline-flex items-center gap-1 font-mono">
+                                      <kbd className="px-1 py-0.2 bg-neutral-100 border border-neutral-200 rounded text-[7px] font-bold text-neutral-600 shadow-2xs">Ctrl + V</kbd>
+                                      <span>/</span>
+                                      <kbd className="px-1 py-0.2 bg-neutral-100 border border-neutral-200 rounded text-[7px] font-bold text-neutral-600 shadow-2xs">⌘V</kbd>
+                                    </span>
+                                  </div>
                                 </div>
                               )}
                             </div>
                           ) : (
                             /* URL TEXT INPUT FIELD */
-                            <div>
+                            <div className="space-y-1">
                               <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                   <Link className="w-3.5 h-3.5 text-neutral-400" />
@@ -992,6 +1246,23 @@ export default function BloggerCabinetView({
                                   return (
                                     <input
                                       type="text"
+                                      data-slot-input={slotKey}
+                                      onFocus={() => setActiveFocusedSlotKey(slotKey)}
+                                      onPaste={(e) => {
+                                        const images = extractImagesFromDataTransfer(e.clipboardData);
+                                        if (images.length > 0) {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          handleFileProcess(slotKey, images[0]);
+                                          setPasteNotification(
+                                            lang === 'ru'
+                                              ? `✓ Скриншот слота #${slotNum} добавлен из буфера обмена (Ctrl+V / ⌘V)`
+                                              : lang === 'uz'
+                                                ? `✓ Слот #${slotNum} skrinshoti buferdan qo‘shildi (Ctrl+V / ⌘V)`
+                                                : `✓ Slot #${slotNum} screenshot added from clipboard (Ctrl+V / ⌘V)`
+                                          );
+                                        }
+                                      }}
                                       placeholder={
                                         slotPlatform === 'Instagram'
                                           ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
@@ -1016,6 +1287,14 @@ export default function BloggerCabinetView({
                                   );
                                 })()}
                               </div>
+                              <div className="flex items-center justify-between text-[7.5px] text-neutral-400 px-0.5">
+                                <span>{lang === 'ru' ? 'Вставьте ссылку или скриншот:' : lang === 'uz' ? 'Havola yoki skrinshotni qo‘ying:' : 'Paste link or screenshot:'}</span>
+                                <span className="inline-flex items-center gap-1 font-mono">
+                                  <kbd className="px-1 py-0.2 bg-neutral-100 border border-neutral-200 rounded text-[7px] font-bold text-neutral-600 shadow-2xs">Ctrl + V</kbd>
+                                  <span>/</span>
+                                  <kbd className="px-1 py-0.2 bg-neutral-100 border border-neutral-200 rounded text-[7px] font-bold text-neutral-600 shadow-2xs">⌘V</kbd>
+                                </span>
+                              </div>
                               {(() => {
                                 if (slotVal.trim() !== '') {
                                   const v = validateSlotUrl(slotVal, slotPlatform, slotFormat);
@@ -1037,8 +1316,9 @@ export default function BloggerCabinetView({
                             </div>
                           )}
                         </div>
-                      );
-                    })}
+                      </React.Fragment>
+                    );
+                  })}
                   </div>
 
                   <button

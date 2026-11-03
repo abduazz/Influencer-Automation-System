@@ -567,35 +567,46 @@ export default function TimelineView({
     return hasNoFinancials || isPipelineStage;
   };
 
+  // Helper: check if a slot belongs to the active campaign view mode (active vs all)
+  const isSlotInCampaignScope = (slot: TimelineSlotItem) => {
+    const prePaymentStages = ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'];
+    const isEnteredInWork =
+      !slot.kanbanStage ||
+      !prePaymentStages.includes(slot.kanbanStage) ||
+      slot.isSlotPaid ||
+      Boolean(slot.scheduledDate) ||
+      slot.isPublished;
+
+    const hasPendingSlots = !slot.isPublished;
+    const isDealInWork =
+      slot.dealStatus === 'active' ||
+      slot.kanbanStage === 'paid_in_progress' ||
+      (hasPendingSlots && slot.dealStatus !== 'paused' && slot.kanbanStage !== 'backlog');
+
+    // In 'active' mode, deals on main Kanban only enter Slots Kanban & Timeline once they reach 'paid_in_progress' ("Оплачено / В работе") or have paid/scheduled slots
+    // Any slot that has actually been published is always preserved so that completed deliverables in the period are never hidden from reports
+    const matchesCampaign =
+      campaignFilter === 'all' || (isDealInWork && isEnteredInWork) || slot.isPublished;
+
+    // In 'active' mode, filter out preliminary pipeline leads (wishlist, negotiation, requisites_pending)
+    // Matches DashboardView displayProjectIntegrations
+    if (campaignFilter === 'active' && isPreliminaryLead(slot.integration)) {
+      return false;
+    }
+
+    return matchesCampaign;
+  };
+
   // Project-scoped & campaign-scoped slots:
   // In 'active' mode, deals on main Kanban only enter Slots Kanban & Timeline once they reach 'paid_in_progress' ("Оплачено / В работе") or have paid/scheduled slots
   const projectScopedSlots = useMemo(() => {
-    const prePaymentStages = ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'];
     return allSlots.filter((slot) => {
       const matchesProject =
         selectedProjectId === 'all' ||
         String(slot.projectId) === String(selectedProjectId) ||
         String(slot.integration.projectId) === String(selectedProjectId);
 
-      const isEnteredInWork =
-        !slot.kanbanStage ||
-        !prePaymentStages.includes(slot.kanbanStage) ||
-        slot.isSlotPaid ||
-        Boolean(slot.scheduledDate) ||
-        slot.isPublished;
-
-      // In 'active' mode, deals on main Kanban only enter Slots Kanban & Timeline once they reach 'paid_in_progress' ("Оплачено / В работе") or have paid/scheduled slots
-      // Any slot that has actually been published is always preserved so that completed deliverables in the period are never hidden from reports
-      const matchesCampaign =
-        campaignFilter === 'all' || (slot.dealStatus === 'active' && isEnteredInWork) || slot.isPublished;
-
-      // In 'active' mode, filter out preliminary pipeline leads (wishlist, negotiation, requisites_pending)
-      // Matches DashboardView displayProjectIntegrations
-      if (campaignFilter === 'active' && isPreliminaryLead(slot.integration)) {
-        return false;
-      }
-
-      return matchesProject && matchesCampaign;
+      return matchesProject && isSlotInCampaignScope(slot);
     });
   }, [allSlots, selectedProjectId, campaignFilter]);
 
@@ -627,11 +638,22 @@ export default function TimelineView({
       }
 
       if (startDateFilter || endDateFilter) {
-        const refDate = slot.scheduledDate || slot.effectivePublishDate || slot.integration.startDate || '';
-        const ymd = refDate.slice(0, 10);
-        if (!ymd) return false;
-        if (startDateFilter && ymd < startDateFilter) return false;
-        if (endDateFilter && ymd > endDateFilter) return false;
+        if (!slot.scheduledDate && !slot.effectivePublishDate) {
+          // Unscheduled slots have no calendar date; keep them visible in 'Не в графике' column in Kanban mode
+          if (viewMode !== 'kanban') {
+            const refDate = slot.integration.startDate || '';
+            const ymd = refDate.slice(0, 10);
+            if (!ymd) return false;
+            if (startDateFilter && ymd < startDateFilter) return false;
+            if (endDateFilter && ymd > endDateFilter) return false;
+          }
+        } else {
+          const refDate = slot.scheduledDate || slot.effectivePublishDate || '';
+          const ymd = refDate.slice(0, 10);
+          if (!ymd) return false;
+          if (startDateFilter && ymd < startDateFilter) return false;
+          if (endDateFilter && ymd > endDateFilter) return false;
+        }
       }
 
       if (searchQuery.trim()) {
@@ -651,6 +673,7 @@ export default function TimelineView({
     startDateFilter,
     endDateFilter,
     searchQuery,
+    viewMode,
   ]);
 
   // Active Month Prefix (YYYY-MM) for "Расход за месяц" indicator
@@ -1740,7 +1763,7 @@ export default function TimelineView({
                     : 'bg-neutral-200/80 text-neutral-700'
                     }`}
                 >
-                  {allSlots.filter((s) => campaignFilter === 'all' || s.dealStatus === 'active' || s.isPublished).length}
+                  {allSlots.filter((s) => isSlotInCampaignScope(s)).length}
                 </span>
               </button>
 
@@ -1750,7 +1773,7 @@ export default function TimelineView({
                   (s) =>
                     (String(s.projectId) === String(project.id) ||
                       String(s.integration.projectId) === String(project.id)) &&
-                    (campaignFilter === 'all' || s.dealStatus === 'active' || s.isPublished)
+                    isSlotInCampaignScope(s)
                 ).length;
 
                 return (
@@ -3994,15 +4017,80 @@ export default function TimelineView({
                   <div className="mt-4 pt-3 border-t border-emerald-200/70 grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-bold text-emerald-900 mb-1">
-                        Ссылка на вышедший пост / Reels / ролик
+                        Ссылка на вышедший пост / Reels / ролик или скриншот
                       </label>
-                      <input
-                        type="url"
-                        value={modalPublishedUrl}
-                        onChange={(e) => setModalPublishedUrl(e.target.value)}
-                        placeholder="https://instagram.com/reel/..."
-                        className="w-full px-3 py-1.5 rounded-xl border border-emerald-300 bg-white text-xs sm:text-sm text-neutral-900"
-                      />
+                      {modalPublishedUrl && (modalPublishedUrl.startsWith('data:image/') || modalPublishedUrl.startsWith('blob:')) ? (
+                        <div className="flex items-center gap-3 p-2 bg-emerald-50 border border-emerald-200 rounded-xl">
+                          <img
+                            src={modalPublishedUrl}
+                            alt="Screenshot proof"
+                            className="w-12 h-12 object-cover rounded-lg border border-emerald-300 cursor-pointer shadow-2xs hover:opacity-90 transition"
+                            onClick={() => {
+                              const w = window.open();
+                              if (w) w.document.write(`<img src="${modalPublishedUrl}" style="max-width:100%; height:auto;" />`);
+                            }}
+                            title="Нажмите для увеличения"
+                          />
+                          <div className="flex-1 min-w-0 text-left">
+                            <p className="text-xs font-bold text-emerald-900 truncate">📸 Скриншот публикации прикреплен</p>
+                            <p className="text-[10px] text-emerald-700">Загружен через буфер обмена (Ctrl+V / ⌘V)</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setModalPublishedUrl('')}
+                            className="px-2.5 py-1 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg border border-red-200 cursor-pointer transition"
+                          >
+                            Удалить
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={modalPublishedUrl}
+                            onChange={(e) => setModalPublishedUrl(e.target.value)}
+                            onPaste={(e) => {
+                              const files = e.clipboardData?.files;
+                              if (files && files.length > 0 && files[0].type.startsWith('image/')) {
+                                e.preventDefault();
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  if (reader.result) setModalPublishedUrl(reader.result as string);
+                                };
+                                reader.readAsDataURL(files[0]);
+                                return;
+                              }
+                              const items = e.clipboardData?.items;
+                              if (items) {
+                                for (let i = 0; i < items.length; i++) {
+                                  if (items[i].type.startsWith('image/')) {
+                                    const file = items[i].getAsFile();
+                                    if (file) {
+                                      e.preventDefault();
+                                      const reader = new FileReader();
+                                      reader.onloadend = () => {
+                                        if (reader.result) setModalPublishedUrl(reader.result as string);
+                                      };
+                                      reader.readAsDataURL(file);
+                                      return;
+                                    }
+                                  }
+                                }
+                              }
+                            }}
+                            placeholder="https://instagram.com/reel/... (или вставьте скриншот Ctrl+V / ⌘V)"
+                            className="w-full px-3 py-1.5 rounded-xl border border-emerald-300 bg-white text-xs sm:text-sm text-neutral-900 focus:outline-none focus:border-emerald-600"
+                          />
+                          <div className="flex items-center justify-between text-[10px] text-emerald-700 px-0.5">
+                            <span>💡 Можно вставить ссылку или скриншот:</span>
+                            <span className="inline-flex items-center gap-1 font-mono">
+                              <kbd className="px-1 py-0.2 bg-emerald-50 border border-emerald-300 rounded text-[9px] font-bold text-emerald-900">Ctrl + V</kbd>
+                              <span>/</span>
+                              <kbd className="px-1 py-0.2 bg-emerald-50 border border-emerald-300 rounded text-[9px] font-bold text-emerald-900">⌘V</kbd>
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-emerald-900 mb-1">
@@ -4012,7 +4100,7 @@ export default function TimelineView({
                         type="date"
                         value={modalPublishedAt}
                         onChange={(e) => setModalPublishedAt(e.target.value)}
-                        className="w-full px-3 py-1.5 rounded-xl border border-emerald-300 bg-white text-xs sm:text-sm text-neutral-900 tabular-nums"
+                        className="w-full px-3 py-1.5 rounded-xl border border-emerald-300 bg-white text-xs sm:text-sm text-neutral-900 tabular-nums focus:outline-none focus:border-emerald-600"
                       />
                     </div>
                   </div>

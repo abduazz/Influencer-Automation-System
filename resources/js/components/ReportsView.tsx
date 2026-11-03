@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Project, Report, SlotConfig, Integration, BloggerRequisites } from '../data/mockData';
 import {
   Send,
@@ -19,7 +19,8 @@ import {
   User,
   Check,
   Copy,
-  Sparkles
+  Sparkles,
+  Upload
 } from 'lucide-react';
 import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
@@ -436,7 +437,9 @@ export default function ReportsView({
 
   useEffect(() => {
     if (initialState) {
-      if (initialState.paymentType) setPaymentType(initialState.paymentType);
+      if (initialState.paymentType) {
+        setPaymentType(initialState.paymentType === 'other' ? 'other' : 'full');
+      }
       if (initialState.projectId) setProjectId(initialState.projectId);
       if (initialState.bloggerName) setChannelBlogger(initialState.bloggerName);
       if (initialState.platform) setPlatform(initialState.platform);
@@ -484,9 +487,158 @@ export default function ReportsView({
   const [receipts, setReceipts] = useState<string[]>([]);
   const [fileInputKey, setFileInputKey] = useState<number>(0);
   const [isCompressingReceipts, setIsCompressingReceipts] = useState<boolean>(false);
+  const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+  const [pasteNotification, setPasteNotification] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isBloggerModalOpen, setIsBloggerModalOpen] = useState(false);
   const [bloggerSearch, setBloggerSearch] = useState('');
   const [amountError, setAmountError] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<{ message: string; link?: string | null } | null>(null);
+  const [createdReportResult, setCreatedReportResult] = useState<Report | null>(null);
+  const [isCabinetCopied, setIsCabinetCopied] = useState(false);
+  const [isToastCopied, setIsToastCopied] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Auto-dismiss paste notification after 3.5 seconds
+  useEffect(() => {
+    if (!pasteNotification) return;
+    const timer = setTimeout(() => {
+      setPasteNotification(null);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [pasteNotification]);
+
+  // Extract all image files from DataTransfer (files or items from clipboard / drag-and-drop)
+  const extractImagesFromDataTransfer = (data: DataTransfer | null): File[] => {
+    if (!data) return [];
+    const files: File[] = [];
+
+    if (data.files && data.files.length > 0) {
+      for (let i = 0; i < data.files.length; i++) {
+        const file = data.files[i];
+        if (file && file.type.startsWith('image/')) {
+          files.push(file);
+        }
+      }
+    }
+
+    if (files.length === 0 && data.items && data.items.length > 0) {
+      for (let i = 0; i < data.items.length; i++) {
+        const item = data.items[i];
+        if (item && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            files.push(file);
+          }
+        }
+      }
+    }
+
+    return files;
+  };
+
+  // Reusable image processor for file input, drop zone, and clipboard paste
+  const processImageFiles = useCallback(async (files: File[]) => {
+    if (!files || files.length === 0) return 0;
+
+    const nonImageFiles = files.filter(f => !f.type.startsWith('image/'));
+    if (nonImageFiles.length > 0) {
+      alert(
+        lang === 'ru'
+          ? 'Разрешены только фотографии (изображения). Файлы PDF и документы прикреплять нельзя.'
+          : lang === 'uz'
+            ? 'Faqat fotosuratlar (rasmlar) ruxsat etiladi. PDF va boshqa hujjatlarni biriktirish mumkin emas.'
+            : 'Only photos (images) are allowed. PDF and other documents cannot be attached.'
+      );
+    }
+
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      setFileInputKey(prev => prev + 1);
+      return 0;
+    }
+
+    setIsCompressingReceipts(true);
+    const newReceipts: string[] = [];
+
+    for (const file of imageFiles) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(
+          lang === 'ru'
+            ? `Файл ${file.name || 'изображение'} превышает 10 МБ`
+            : lang === 'uz'
+              ? `${file.name || 'rasm'} fayl hajmi 10 MB dan oshmasligi kerak`
+              : `File ${file.name || 'image'} exceeds 10 MB`
+        );
+        continue;
+      }
+      try {
+        const compressed = await compressImage(file, 1200, 1200, 0.7);
+        newReceipts.push(compressed);
+      } catch (err) {
+        console.error('Image compression failed:', err);
+        const reader = new FileReader();
+        const base64 = await new Promise<string>((resolve) => {
+          reader.onloadend = () => resolve((reader.result as string) || '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(file);
+        });
+        if (base64 && base64.startsWith('data:image/')) {
+          newReceipts.push(base64);
+        }
+      }
+    }
+
+    if (newReceipts.length > 0) {
+      setReceipts(prev => [...prev, ...newReceipts]);
+    }
+    setIsCompressingReceipts(false);
+    setFileInputKey(prev => prev + 1);
+    return newReceipts.length;
+  }, [lang]);
+
+  // Global paste handler: allows adding receipts via Ctrl+V (Windows/Linux) or Cmd+V (macOS)
+  useEffect(() => {
+    if (createdReportResult) return;
+
+    const handleGlobalPaste = async (e: ClipboardEvent) => {
+      if (isBloggerModalOpen) return;
+
+      const activeEl = document.activeElement;
+      const isTextInput = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        (activeEl as HTMLElement).isContentEditable
+      );
+
+      // If focused inside a text input and clipboard has plain text, let normal text paste proceed
+      const textData = e.clipboardData?.getData('text/plain') || '';
+      if (isTextInput && textData.trim().length > 0) {
+        return;
+      }
+
+      const images = extractImagesFromDataTransfer(e.clipboardData);
+      if (images.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        const count = await processImageFiles(images);
+        if (count && count > 0) {
+          setPasteNotification(
+            lang === 'ru'
+              ? `✓ Добавлено фото чека (${count}) из буфера обмена (Ctrl+V / ⌘V)`
+              : lang === 'uz'
+                ? `✓ Ctrl+V / ⌘V orqali (${count}) ta chek rasmi qo‘shildi`
+                : `✓ Added receipt photo (${count}) from clipboard (Ctrl+V / ⌘V)`
+          );
+        }
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => {
+      window.removeEventListener('paste', handleGlobalPaste);
+    };
+  }, [createdReportResult, isBloggerModalOpen, lang, processImageFiles]);
 
   const existingBloggers = useMemo(() => {
     if (paymentType === 'remaining') {
@@ -619,12 +771,7 @@ export default function ReportsView({
     setSlotGroups([]);
   }, [slotsCount]);
 
-  // Success state for toast
-  const [successToast, setSuccessToast] = useState<{ message: string; link?: string | null } | null>(null);
-  const [createdReportResult, setCreatedReportResult] = useState<Report | null>(null);
-  const [isCabinetCopied, setIsCabinetCopied] = useState(false);
-  const [isToastCopied, setIsToastCopied] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
 
   // Sync slotsConfig size and platform/format with slotsCount and platform
   useEffect(() => {
@@ -1133,20 +1280,7 @@ export default function ReportsView({
                         <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wide mb-1">
                           {t.paymentTypeLabel} *
                         </label>
-                        <div className="grid grid-cols-4 gap-1 mb-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPaymentType('prepaid');
-                              setPaidSlotsCount(Math.max(1, Math.floor(slotsCount / 2)));
-                            }}
-                            className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'prepaid'
-                                ? 'bg-black border-black text-white'
-                                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                              }`}
-                          >
-                            {t.paymentPrepaid}
-                          </button>
+                        <div className="grid grid-cols-2 gap-2 mb-1">
                           <button
                             type="button"
                             onClick={() => {
@@ -1158,8 +1292,8 @@ export default function ReportsView({
                                 setPaidAmount(Number(totalAmount));
                               }
                             }}
-                            className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'full'
-                                ? 'bg-black border-black text-white'
+                            className={`py-2 rounded-lg border text-xs font-bold transition duration-100 cursor-pointer ${paymentType === 'full'
+                                ? 'bg-black border-black text-white shadow-2xs'
                                 : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
                               }`}
                           >
@@ -1168,25 +1302,10 @@ export default function ReportsView({
                           <button
                             type="button"
                             onClick={() => {
-                              setPaymentType('remaining');
-                              setSlotsCount(0);
-                              setPaidSlotsCount(1);
-                              setBloggerType('existing');
-                            }}
-                            className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'remaining'
-                                ? 'bg-black border-black text-white'
-                                : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
-                              }`}
-                          >
-                            {t.paymentRemaining}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
                               setPaymentType('other');
                             }}
-                            className={`py-1.5 rounded-lg border text-[9px] font-bold transition duration-100 ${paymentType === 'other'
-                                ? 'bg-black border-black text-white'
+                            className={`py-2 rounded-lg border text-xs font-bold transition duration-100 cursor-pointer ${paymentType === 'other'
+                                ? 'bg-black border-black text-white shadow-2xs'
                                 : 'bg-white hover:bg-neutral-50 border-neutral-200 text-neutral-600'
                               }`}
                           >
@@ -1857,76 +1976,112 @@ export default function ReportsView({
                                 setReceipts([]);
                                 setFileInputKey(prev => prev + 1);
                               }}
-                              className="text-[9px] text-red-500 hover:text-red-700 font-bold hover:underline transition"
+                              className="text-[9px] text-red-500 hover:text-red-700 font-bold hover:underline transition cursor-pointer"
                             >
                               {lang === 'ru' ? 'Очистить все' : lang === 'uz' ? 'Barchasini tozalash' : 'Clear all'}
                             </button>
                           )}
                         </div>
 
-                        {/* File input (shown prominently if no receipts attached yet) */}
+                        {/* Paste Notification Banner */}
+                        {pasteNotification && (
+                          <div className="mb-2 flex items-center justify-between gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-[11px] font-bold animate-in fade-in">
+                            <div className="flex items-center gap-1.5">
+                              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>{pasteNotification}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setPasteNotification(null)}
+                              className="text-emerald-500 hover:text-emerald-800 text-xs font-bold leading-none cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Drop and Paste Area (shown when no receipts attached yet) */}
                         {receipts.length === 0 && (
-                          <input
-                            type="file"
-                            multiple
-                            key={fileInputKey}
-                            accept="image/*,image/jpeg,image/png,image/webp,image/heic,image/heif"
-                            onChange={async (e) => {
-                              const files = Array.from(e.target.files || []);
-                              if (files.length === 0) return;
-
-                              const nonImageFiles = files.filter(f => !f.type.startsWith('image/'));
-                              if (nonImageFiles.length > 0) {
-                                alert(
-                                  lang === 'ru'
-                                    ? 'Разрешены только фотографии (изображения). Файлы PDF и документы прикреплять нельзя.'
-                                    : lang === 'uz'
-                                      ? 'Faqat fotosuratlar (rasmlar) ruxsat etiladi. PDF va boshqa hujjatlarni biriktirish mumkin emas.'
-                                      : 'Only photos (images) are allowed. PDF and other documents cannot be attached.'
-                                );
+                          <div
+                            tabIndex={0}
+                            role="button"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                fileInputRef.current?.click();
                               }
-
-                              const imageFiles = files.filter(f => f.type.startsWith('image/'));
-                              if (imageFiles.length === 0) {
-                                setFileInputKey(prev => prev + 1);
-                                return;
-                              }
-
-                              setIsCompressingReceipts(true);
-                              const newReceipts: string[] = [];
-
-                              for (const file of imageFiles) {
-                                if (file.size > 10 * 1024 * 1024) {
-                                  alert(
-                                    lang === 'ru'
-                                      ? `Файл ${file.name} превышает 10 МБ`
-                                      : lang === 'uz'
-                                        ? `${file.name} fayl hajmi 10 MB dan oshmasligi kerak`
-                                        : `File ${file.name} exceeds 10 MB`
-                                  );
-                                  continue;
-                                }
-                                try {
-                                  const compressed = await compressImage(file, 1200, 1200, 0.7);
-                                  newReceipts.push(compressed);
-                                } catch (err) {
-                                  console.error('Image compression failed:', err);
-                                  const reader = new FileReader();
-                                  const base64 = await new Promise<string>((resolve) => {
-                                    reader.onloadend = () => resolve(reader.result as string);
-                                    reader.onerror = () => resolve('');
-                                    reader.readAsDataURL(file);
-                                  });
-                                  if (base64 && base64.startsWith('data:image/')) newReceipts.push(base64);
-                                }
-                              }
-
-                              setReceipts(prev => [...prev, ...newReceipts]);
-                              setIsCompressingReceipts(false);
-                              setFileInputKey(prev => prev + 1);
                             }}
-                            className="w-full text-sm text-neutral-500 file:mr-4 file:py-3.5 file:px-8 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-neutral-100 file:text-neutral-700 hover:file:bg-neutral-200 cursor-pointer"
-                          />
+                            onClick={() => fileInputRef.current?.click()}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDraggingOver(true);
+                            }}
+                            onDragEnter={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDraggingOver(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDraggingOver(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDraggingOver(false);
+                              const files = extractImagesFromDataTransfer(e.dataTransfer);
+                              if (files.length > 0) {
+                                processImageFiles(files);
+                              }
+                            }}
+                            className={`w-full p-4 rounded-xl border-2 border-dashed transition-all duration-150 cursor-pointer text-center select-none ${
+                              isDraggingOver
+                                ? 'border-black bg-neutral-100 scale-[1.005]'
+                                : 'border-neutral-300 hover:border-black bg-white hover:bg-neutral-50/70 shadow-2xs'
+                            }`}
+                          >
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              multiple
+                              key={fileInputKey}
+                              accept="image/*,image/jpeg,image/png,image/webp,image/heic,image/heif"
+                              onChange={(e) => {
+                                const files = Array.from(e.target.files || []);
+                                processImageFiles(files);
+                              }}
+                              className="hidden"
+                            />
+
+                            <div className="flex flex-col items-center justify-center gap-1.5">
+                              <div className="w-9 h-9 rounded-full bg-neutral-100 border border-neutral-200/80 flex items-center justify-center text-neutral-600">
+                                <Upload className="w-4 h-4" />
+                              </div>
+
+                              <div>
+                                <p className="text-xs font-bold text-neutral-900">
+                                  {lang === 'ru' 
+                                    ? 'Нажмите для выбора фото чека или перетащите файл' 
+                                    : lang === 'uz' 
+                                      ? 'Chek rasmini tanlash uchun bosing yoki faylni bu yerga torting' 
+                                      : 'Click to choose receipt photo or drag and drop'}
+                                </p>
+
+                                <div className="mt-1.5 inline-flex items-center justify-center flex-wrap gap-1 text-[10px] text-neutral-600 font-medium">
+                                  <span>{lang === 'ru' ? 'Или вставьте фото чек через' : lang === 'uz' ? 'Yoki chek rasmini qo‘ying:' : 'Or paste receipt photo via'}</span>
+                                  <kbd className="px-1.5 py-0.5 bg-neutral-100 border border-neutral-300 rounded text-[9px] font-mono font-bold text-neutral-800 shadow-2xs">Ctrl + V</kbd>
+                                  <span className="text-neutral-400">/</span>
+                                  <kbd className="px-1.5 py-0.5 bg-neutral-100 border border-neutral-300 rounded text-[9px] font-mono font-bold text-neutral-800 shadow-2xs">⌘V</kbd>
+                                </div>
+                              </div>
+
+                              <span className="text-[9px] text-neutral-400 font-medium mt-0.5">
+                                PNG, JPG, JPEG, WEBP, HEIC (до 10 МБ)
+                              </span>
+                            </div>
+                          </div>
                         )}
 
                         {/* Loading / Compressing indicator */}
@@ -1941,7 +2096,35 @@ export default function ReportsView({
 
                         {/* Thumbnails grid when receipts are attached */}
                         {receipts.length > 0 && (
-                          <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                          <div 
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDraggingOver(true);
+                            }}
+                            onDragEnter={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDraggingOver(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDraggingOver(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDraggingOver(false);
+                              const files = extractImagesFromDataTransfer(e.dataTransfer);
+                              if (files.length > 0) {
+                                processImageFiles(files);
+                              }
+                            }}
+                            className={`p-2.5 bg-neutral-50 rounded-xl border transition-all duration-150 ${
+                              isDraggingOver ? 'border-black bg-neutral-100' : 'border-neutral-200'
+                            }`}
+                          >
                             <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
                               {receipts.map((r, idx) => (
                                 <div key={idx} className="relative group aspect-square rounded-lg border border-neutral-200 overflow-hidden bg-white shadow-2xs">
@@ -1963,7 +2146,7 @@ export default function ReportsView({
                                   <button
                                     type="button"
                                     onClick={() => setReceipts(prev => prev.filter((_, i) => i !== idx))}
-                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center text-[10px] font-black shadow-md transition"
+                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center text-[10px] font-black shadow-md transition cursor-pointer"
                                     title={lang === 'ru' ? 'Удалить этот чек' : lang === 'uz' ? 'Ushbu chekni o‘chirish' : 'Remove this receipt'}
                                   >
                                     ✕
@@ -1982,63 +2165,30 @@ export default function ReportsView({
                                   multiple
                                   key={`add-more-${fileInputKey}`}
                                   accept="image/*,image/jpeg,image/png,image/webp,image/heic,image/heif"
-                                  onChange={async (e) => {
+                                  onChange={(e) => {
                                     const files = Array.from(e.target.files || []);
-                                    if (files.length === 0) return;
-
-                                    const nonImageFiles = files.filter(f => !f.type.startsWith('image/'));
-                                    if (nonImageFiles.length > 0) {
-                                      alert(
-                                        lang === 'ru'
-                                          ? 'Разрешены только фотографии (изображения). Файлы PDF и документы прикреплять нельзя.'
-                                          : lang === 'uz'
-                                            ? 'Faqat fotosuratlar (rasmlar) ruxsat etiladi. PDF va boshqa hujjatlarni biriktirish mumkin emas.'
-                                            : 'Only photos (images) are allowed. PDF and other documents cannot be attached.'
-                                      );
-                                    }
-
-                                    const imageFiles = files.filter(f => f.type.startsWith('image/'));
-                                    if (imageFiles.length === 0) {
-                                      setFileInputKey(prev => prev + 1);
-                                      return;
-                                    }
-
-                                    setIsCompressingReceipts(true);
-                                    const newReceipts: string[] = [];
-
-                                    for (const file of imageFiles) {
-                                      if (file.size > 10 * 1024 * 1024) {
-                                        alert(
-                                          lang === 'ru'
-                                            ? `Файл ${file.name} превышает 10 МБ`
-                                            : lang === 'uz'
-                                              ? `${file.name} fayl hajmi 10 MB dan oshmasligi kerak`
-                                              : `File ${file.name} exceeds 10 MB`
-                                        );
-                                        continue;
-                                      }
-                                      try {
-                                        const compressed = await compressImage(file, 1200, 1200, 0.7);
-                                        newReceipts.push(compressed);
-                                      } catch (err) {
-                                        console.error('Image compression failed:', err);
-                                        const reader = new FileReader();
-                                        const base64 = await new Promise<string>((resolve) => {
-                                          reader.onloadend = () => resolve(reader.result as string);
-                                          reader.onerror = () => resolve('');
-                                          reader.readAsDataURL(file);
-                                        });
-                                        if (base64 && base64.startsWith('data:image/')) newReceipts.push(base64);
-                                      }
-                                    }
-
-                                    setReceipts(prev => [...prev, ...newReceipts]);
-                                    setIsCompressingReceipts(false);
-                                    setFileInputKey(prev => prev + 1);
+                                    processImageFiles(files);
                                   }}
                                   className="hidden"
                                 />
                               </label>
+                            </div>
+
+                            {/* Helpful Hint */}
+                            <div className="mt-2 pt-2 border-t border-neutral-200/60 flex items-center justify-between text-[9px] text-neutral-500 font-medium">
+                              <span className="flex items-center gap-1">
+                                <span>💡</span>
+                                <span>
+                                  {lang === 'ru' 
+                                    ? 'Можно вставить еще фото через Ctrl + V / ⌘V' 
+                                    : lang === 'uz' 
+                                      ? 'Yana rasmlarni Ctrl + V / ⌘V orqali qo‘shish mumkin' 
+                                      : 'You can paste more photos using Ctrl + V / ⌘V'}
+                                </span>
+                              </span>
+                              <span className="text-neutral-400 font-mono text-[8px]">
+                                {receipts.length} {lang === 'ru' ? 'шт.' : 'items'}
+                              </span>
                             </div>
                           </div>
                         )}

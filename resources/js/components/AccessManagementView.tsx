@@ -216,8 +216,8 @@ export default function AccessManagementView({
         lang === 'ru'
           ? '✅ Резервная копия базы успешно отправлена в Telegram (тема #597)!'
           : lang === 'uz'
-          ? '✅ Zaxira nusxa Telegramga muvaffaqiyatli yuborildi (#597 mavzusi)!'
-          : '✅ Database backup successfully sent to Telegram (topic #597)!'
+            ? '✅ Zaxira nusxa Telegramga muvaffaqiyatli yuborildi (#597 mavzusi)!'
+            : '✅ Database backup successfully sent to Telegram (topic #597)!'
       );
       setTimeout(() => setBackupSuccess(null), 6000);
     } catch (err: any) {
@@ -252,14 +252,14 @@ export default function AccessManagementView({
           lang === 'ru'
             ? 'Некорректный формат email или логина!'
             : lang === 'uz'
-            ? 'Email yoki login formati noto‘g‘ri!'
-            : 'Invalid email or handle format!'
+              ? 'Email yoki login formati noto‘g‘ri!'
+              : 'Invalid email or handle format!'
         );
         return;
       }
 
-      const existingUserMatch = allowedUsers.find((u) => 
-        u.email.toLowerCase() === cleanEmail || 
+      const existingUserMatch = allowedUsers.find((u) =>
+        u.email.toLowerCase() === cleanEmail ||
         u.email.toLowerCase() === `${cleanEmail}@tezi.uz`
       );
 
@@ -268,8 +268,8 @@ export default function AccessManagementView({
           lang === 'ru'
             ? `Сотрудник ${existingUserMatch.email} уже существует. Хотите перезаписать его профиль и установить новый пароль?`
             : lang === 'uz'
-            ? `Foydalanuvchi ${existingUserMatch.email} tizimda mavjud. Uning profilini qayta yaratib, yangi parol o‘rnatmoqchimisiz?`
-            : `User ${existingUserMatch.email} already exists. Do you want to overwrite their profile and set a new password?`
+              ? `Foydalanuvchi ${existingUserMatch.email} tizimda mavjud. Uning profilini qayta yaratib, yangi parol o‘rnatmoqchimisiz?`
+              : `User ${existingUserMatch.email} already exists. Do you want to overwrite their profile and set a new password?`
         );
 
         if (confirmRecreate) {
@@ -322,8 +322,8 @@ export default function AccessManagementView({
           lang === 'ru'
             ? 'Доступ пользователя успешно обновлен!'
             : lang === 'uz'
-            ? 'Foydalanuvchi huquqlari muvaffaqiyatli yangilandi!'
-            : 'User permissions updated successfully!'
+              ? 'Foydalanuvchi huquqlari muvaffaqiyatli yangilandi!'
+              : 'User permissions updated successfully!'
         );
         setEditingUser(null);
       } else {
@@ -350,9 +350,9 @@ export default function AccessManagementView({
 
         setSuccessMsg(
           shouldOverwrite
-            ? (lang === 'ru' 
-                ? `Аккаунт ${resolvedEmail} успешно перезаписан с новым паролем!`
-                : `User ${resolvedEmail} recreated successfully with new password!`)
+            ? (lang === 'ru'
+              ? `Аккаунт ${resolvedEmail} успешно перезаписан с новым паролем!`
+              : `User ${resolvedEmail} recreated successfully with new password!`)
             : t.addSuccessToast.replace('{email}', resolvedEmail)
         );
       }
@@ -379,8 +379,8 @@ export default function AccessManagementView({
           lang === 'ru'
             ? `Не удалось сохранить доступ: ${message || 'Проверьте подключение к серверу.'}`
             : lang === 'uz'
-            ? `Ruxsatni saqlab bo‘lmadi: ${message || 'Server bilan ulanishni tekshiring.'}`
-            : `Failed to save access: ${message || 'Please check server connection.'}`
+              ? `Ruxsatni saqlab bo‘lmadi: ${message || 'Server bilan ulanishni tekshiring.'}`
+              : `Failed to save access: ${message || 'Please check server connection.'}`
         );
       }
     }
@@ -399,8 +399,8 @@ export default function AccessManagementView({
       lang === 'ru'
         ? `Вы уверены, что хотите закрыть доступ для ${user.email}?`
         : lang === 'uz'
-        ? `Haqiqatan ham ${user.email} uchun ruxsatni bekor qilmoqchimisiz?`
-        : `Are you sure you want to revoke access for ${user.email}?`;
+          ? `Haqiqatan ham ${user.email} uchun ruxsatni bekor qilmoqchimisiz?`
+          : `Are you sure you want to revoke access for ${user.email}?`;
 
     if (confirm(confirmMsg)) {
       try {
@@ -495,8 +495,8 @@ export default function AccessManagementView({
           lang === 'ru'
             ? `Субдомен «${cleanSlug}.tezi.uz» успешно создан и готов к открытию!`
             : lang === 'uz'
-            ? `«${cleanSlug}.tezi.uz» subdomeni yaratildi va tayyor!`
-            : `Subdomain «${cleanSlug}.tezi.uz» created!`
+              ? `«${cleanSlug}.tezi.uz» subdomeni yaratildi va tayyor!`
+              : `Subdomain «${cleanSlug}.tezi.uz» created!`
         );
       }
 
@@ -519,8 +519,8 @@ export default function AccessManagementView({
       lang === 'ru'
         ? `Вы уверены, что хотите удалить субдомен «${sub.slug}.tezi.uz»? Все его проекты будут безопасно перемещены в основное пространство (1).`
         : lang === 'uz'
-        ? `«${sub.slug}.tezi.uz» subdomenini o‘chirishni xohlaysizmi? Undagi loyihalar xavfsiz holda asosiy (1) bo‘limga ko‘chiriladi.`
-        : `Are you sure? All projects will be moved safely to default workspace (1).`;
+          ? `«${sub.slug}.tezi.uz» subdomenini o‘chirishni xohlaysizmi? Undagi loyihalar xavfsiz holda asosiy (1) bo‘limga ko‘chiriladi.`
+          : `Are you sure? All projects will be moved safely to default workspace (1).`;
 
     if (confirm(confirmMsg)) {
       try {
@@ -543,8 +543,8 @@ export default function AccessManagementView({
           lang === 'ru'
             ? `Проект перемещен в субдомен ${targetSubdomain}.tezi.uz!`
             : lang === 'uz'
-            ? `Loyiha ${targetSubdomain}.tezi.uz ga ko‘chirildi!`
-            : `Project moved to ${targetSubdomain}.tezi.uz!`
+              ? `Loyiha ${targetSubdomain}.tezi.uz ga ko‘chirildi!`
+              : `Project moved to ${targetSubdomain}.tezi.uz!`
         );
         setTimeout(() => setSuccessMsg(null), 3000);
       }
@@ -571,8 +571,8 @@ export default function AccessManagementView({
           lang === 'ru'
             ? `Проект «${quickProjectName}» создан в субдомене ${quickProjectModalSubdomain}!`
             : lang === 'uz'
-            ? `Yangi loyiha ${quickProjectModalSubdomain} subdomenida yaratildi!`
-            : `Project created in ${quickProjectModalSubdomain}!`
+              ? `Yangi loyiha ${quickProjectModalSubdomain} subdomenida yaratildi!`
+              : `Project created in ${quickProjectModalSubdomain}!`
         );
         setQuickProjectModalSubdomain(null);
         setQuickProjectName('');
@@ -641,8 +641,8 @@ export default function AccessManagementView({
             {lang === 'ru'
               ? 'Двухуровневая модель разграничения прав и изоляция проектов по субдоменам'
               : lang === 'uz'
-              ? 'Ikki darajali ruxsatlar modeli va loyihalarni subdomenlarga ajratish'
-              : 'Two-tier role access model and multi-tenant subdomain management'}
+                ? 'Ikki darajali ruxsatlar modeli va loyihalarni subdomenlarga ajratish'
+                : 'Two-tier role access model and multi-tenant subdomain management'}
           </p>
         </div>
 
@@ -651,11 +651,10 @@ export default function AccessManagementView({
           <button
             type="button"
             onClick={() => setActiveMainTab('users')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-              activeMainTab === 'users'
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition cursor-pointer ${activeMainTab === 'users'
                 ? 'bg-white text-black shadow-xs font-extrabold'
                 : 'text-neutral-500 hover:text-black'
-            }`}
+              }`}
           >
             <Users className="w-3.5 h-3.5" />
             <span>{lang === 'ru' ? 'Пользователи и Права' : lang === 'uz' ? 'Xodimlar va Huquqlar' : 'Users & Access'}</span>
@@ -667,11 +666,10 @@ export default function AccessManagementView({
           <button
             type="button"
             onClick={() => setActiveMainTab('workspaces')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-              activeMainTab === 'workspaces'
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition cursor-pointer ${activeMainTab === 'workspaces'
                 ? 'bg-white text-black shadow-xs font-extrabold'
                 : 'text-neutral-500 hover:text-black'
-            }`}
+              }`}
           >
             <Globe className="w-3.5 h-3.5 text-blue-600" />
             <span>{lang === 'ru' ? 'Субдомены и Проекты' : lang === 'uz' ? 'Subdomenlar va Loyihalar' : 'Workspaces & Domains'}</span>
@@ -716,13 +714,13 @@ export default function AccessManagementView({
                     ? lang === 'ru'
                       ? 'Редактировать сотрудника'
                       : lang === 'uz'
-                      ? 'Xodim ruxsatlarini tahrirlash'
-                      : 'Edit Member'
+                        ? 'Xodim ruxsatlarini tahrirlash'
+                        : 'Edit Member'
                     : lang === 'ru'
-                    ? 'Добавить сотрудника'
-                    : lang === 'uz'
-                    ? 'Yangi xodim qo‘shish'
-                    : 'Add Member'}
+                      ? 'Добавить сотрудника'
+                      : lang === 'uz'
+                        ? 'Yangi xodim qo‘shish'
+                        : 'Add Member'}
                 </h3>
               </div>
               {editingUser && (
@@ -772,11 +770,10 @@ export default function AccessManagementView({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder={lang === 'ru' ? 'Email или логин (например chief1)...' : 'Email yoki login...'}
-                    className={`w-full border focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold focus:outline-hidden transition ${
-                      editingUser
+                    className={`w-full border focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold focus:outline-hidden transition ${editingUser
                         ? 'bg-neutral-100 border-neutral-200 text-neutral-500 cursor-not-allowed'
                         : 'bg-neutral-50 border-neutral-200 text-black'
-                    }`}
+                      }`}
                     required
                     disabled={!!editingUser}
                   />
@@ -787,7 +784,7 @@ export default function AccessManagementView({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">
-                    {editingUser 
+                    {editingUser
                       ? (lang === 'ru' ? 'Новый пароль (оставьте пустым, чтобы не менять)' : lang === 'uz' ? 'Yangi parol (o‘zgartirmaslik uchun bo‘sh qoldiring)' : 'New password (leave blank to keep)')
                       : (t.userPasswordLabel || 'Пароль')}
                   </label>
@@ -807,7 +804,7 @@ export default function AccessManagementView({
                     type="text"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={editingUser 
+                    placeholder={editingUser
                       ? (lang === 'ru' ? 'Оставьте пустым, если не меняется' : 'Bo‘sh qoldiring')
                       : (t.defaultPasswordHint || 'По умолчанию: password')}
                     className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-black focus:outline-hidden transition"
@@ -838,11 +835,10 @@ export default function AccessManagementView({
                       setAccessLevel('tier1');
                       setSelectedRole('executive');
                     }}
-                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between gap-1.5 ${
-                      accessLevel === 'tier1'
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between gap-1.5 ${accessLevel === 'tier1'
                         ? 'border-amber-400 bg-amber-50/60 shadow-xs'
                         : 'border-neutral-200 bg-neutral-50/50 hover:bg-neutral-100/60'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-1.5">
                       <Crown className="w-3.5 h-3.5 text-amber-600" />
@@ -861,11 +857,10 @@ export default function AccessManagementView({
                       setAccessLevel('tier2');
                       setSelectedRole('pr_manager');
                     }}
-                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between gap-1.5 ${
-                      accessLevel === 'tier2'
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between gap-1.5 ${accessLevel === 'tier2'
                         ? 'border-blue-400 bg-blue-50/60 shadow-xs'
                         : 'border-neutral-200 bg-neutral-50/50 hover:bg-neutral-100/60'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-1.5">
                       <Briefcase className="w-3.5 h-3.5 text-blue-600" />
@@ -978,8 +973,8 @@ export default function AccessManagementView({
                               ? 'снять все'
                               : 'barchasini yechish'
                             : lang === 'ru'
-                            ? 'выбрать все'
-                            : 'barchasini tanlash'}
+                              ? 'выбрать все'
+                              : 'barchasini tanlash'}
                         </button>
                       </div>
 
@@ -1005,14 +1000,12 @@ export default function AccessManagementView({
                                     [sub.slug]: !prev[sub.slug],
                                   }));
                                 }}
-                                className={`w-7 h-4 rounded-full transition duration-200 relative shrink-0 cursor-pointer ${
-                                  isChecked ? 'bg-black' : 'bg-neutral-200'
-                                }`}
+                                className={`w-7 h-4 rounded-full transition duration-200 relative shrink-0 cursor-pointer ${isChecked ? 'bg-black' : 'bg-neutral-200'
+                                  }`}
                               >
                                 <span
-                                  className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
-                                    isChecked ? 'right-0.5' : 'left-0.5'
-                                  }`}
+                                  className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${isChecked ? 'right-0.5' : 'left-0.5'
+                                    }`}
                                 />
                               </button>
                             </div>
@@ -1066,8 +1059,8 @@ export default function AccessManagementView({
                               ? 'снять все'
                               : 'barchasini yechish'
                             : lang === 'ru'
-                            ? 'выбрать все'
-                            : 'barchasini tanlash'}
+                              ? 'выбрать все'
+                              : 'barchasini tanlash'}
                         </button>
                       </div>
 
@@ -1097,14 +1090,12 @@ export default function AccessManagementView({
                                     [proj.id]: !prev[proj.id],
                                   }));
                                 }}
-                                className={`w-7 h-4 rounded-full transition duration-200 relative shrink-0 cursor-pointer ${
-                                  isChecked ? 'bg-black' : 'bg-neutral-200'
-                                }`}
+                                className={`w-7 h-4 rounded-full transition duration-200 relative shrink-0 cursor-pointer ${isChecked ? 'bg-black' : 'bg-neutral-200'
+                                  }`}
                               >
                                 <span
-                                  className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
-                                    isChecked ? 'right-0.5' : 'left-0.5'
-                                  }`}
+                                  className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${isChecked ? 'right-0.5' : 'left-0.5'
+                                    }`}
                                 />
                               </button>
                             </div>
@@ -1168,14 +1159,12 @@ export default function AccessManagementView({
                                     [p.key]: !prev[p.key],
                                   }));
                                 }}
-                                className={`w-7 h-4 rounded-full transition duration-200 relative shrink-0 cursor-pointer ${
-                                  isChecked ? 'bg-black' : 'bg-neutral-200'
-                                }`}
+                                className={`w-7 h-4 rounded-full transition duration-200 relative shrink-0 cursor-pointer ${isChecked ? 'bg-black' : 'bg-neutral-200'
+                                  }`}
                               >
                                 <span
-                                  className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
-                                    isChecked ? 'right-0.5' : 'left-0.5'
-                                  }`}
+                                  className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${isChecked ? 'right-0.5' : 'left-0.5'
+                                    }`}
                                 />
                               </button>
                             </div>
@@ -1238,14 +1227,12 @@ export default function AccessManagementView({
                                     [m.key]: !prev[m.key],
                                   }));
                                 }}
-                                className={`w-7 h-4 rounded-full transition duration-200 relative shrink-0 cursor-pointer ${
-                                  isChecked ? 'bg-black' : 'bg-neutral-200'
-                                }`}
+                                className={`w-7 h-4 rounded-full transition duration-200 relative shrink-0 cursor-pointer ${isChecked ? 'bg-black' : 'bg-neutral-200'
+                                  }`}
                               >
                                 <span
-                                  className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${
-                                    isChecked ? 'right-0.5' : 'left-0.5'
-                                  }`}
+                                  className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition duration-200 shadow-xs ${isChecked ? 'right-0.5' : 'left-0.5'
+                                    }`}
                                 />
                               </button>
                             </div>
@@ -1268,8 +1255,8 @@ export default function AccessManagementView({
                     {editingUser
                       ? t.saveChangesBtn
                       : lang === 'ru'
-                      ? 'Сохранить и предоставить доступ'
-                      : 'Saqlash va ruxsat berish'}
+                        ? 'Сохранить и предоставить доступ'
+                        : 'Saqlash va ruxsat berish'}
                   </span>
                 </button>
               </div>
@@ -1315,11 +1302,10 @@ export default function AccessManagementView({
                   key={f.key}
                   type="button"
                   onClick={() => setUserRoleFilter(f.key)}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                    userRoleFilter === f.key
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${userRoleFilter === f.key
                       ? 'bg-black text-white font-black shadow-xs'
                       : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-600'
-                  }`}
+                    }`}
                 >
                   {f.label}
                 </button>
@@ -1353,13 +1339,12 @@ export default function AccessManagementView({
                       return (
                         <tr
                           key={user.id}
-                          className={`transition duration-150 ${
-                            isExec
+                          className={`transition duration-150 ${isExec
                               ? 'bg-amber-50/30 hover:bg-amber-100/30 border-l-4 border-l-amber-500'
                               : isSuper
-                              ? 'bg-neutral-50/40 hover:bg-neutral-100/40 border-l-4 border-l-black'
-                              : 'hover:bg-neutral-50/50'
-                          }`}
+                                ? 'bg-neutral-50/40 hover:bg-neutral-100/40 border-l-4 border-l-black'
+                                : 'hover:bg-neutral-50/50'
+                            }`}
                         >
                           <td className="py-3.5 px-4">
                             <div className="flex flex-col text-left">
@@ -1734,7 +1719,7 @@ export default function AccessManagementView({
             className="flex items-center gap-2 px-3.5 py-2 bg-white text-black hover:bg-neutral-100 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
           >
             <Download className="w-4 h-4" />
-            <span>{lang === 'ru' ? 'Скачать .sqlite' : 'Yuklab olish (.sqlite)'}</span>
+            <span>{lang === 'ru' ? 'Скачать бэкап' : 'Zaxira nusxani yuklab olish'}</span>
           </button>
 
           <button
@@ -1764,8 +1749,8 @@ export default function AccessManagementView({
                       ? 'Редактировать субдомен'
                       : 'Subdomenni tahrirlash'
                     : lang === 'ru'
-                    ? 'Создать новый субдомен'
-                    : 'Yangi subdomen yaratish'}
+                      ? 'Создать новый субдомен'
+                      : 'Yangi subdomen yaratish'}
                 </h3>
               </div>
               <button

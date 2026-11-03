@@ -31,8 +31,15 @@ class DatabaseBackupController extends Controller
                 'file_size' => file_exists($filePath) ? filesize($filePath) : 0,
             ]);
 
+            $mimeType = 'application/octet-stream';
+            if (str_ends_with($fileName, '.sqlite')) {
+                $mimeType = 'application/x-sqlite3';
+            } elseif (str_ends_with($fileName, '.sql')) {
+                $mimeType = 'application/sql';
+            }
+
             return response()->download($filePath, $fileName, [
-                'Content-Type' => 'application/x-sqlite3',
+                'Content-Type' => $mimeType,
                 'Content-Disposition' => "attachment; filename=\"{$fileName}\"",
             ]);
         } catch (\Throwable $e) {

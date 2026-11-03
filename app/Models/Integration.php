@@ -93,8 +93,12 @@ class Integration extends Model
     public static function generateCabinetToken(string $bloggerName): string
     {
         $slug = Str::slug(str_replace(['@', '#'], '', $bloggerName));
-        $suffix = Str::lower(Str::random(6));
-        return $slug ? ($slug . '-' . $suffix) : $suffix;
+        do {
+            $suffix = Str::lower(Str::random(6));
+            $token = $slug ? ($slug . '-' . $suffix) : $suffix;
+        } while (self::where('blogger_cabinet_token', $token)->exists());
+
+        return $token;
     }
 
     public function syncWithReports(): bool
@@ -318,17 +322,7 @@ class Integration extends Model
             }
 
             if (blank($integration->blogger_cabinet_token)) {
-                $cleanBlogger = strtolower(trim(str_replace(['@', '#'], '', $integration->blogger_name ?? '')));
-                $existingToken = null;
-                if ($integration->project_id && $cleanBlogger !== '') {
-                    $existingToken = self::where('project_id', $integration->project_id)
-                        ->where(function ($q) use ($cleanBlogger) {
-                            $q->whereRaw("LOWER(TRIM(REPLACE(REPLACE(blogger_name, '@', ''), '#', ''))) = ?", [$cleanBlogger]);
-                        })
-                        ->whereNotNull('blogger_cabinet_token')
-                        ->value('blogger_cabinet_token');
-                }
-                $integration->blogger_cabinet_token = $existingToken ?: self::generateCabinetToken($integration->blogger_name ?? 'blogger');
+                $integration->blogger_cabinet_token = self::generateCabinetToken($integration->blogger_name ?? 'blogger');
             }
         });
     }

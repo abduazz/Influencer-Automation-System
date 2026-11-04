@@ -1703,10 +1703,10 @@ export default function TimelineView({
     <div className="space-y-4 pb-8 max-w-[1920px] mx-auto w-full">
       {/* 1. UNIFIED COMMAND TOOLBAR & CONTROLS */}
       <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs divide-y divide-neutral-100">
-        {/* Tier 1: Primary Navigation, Project Scope & Key Utilities */}
+        {/* Tier 1: Primary Navigation & Key Utilities */}
         <div className="p-3 sm:px-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          {/* Left: View Mode Switcher + Projects */}
-          <div className="flex items-center gap-3 overflow-visible min-w-0">
+          {/* Left: View Mode Switcher */}
+          <div className="flex items-center gap-3 shrink-0">
             {/* 3 View Modes: Неделя | Месяц | Канбан слотов */}
             <div className="flex items-center bg-neutral-100 p-1 rounded-xl border border-neutral-200/70 shrink-0">
               <button
@@ -1742,62 +1742,6 @@ export default function TimelineView({
                 <Columns3 className="w-3.5 h-3.5" />
                 <span>Канбан слотов</span>
               </button>
-            </div>
-
-            <div className="h-5 w-[1px] bg-neutral-200/80 shrink-0" />
-
-            {/* Projects Switcher */}
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setSelectedProjectId('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${selectedProjectId === 'all'
-                  ? 'bg-neutral-900 text-white shadow-2xs'
-                  : 'bg-neutral-100/80 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/70'
-                  }`}
-              >
-                Все проекты
-                <span
-                  className={`ml-1.5 px-1.5 py-0.2 rounded text-[10px] tabular-nums font-bold ${selectedProjectId === 'all'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-neutral-200/80 text-neutral-700'
-                    }`}
-                >
-                  {allSlots.filter((s) => isSlotInCampaignScope(s)).length}
-                </span>
-              </button>
-
-              {projects.map((project) => {
-                const isSelected = String(selectedProjectId) === String(project.id);
-                const projectSlotCount = allSlots.filter(
-                  (s) =>
-                    (String(s.projectId) === String(project.id) ||
-                      String(s.integration.projectId) === String(project.id)) &&
-                    isSlotInCampaignScope(s)
-                ).length;
-
-                return (
-                  <button
-                    key={project.id}
-                    type="button"
-                    onClick={() => setSelectedProjectId(String(project.id))}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${isSelected
-                      ? 'bg-neutral-900 text-white shadow-2xs'
-                      : 'bg-neutral-100/80 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/70'
-                      }`}
-                  >
-                    <span>{project.name}</span>
-                    <span
-                      className={`px-1.5 py-0.2 rounded text-[10px] tabular-nums font-bold ${isSelected
-                        ? 'bg-white/20 text-white'
-                        : 'bg-neutral-200/80 text-neutral-700'
-                        }`}
-                    >
-                      {projectSlotCount}
-                    </span>
-                  </button>
-                );
-              })}
             </div>
           </div>
 
@@ -1964,6 +1908,62 @@ export default function TimelineView({
             )}
           </div>
         </div>
+
+        {/* Tier 1.5: Project Quick Filter Tabs (Horizontal Scrollable, SSOT scoped) */}
+        {projects && projects.length > 0 && (
+          <div className="px-3 sm:px-4.5 py-2 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden bg-neutral-50/30">
+            <button
+              type="button"
+              onClick={() => setSelectedProjectId('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${selectedProjectId === 'all'
+                ? 'bg-neutral-900 text-white shadow-2xs'
+                : 'bg-white text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/80 border border-neutral-200/70'
+                }`}
+            >
+              Все проекты
+              <span
+                className={`ml-1.5 px-1.5 py-0.2 rounded text-[10px] tabular-nums font-bold ${selectedProjectId === 'all'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-neutral-200/80 text-neutral-700'
+                  }`}
+              >
+                {allSlots.filter((s) => isSlotInCampaignScope(s)).length}
+              </span>
+            </button>
+
+            {projects.map((project) => {
+              const isSelected = String(selectedProjectId) === String(project.id);
+              const projectSlotCount = allSlots.filter(
+                (s) =>
+                  (String(s.projectId) === String(project.id) ||
+                    String(s.integration.projectId) === String(project.id)) &&
+                  isSlotInCampaignScope(s)
+              ).length;
+
+              return (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => setSelectedProjectId(String(project.id))}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${isSelected
+                    ? 'bg-neutral-900 text-white shadow-2xs'
+                    : 'bg-white text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/80 border border-neutral-200/70'
+                    }`}
+                >
+                  <span>{project.name}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[10px] tabular-nums font-bold ${isSelected
+                      ? 'bg-white/20 text-white'
+                      : 'bg-neutral-200/80 text-neutral-700'
+                      }`}
+                  >
+                    {projectSlotCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Tier 2: Search, Micro-Filters & Date Picker (Slim, Clean, Inline) */}
         <div className="p-3 sm:px-4.5 bg-neutral-50/40 flex flex-col xl:flex-row xl:items-center justify-between gap-3">

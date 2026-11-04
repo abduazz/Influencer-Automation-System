@@ -659,10 +659,18 @@ class ReportController extends Controller
                 $targetProject = $report->project_id ?: $oldProject;
                 $targetPlatform = $report->platform ?: $oldPlatform;
                 $targetBlogger = $report->channel_blogger ?: $oldBlogger;
-                if ($targetProject && $targetPlatform && $targetBlogger) {
+                if ($targetProject && $targetBlogger) {
                     $cleanTarget = strtolower(trim(str_replace(['@', '#'], '', $targetBlogger)));
+                    $normTarget = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanTarget));
+
+                    $platformsToCheck = array_values(array_unique(array_filter([$targetPlatform, $oldPlatform])));
+
                     $integration = Integration::where('project_id', $targetProject)
-                        ->where('platform', $targetPlatform)
+                        ->where(function ($q) use ($platformsToCheck) {
+                            if (!empty($platformsToCheck)) {
+                                $q->whereIn('platform', $platformsToCheck);
+                            }
+                        })
                         ->where(function ($q) use ($cleanTarget) {
                             $q->whereRaw('LOWER(blogger_name) = ?', [$cleanTarget])
                                 ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . $cleanTarget])
@@ -671,9 +679,18 @@ class ReportController extends Controller
                         ->first();
 
                     if (!$integration) {
-                        $normTarget = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanTarget));
                         $integration = Integration::where('project_id', $targetProject)
-                            ->where('platform', $targetPlatform)
+                            ->get()
+                            ->first(function ($int) use ($normTarget, $platformsToCheck) {
+                                $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
+                                if ($iNorm !== $normTarget) return false;
+                                return empty($platformsToCheck) || in_array($int->platform, $platformsToCheck);
+                            });
+                    }
+
+                    if (!$integration) {
+                        // Fallback matching strictly by project & blogger name
+                        $integration = Integration::where('project_id', $targetProject)
                             ->get()
                             ->first(function ($int) use ($normTarget) {
                                 $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
@@ -682,6 +699,10 @@ class ReportController extends Controller
                     }
 
                     if ($integration) {
+                        if (!empty($report->platform) && $integration->platform !== $report->platform) {
+                            $integration->platform = $report->platform;
+                            $integration->saveQuietly();
+                        }
                         $integration->syncWithReports();
                     }
                 }

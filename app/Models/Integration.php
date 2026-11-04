@@ -111,7 +111,11 @@ class Integration extends Model
         $normalizedName = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($this->blogger_name)));
 
         $reports = Report::where('project_id', $this->project_id)
-            ->where('platform', $this->platform)
+            ->where(function ($q) {
+                $q->where('platform', $this->platform)
+                    ->orWhereNull('platform')
+                    ->orWhere('platform', '');
+            })
             ->get()
             ->filter(function ($r) use ($cleanName, $normalizedName) {
                 if (!$r->channel_blogger)
@@ -120,6 +124,19 @@ class Integration extends Model
                 $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
                 return $rClean === $cleanName || $rNorm === $normalizedName;
             });
+
+        // Fallback: match any reports for this blogger and project if platform was updated in report
+        if ($reports->isEmpty()) {
+            $reports = Report::where('project_id', $this->project_id)
+                ->get()
+                ->filter(function ($r) use ($cleanName, $normalizedName) {
+                    if (!$r->channel_blogger)
+                        return false;
+                    $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
+                    $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
+                    return $rClean === $cleanName || $rNorm === $normalizedName;
+                });
+        }
 
         if ($reports->isEmpty()) {
             return false;
@@ -217,23 +234,26 @@ class Integration extends Model
                 ? $mergedSlotsConfig[$i - 1]
                 : [];
 
-            $existingConfig = array_merge($repSlot, $ownSlot ?? []);
+            $allocatedAt = (!empty($repSlot['allocatedAt']))
+                ? $repSlot['allocatedAt']
+                : ((!empty($ownSlot['allocatedAt']))
+                    ? $ownSlot['allocatedAt']
+                    : ($minDate ? $minDate->format('Y-m-d') : now()->format('Y-m-d')));
 
-            $allocatedAt = (!empty($existingConfig['allocatedAt']))
-                ? $existingConfig['allocatedAt']
-                : ($minDate ? $minDate->format('Y-m-d') : now()->format('Y-m-d'));
-
+            // Slots configuration: prioritized from the latest report, falling back to existing integration slot
             $slotItem = [
                 'slot' => $i,
-                'platform' => $existingConfig['platform'] ?? $this->platform ?? 'Instagram',
-                'format' => $existingConfig['format'] ?? 'Post',
-                'projectId' => $existingConfig['projectId'] ?? (string) $this->project_id,
+                'platform' => $repSlot['platform'] ?? $ownSlot['platform'] ?? $this->platform ?? 'Instagram',
+                'format' => $repSlot['format'] ?? $ownSlot['format'] ?? 'Post',
+                'projectId' => $repSlot['projectId'] ?? $ownSlot['projectId'] ?? (string) $this->project_id,
                 'allocatedAt' => $allocatedAt,
             ];
 
+            // Preserve execution & schedule metadata from own slot or report
             foreach (['scheduledDate', 'scheduledTime', 'prManager', 'topic', 'publishedAt', 'publishedUrl', 'isPublished', 'notes'] as $metaKey) {
-                if (array_key_exists($metaKey, $existingConfig) && $existingConfig[$metaKey] !== null && $existingConfig[$metaKey] !== '') {
-                    $slotItem[$metaKey] = $existingConfig[$metaKey];
+                $val = $repSlot[$metaKey] ?? $ownSlot[$metaKey] ?? null;
+                if ($val !== null && $val !== '') {
+                    $slotItem[$metaKey] = $val;
                 }
             }
 

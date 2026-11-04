@@ -12,7 +12,7 @@ class TelegramService
         return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8');
     }
 
-    public static function buildTelegramMessageUrl($resData, $fallbackChatId = null)
+    public static function buildTelegramMessageUrl($resData, $fallbackChatId = null, $threadId = null, array $allMessageIds = [])
     {
         if (!is_array($resData) || !isset($resData['result'])) {
             return null;
@@ -33,16 +33,27 @@ class TelegramService
             return null;
         }
 
-        $chatIdStr = (string)$chatId;
+        $allMessageIds = array_values(array_unique(array_filter(array_map('intval', $allMessageIds))));
+        if (!empty($allMessageIds) && !in_array((int) $messageId, $allMessageIds, true)) {
+            array_unshift($allMessageIds, (int) $messageId);
+        }
+        $idPart = !empty($allMessageIds) ? implode(',', $allMessageIds) : (string) $messageId;
+
+        $chatIdStr = (string) $chatId;
         if (str_starts_with($chatIdStr, '-100')) {
             $cleanChatId = substr($chatIdStr, 4);
-            return "https://t.me/c/{$cleanChatId}/{$messageId}";
         } elseif (str_starts_with($chatIdStr, '-')) {
             $cleanChatId = substr($chatIdStr, 1);
-            return "https://t.me/c/{$cleanChatId}/{$messageId}";
         } else {
-            return "https://t.me/c/{$chatIdStr}/{$messageId}";
+            $cleanChatId = $chatIdStr;
         }
+
+        $parsedThreadId = self::parseThreadId($threadId);
+        if ($parsedThreadId) {
+            return "https://t.me/c/{$cleanChatId}/{$parsedThreadId}/{$idPart}";
+        }
+
+        return "https://t.me/c/{$cleanChatId}/{$idPart}";
     }
 
     public static function parseThreadId($rawThreadId): ?int
@@ -101,6 +112,18 @@ class TelegramService
                 $body = $response->body();
             }
 
+            // Fallback for thread not found: if threadId is invalid in this chat, retry without thread ID
+            if ($threadId && str_contains(strtolower($body), 'thread not found')) {
+                Log::warning("Telegram thread {$threadId} not found in chat {$params['chat_id']}, retrying without thread ID");
+                $threadId = null;
+                unset($params['message_thread_id']);
+                $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $params);
+                if ($response->successful()) {
+                    return $response->json();
+                }
+                $body = $response->body();
+            }
+
             Log::warning("Telegram HTML sendMessage failed, retrying as plain text. Error: " . $body);
 
             // Second attempt: strip HTML tags and send as plain text (no parse_mode)
@@ -128,6 +151,16 @@ class TelegramService
                 $newChatId = $resData2['parameters']['migrate_to_chat_id'];
                 Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$plainParams['chat_id']} to {$newChatId}");
                 $plainParams['chat_id'] = $newChatId;
+                $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
+                if ($response2->successful()) {
+                    return $response2->json();
+                }
+                $body2 = $response2->body();
+            }
+
+            if ($threadId && str_contains(strtolower($body2), 'thread not found')) {
+                Log::warning("Telegram thread {$threadId} not found in chat {$plainParams['chat_id']}, retrying plain text without thread ID");
+                unset($plainParams['message_thread_id']);
                 $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
                 if ($response2->successful()) {
                     return $response2->json();
@@ -419,9 +452,12 @@ class TelegramService
                     continue;
                 }
                 $ext = 'jpg';
-                if (str_contains($mimeType, 'png')) $ext = 'png';
-                elseif (str_contains($mimeType, 'webp')) $ext = 'webp';
-                elseif (str_contains($mimeType, 'jpeg')) $ext = 'jpg';
+                if (str_contains($mimeType, 'png'))
+                    $ext = 'png';
+                elseif (str_contains($mimeType, 'webp'))
+                    $ext = 'webp';
+                elseif (str_contains($mimeType, 'jpeg'))
+                    $ext = 'jpg';
 
                 $parsedReceipts[] = [
                     'mimeType' => $mimeType,
@@ -464,7 +500,7 @@ class TelegramService
 
                     $response = $sendSingle($chatId, $safeCaption, $useHtml);
                     if ($response->successful()) {
-                        self::recordReportTelegramUrl($report, $response->json(), $chatId);
+                        self::recordReportTelegramUrl($report, $response->json(), $chatId, $threadId);
                         return true;
                     }
 
@@ -475,7 +511,7 @@ class TelegramService
                         Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$chatId} to {$chatId}");
                         $response = $sendSingle($chatId, $safeCaption, $useHtml);
                         if ($response->successful()) {
-                            self::recordReportTelegramUrl($report, $response->json(), $chatId);
+                            self::recordReportTelegramUrl($report, $response->json(), $chatId, $threadId);
                             return true;
                         }
                         $body = $response->body();
@@ -491,7 +527,7 @@ class TelegramService
 
                         $retryResponse = $sendSingle($chatId, $plainCaption, false);
                         if ($retryResponse->successful()) {
-                            self::recordReportTelegramUrl($report, $retryResponse->json(), $chatId);
+                            self::recordReportTelegramUrl($report, $retryResponse->json(), $chatId, $threadId);
                             return true;
                         }
 
@@ -501,7 +537,7 @@ class TelegramService
                             $chatId = $retryData['parameters']['migrate_to_chat_id'];
                             $retryResponse2 = $sendSingle($chatId, $plainCaption, false);
                             if ($retryResponse2->successful()) {
-                                self::recordReportTelegramUrl($report, $retryResponse2->json(), $chatId);
+                                self::recordReportTelegramUrl($report, $retryResponse2->json(), $chatId, $threadId);
                                 return true;
                             }
                         }
@@ -509,7 +545,7 @@ class TelegramService
 
                     // Fallback only if photo sending failed completely: send text first, then photo
                     $msgRes = self::sendMessage($chatId, $text, $threadId);
-                    self::recordReportTelegramUrl($report, $msgRes, $chatId);
+                    self::recordReportTelegramUrl($report, $msgRes, $chatId, $threadId);
 
                     $fallbackParams = [
                         'chat_id' => $chatId,
@@ -536,6 +572,7 @@ class TelegramService
                     // Chunk photos into albums of up to 10 photos (Telegram allows 2-10 items per album)
                     $chunks = array_chunk($parsedReceipts, 10);
                     $firstResult = null;
+                    $allMessageIds = [];
 
                     foreach ($chunks as $chunkIdx => $chunk) {
                         $chunkCaption = null;
@@ -554,6 +591,13 @@ class TelegramService
 
                         if (count($chunk) >= 2) {
                             $res = self::sendMediaGroup($chatId, $chunk, $chunkCaption, $threadId, $useHtml);
+                            if ($res && !empty($res['result']) && is_array($res['result'])) {
+                                foreach ($res['result'] as $msg) {
+                                    if (!empty($msg['message_id'])) {
+                                        $allMessageIds[] = (int) $msg['message_id'];
+                                    }
+                                }
+                            }
                         } else {
                             // If exactly 1 photo in this chunk (e.g. 11th photo)
                             $single = $chunk[0];
@@ -569,6 +613,9 @@ class TelegramService
                             $singleRes = Http::attach('photo', $single['binary'], "receipt_extra.{$singleExt}", ['Content-Type' => $singleMime])
                                 ->post("https://api.telegram.org/bot{$token}/sendPhoto", $pParams);
                             $res = $singleRes->successful() ? $singleRes->json() : false;
+                            if ($res && !empty($res['result']['message_id'])) {
+                                $allMessageIds[] = (int) $res['result']['message_id'];
+                            }
                         }
 
                         if ($chunkIdx === 0) {
@@ -577,7 +624,7 @@ class TelegramService
                     }
 
                     if ($firstResult) {
-                        self::recordReportTelegramUrl($report, $firstResult, $chatId);
+                        self::recordReportTelegramUrl($report, $firstResult, $chatId, $threadId, $allMessageIds);
                         return true;
                     }
 
@@ -585,7 +632,7 @@ class TelegramService
 
                     // Fallback only if media group failed completely
                     $msgRes = self::sendMessage($chatId, $text, $threadId);
-                    self::recordReportTelegramUrl($report, $msgRes, $chatId);
+                    self::recordReportTelegramUrl($report, $msgRes, $chatId, $threadId);
 
                     foreach ($parsedReceipts as $idx => $item) {
                         $ext = $item['ext'] ?? 'jpg';
@@ -610,18 +657,18 @@ class TelegramService
 
         $msgRes = self::sendMessage($chatId, $text, $threadId);
         if ($msgRes) {
-            self::recordReportTelegramUrl($report, $msgRes, $chatId);
+            self::recordReportTelegramUrl($report, $msgRes, $chatId, $threadId);
             return true;
         }
         return false;
     }
 
-    protected static function recordReportTelegramUrl($report, $resData, $chatId): void
+    protected static function recordReportTelegramUrl($report, $resData, $chatId, $threadId = null, array $allMessageIds = []): void
     {
         if (!$report || !is_object($report) || !($report instanceof \App\Models\Report)) {
             return;
         }
-        $tgUrl = self::buildTelegramMessageUrl($resData, $chatId);
+        $tgUrl = self::buildTelegramMessageUrl($resData, $chatId, $threadId, $allMessageIds);
         if ($tgUrl) {
             try {
                 $report->update(['telegram_message_url' => $tgUrl]);
@@ -645,14 +692,31 @@ class TelegramService
 
         $url = trim($url);
 
-        // Pattern 1: https://t.me/c/4329107459/123
-        if (preg_match('#(?:https?://)?t\.me/c/(\d+)/(\d+)#', $url, $matches)) {
+        // Pattern 1: https://t.me/c/<chat_id>/... (with optional topic and message id/ids)
+        if (preg_match('#(?:https?://)?t\.me/c/(\d+)/+(.+)$#i', $url, $matches)) {
             $cleanChatId = $matches[1];
-            $messageId = (int)$matches[2];
+            $rest = explode('?', $matches[2])[0];
+            $rest = explode('#', $rest)[0];
+            $segments = array_values(array_filter(explode('/', $rest), fn($s) => $s !== ''));
+            if (empty($segments)) {
+                return null;
+            }
+            $lastSegment = end($segments);
+
+            $ids = [];
+            foreach (explode(',', $lastSegment) as $part) {
+                $part = trim($part);
+                if (is_numeric($part)) {
+                    $ids[] = (int) $part;
+                }
+            }
+            if (empty($ids)) {
+                return null;
+            }
 
             $chatId = '-100' . $cleanChatId;
 
-            $defaultChatId = (string)(config('services.telegram.reports_chat_id') ?: config('services.telegram.chat_id'));
+            $defaultChatId = (string) (config('services.telegram.reports_chat_id') ?: config('services.telegram.chat_id'));
             if ($defaultChatId) {
                 $cleanDefault = ltrim($defaultChatId, '-');
                 if (str_starts_with($cleanDefault, '100')) {
@@ -665,15 +729,37 @@ class TelegramService
 
             return [
                 'chat_id' => $chatId,
-                'message_id' => $messageId,
+                'message_id' => $ids[0],
+                'message_ids' => $ids,
             ];
         }
 
-        // Pattern 2: https://t.me/channel_name/123
-        if (preg_match('#(?:https?://)?t\.me/([a-zA-Z0-9_]+)/(\d+)#', $url, $matches)) {
+        // Pattern 2: https://t.me/<channel_name>/... (public channels or supergroup usernames)
+        if (preg_match('#(?:https?://)?t\.me/([a-zA-Z0-9_]+)/+(.+)$#i', $url, $matches) && strtolower($matches[1]) !== 'c') {
+            $channel = '@' . $matches[1];
+            $rest = explode('?', $matches[2])[0];
+            $rest = explode('#', $rest)[0];
+            $segments = array_values(array_filter(explode('/', $rest), fn($s) => $s !== ''));
+            if (empty($segments)) {
+                return null;
+            }
+            $lastSegment = end($segments);
+
+            $ids = [];
+            foreach (explode(',', $lastSegment) as $part) {
+                $part = trim($part);
+                if (is_numeric($part)) {
+                    $ids[] = (int) $part;
+                }
+            }
+            if (empty($ids)) {
+                return null;
+            }
+
             return [
-                'chat_id' => '@' . $matches[1],
-                'message_id' => (int)$matches[2],
+                'chat_id' => $channel,
+                'message_id' => $ids[0],
+                'message_ids' => $ids,
             ];
         }
 
@@ -696,38 +782,81 @@ class TelegramService
 
         try {
             $chatId = $identifiers['chat_id'];
-            $messageId = $identifiers['message_id'];
+            $messageIds = !empty($identifiers['message_ids']) ? $identifiers['message_ids'] : [$identifiers['message_id']];
+            $messageIds = array_values(array_unique(array_filter(array_map('intval', $messageIds))));
 
-            $response = Http::post("https://api.telegram.org/bot{$token}/deleteMessage", [
-                'chat_id' => $chatId,
-                'message_id' => $messageId,
-            ]);
-
-            if ($response->successful()) {
-                Log::info("Deleted telegram message {$messageId} in chat {$chatId} for report #" . ($report->id ?? 'unknown'));
-                return true;
+            if (empty($messageIds)) {
+                return false;
             }
 
-            $body = $response->body();
-            $resData = json_decode($body, true);
-            if (isset($resData['parameters']['migrate_to_chat_id'])) {
-                $newChatId = $resData['parameters']['migrate_to_chat_id'];
-                $response2 = Http::post("https://api.telegram.org/bot{$token}/deleteMessage", [
-                    'chat_id' => $newChatId,
-                    'message_id' => $messageId,
-                ]);
-                if ($response2->successful() || str_contains($response2->body(), 'message to delete not found')) {
-                    return true;
+            // 1. Bulk delete if multiple message IDs exist (via deleteMessages Telegram Bot API)
+            if (count($messageIds) > 1) {
+                try {
+                    $bulkRes = Http::post("https://api.telegram.org/bot{$token}/deleteMessages", [
+                        'chat_id' => $chatId,
+                        'message_ids' => $messageIds,
+                    ]);
+
+                    if ($bulkRes->successful()) {
+                        Log::info("Bulk deleted telegram messages [" . implode(',', $messageIds) . "] in chat {$chatId} for report #" . ($report->id ?? 'unknown'));
+                        return true;
+                    }
+
+                    $bulkBody = $bulkRes->body();
+                    $bData = json_decode($bulkBody, true);
+                    if (isset($bData['parameters']['migrate_to_chat_id'])) {
+                        $newChatId = $bData['parameters']['migrate_to_chat_id'];
+                        $bulkRes2 = Http::post("https://api.telegram.org/bot{$token}/deleteMessages", [
+                            'chat_id' => $newChatId,
+                            'message_ids' => $messageIds,
+                        ]);
+                        if ($bulkRes2->successful()) {
+                            Log::info("Bulk deleted telegram messages [" . implode(',', $messageIds) . "] in migrated chat {$newChatId} for report #" . ($report->id ?? 'unknown'));
+                            return true;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::debug("Bulk deleteMessages failed, falling back to individual deleteMessage: " . $e->getMessage());
                 }
             }
 
-            if (str_contains($body, 'message to delete not found')) {
-                Log::info("Telegram message {$messageId} in chat {$chatId} was already deleted.");
-                return true;
+            // 2. Individual deleteMessage fallback
+            $allSuccess = true;
+            foreach ($messageIds as $messageId) {
+                $response = Http::post("https://api.telegram.org/bot{$token}/deleteMessage", [
+                    'chat_id' => $chatId,
+                    'message_id' => $messageId,
+                ]);
+
+                if ($response->successful()) {
+                    Log::info("Deleted telegram message {$messageId} in chat {$chatId} for report #" . ($report->id ?? 'unknown'));
+                    continue;
+                }
+
+                $body = $response->body();
+                $resData = json_decode($body, true);
+                if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                    $newChatId = $resData['parameters']['migrate_to_chat_id'];
+                    $response2 = Http::post("https://api.telegram.org/bot{$token}/deleteMessage", [
+                        'chat_id' => $newChatId,
+                        'message_id' => $messageId,
+                    ]);
+                    if ($response2->successful() || str_contains($response2->body(), 'message to delete not found')) {
+                        continue;
+                    }
+                    $body = $response2->body();
+                }
+
+                if (str_contains($body, 'message to delete not found')) {
+                    Log::info("Telegram message {$messageId} in chat {$chatId} was already deleted.");
+                    continue;
+                }
+
+                Log::warning("Failed to delete telegram message {$messageId} in chat {$chatId}: {$body}");
+                $allSuccess = false;
             }
 
-            Log::warning("Failed to delete telegram message {$messageId} in chat {$chatId}: {$body}");
-            return false;
+            return $allSuccess;
         } catch (\Throwable $e) {
             Log::error("Telegram deleteReportNotification exception: " . $e->getMessage());
             return false;
@@ -838,10 +967,9 @@ class TelegramService
 
     public static function sendSubmissionNotification($integration, $data, $lang = 'uz', $newlyFilledKeys = null)
     {
-        $chatId = config('services.telegram.submissions_chat_id');
-        if (!$chatId) {
-            $chatId = config('services.telegram.chat_id'); // fallback
-        }
+        $chatId = config('services.telegram.submissions_chat_id')
+            ?: config('services.telegram.reports_chat_id')
+            ?: config('services.telegram.chat_id');
 
         $locales = [
             'ru' => [
@@ -878,7 +1006,7 @@ class TelegramService
         $totalSlots = $integration->slots_count;
 
         // Filter and compile filled slots
-        $filledSlots = collect($data)->filter(function($val) {
+        $filledSlots = collect($data)->filter(function ($val) {
             return is_string($val) && trim($val) !== '';
         });
 
@@ -966,6 +1094,19 @@ class TelegramService
                             }
                         }
 
+                        if (!$responseJson && $threadId && str_contains(strtolower($body), 'thread not found')) {
+                            Log::warning("Telegram thread {$threadId} not found for submission photo in chat {$chatId}, retrying without thread ID");
+                            $threadId = null;
+                            unset($photoParams['message_thread_id']);
+                            $retryPhotoResponse = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
+                                ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
+                            if ($retryPhotoResponse->successful()) {
+                                $responseJson = $retryPhotoResponse->json();
+                            } else {
+                                $body = $retryPhotoResponse->body();
+                            }
+                        }
+
                         if (!$responseJson) {
                             Log::error("Telegram sendPhoto failed, retrying plain text: " . $body);
                             $responseJson = self::sendMessage($chatId, $text, $threadId);
@@ -1018,7 +1159,8 @@ class TelegramService
         $chatId = config('services.telegram.requisites_chat_id')
             ?: config('services.telegram.submissions_chat_id')
             ?: config('services.telegram.chat_id');
-        if (!$chatId) return false;
+        if (!$chatId)
+            return false;
 
         $threadId = self::parseThreadId(
             config('services.telegram.requisites_thread_id')
@@ -1195,7 +1337,8 @@ class TelegramService
     public static function getBotInfo(): ?array
     {
         $token = config('services.telegram.bot_token');
-        if (!$token) return null;
+        if (!$token)
+            return null;
 
         return \Illuminate\Support\Facades\Cache::remember('telegram_bot_info', 86400, function () use ($token) {
             try {

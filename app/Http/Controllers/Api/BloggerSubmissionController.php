@@ -237,12 +237,16 @@ class BloggerSubmissionController extends Controller
 
         Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
 
-        // Find newly filled slot keys
+        // Find newly filled slot keys or slots that haven't received telegram confirmation yet
         $newData = $incomingData;
         $newlyFilledKeys = [];
         foreach ($newData as $key => $value) {
+            if (!preg_match('/^slot_\d+$/', $key)) {
+                continue;
+            }
             $oldValue = $oldData[$key] ?? null;
-            if (!empty($value) && empty($oldValue)) {
+            $oldTgUrl = $oldData["{$key}_tg_url"] ?? null;
+            if (!empty($value) && (empty($oldValue) || empty($oldTgUrl))) {
                 $newlyFilledKeys[] = $key;
             }
         }
@@ -253,18 +257,18 @@ class BloggerSubmissionController extends Controller
             'newlyFilledKeys' => $newlyFilledKeys,
         ]);
 
-        // Trigger Telegram submission notification after response to speed up submission
+        // Send Telegram notification synchronously to ensure delivery and prevent closure serialization failures with large Base64 screenshots
         $lang = $request->input('lang', 'uz');
         $data = $incomingData;
-        dispatch(function () use ($integration, $data, $lang, $newlyFilledKeys) {
-            try {
-                Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
-                $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $data, $lang, $newlyFilledKeys);
-                Log::info('Telegram sendSubmissionNotification result: ' . ($result ? 'true' : 'false'));
-            } catch (\Throwable $e) {
-                Log::error("Failed to send submission webhook: " . $e->getMessage());
-            }
-        })->afterResponse();
+        try {
+            Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
+            $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $data, $lang, $newlyFilledKeys);
+            Log::info('Telegram sendSubmissionNotification result: ' . ($result ? 'true' : 'false'));
+        } catch (\Throwable $e) {
+            Log::error("Failed to send submission webhook: " . $e->getMessage());
+        }
+
+        $sub->refresh();
 
         \App\Services\ActivityLogger::submission('RECEIVED', "Получен отчет от блогера '{$integration->blogger_name}' (интеграция #{$integration->id})", [
             'submission_id' => $sub->id,

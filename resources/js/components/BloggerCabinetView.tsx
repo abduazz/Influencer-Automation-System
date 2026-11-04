@@ -171,10 +171,16 @@ export default function BloggerCabinetView({
       const matches = integrations.filter(i => String(i.id) === String(urlParams.integrationId) || i.bloggerCabinetToken === urlParams.integrationId);
       if (matches.length > 0) {
         const matched = matches.find(i => i.status !== 'completed' && i.kanbanStage !== 'completed') || matches[matches.length - 1];
-        if (matched && matched.id !== selectedIntegrationId) {
-          setSelectedIntegrationId(matched.id);
-          setActivePlatform(matched.platform);
-          setActiveSlotsCount(matched.slotsCount);
+        if (matched) {
+          if (matched.id !== selectedIntegrationId) {
+            setSelectedIntegrationId(matched.id);
+          }
+          if (matched.platform && matched.platform !== activePlatform) {
+            setActivePlatform(matched.platform);
+          }
+          if (matched.slotsCount && matched.slotsCount !== activeSlotsCount) {
+            setActiveSlotsCount(matched.slotsCount);
+          }
           return;
         }
       }
@@ -540,18 +546,26 @@ export default function BloggerCabinetView({
     setFormData(normalizedFormData);
 
     // Check if at least one new slot is being filled in this turn
-    const hasNewInput = Array.from({ length: activeSlotsCount }).some((_, idx) => {
+    const unsubmittedIndices = sortedSlotIndices.filter(idx => !submittedData[`slot_${idx + 1}`]);
+    const hasNewInput = unsubmittedIndices.some((idx) => {
       const key = `slot_${idx + 1}`;
-      return !submittedData[key] && !!normalizedFormData[key] && normalizedFormData[key].trim() !== '';
+      return !!normalizedFormData[key] && normalizedFormData[key].trim() !== '';
     });
 
     if (!hasNewInput) {
       alert(lang === 'ru'
-        ? "Пожалуйста, заполните хотя бы один новый слот перед отправкой!"
+        ? "Пожалуйста, заполните хотя бы один слот перед отправкой!"
         : lang === 'uz'
-          ? "Iltimos, yuborishdan oldin kamida bitta yangi slotni to‘ldiring!"
-          : "Please fill at least one new slot before submitting!"
+          ? "Iltimos, yuborishdan oldin kamida bitta slotni to‘ldiring!"
+          : "Please fill at least one slot before submitting!"
       );
+      const firstEmptySlotNum = unsubmittedIndices.length > 0 ? unsubmittedIndices[0] + 1 : null;
+      if (firstEmptySlotNum !== null) {
+        const el = document.querySelector(`[data-slot-key="slot_${firstEmptySlotNum}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
       return;
     }
 
@@ -681,8 +695,8 @@ export default function BloggerCabinetView({
               }
             }}
             className={`px-3.5 py-1.5 font-extrabold rounded-lg transition duration-150 flex items-center gap-1.5 cursor-pointer ${copiedCabinetLink
-                ? 'bg-emerald-600 text-white'
-                : 'bg-black hover:bg-neutral-900 text-white'
+              ? 'bg-emerald-600 text-white'
+              : 'bg-black hover:bg-neutral-900 text-white'
               }`}
           >
             {copiedCabinetLink ? <Check className="w-3.5 h-3.5 text-white" /> : <Link className="w-3.5 h-3.5" />}
@@ -843,8 +857,8 @@ export default function BloggerCabinetView({
                             }
                           }}
                           className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-extrabold transition cursor-pointer select-none ${copiedReferralLink
-                              ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                              : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-200 text-neutral-800'
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                            : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-200 text-neutral-800'
                             }`}
                           title={
                             selectedIntegration.referralLink
@@ -891,8 +905,8 @@ export default function BloggerCabinetView({
                           type="button"
                           onClick={() => setLang(l)}
                           className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${lang === l
-                              ? 'bg-white text-black shadow-sm'
-                              : 'text-neutral-400 hover:text-neutral-600'
+                            ? 'bg-white text-black shadow-sm'
+                            : 'text-neutral-400 hover:text-neutral-600'
                             }`}
                         >
                           {l}
@@ -1021,8 +1035,8 @@ export default function BloggerCabinetView({
                             }
                           }}
                           className={`p-4 bg-white border rounded-xl space-y-3 transition duration-150 ${draggingOverSlotKey === slotKey
-                              ? 'border-black ring-2 ring-black/10 bg-neutral-50/80 shadow-md'
-                              : 'border-neutral-200 shadow-2xs'
+                            ? 'border-black ring-2 ring-black/10 bg-neutral-50/80 shadow-md'
+                            : 'border-neutral-200 shadow-2xs'
                             }`}
                         >
                           <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
@@ -1033,10 +1047,10 @@ export default function BloggerCabinetView({
 
                               {/* Specific Platform & Format Badge */}
                               <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wide border ${slotPlatform === 'Instagram'
-                                  ? 'bg-pink-50 text-pink-600 border-pink-100'
-                                  : slotPlatform === 'Telegram'
-                                    ? 'bg-sky-50 text-sky-600 border-sky-100'
-                                    : 'bg-red-50 text-red-600 border-red-100'
+                                ? 'bg-pink-50 text-pink-600 border-pink-100'
+                                : slotPlatform === 'Telegram'
+                                  ? 'bg-sky-50 text-sky-600 border-sky-100'
+                                  : 'bg-red-50 text-red-600 border-red-100'
                                 }`}>
                                 {slotPlatform} - {slotFormat}
                               </span>
@@ -1272,8 +1286,8 @@ export default function BloggerCabinetView({
                                         }
                                       }}
                                       className={`w-full pl-9 pr-10 py-1.5 border focus:outline-none rounded-md text-xs transition ${isInvalid
-                                          ? 'bg-red-50 border-red-500 text-red-900 focus:border-red-600'
-                                          : 'bg-white border-neutral-200 text-black font-medium focus:border-black'
+                                        ? 'bg-red-50 border-red-500 text-red-900 focus:border-red-600'
+                                        : 'bg-white border-neutral-200 text-black font-medium focus:border-black'
                                         }`}
                                     />
                                   );
@@ -1313,13 +1327,26 @@ export default function BloggerCabinetView({
                   })}
                 </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition"
-                >
-                  <Send className="w-3.5 h-3.5 text-white" />
-                  <span>{t.submitAllDeliverablesBtn} ({activeSlotsCount} {t.slotsColumn.toLowerCase()})</span>
-                </button>
+                {(() => {
+                  const unsubmittedIndices = sortedSlotIndices.filter(idx => !submittedData[`slot_${idx + 1}`]);
+                  const newlyFilledCount = unsubmittedIndices.filter(idx => !!formData[`slot_${idx + 1}`]?.trim()).length;
+                  const displayCount = newlyFilledCount > 0
+                    ? newlyFilledCount
+                    : (unsubmittedIndices.length > 0 ? unsubmittedIndices.length : activeSlotsCount);
+                  return (
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
+                    >
+                      <Send className="w-3.5 h-3.5 text-white" />
+                      <span>
+                        {newlyFilledCount > 0
+                          ? (lang === 'ru' ? `Отправить публикации (${newlyFilledCount})` : lang === 'uz' ? `Nashrlarni yuborish (${newlyFilledCount} ta)` : `Submit Deliverables (${newlyFilledCount})`)
+                          : `${t.submitAllDeliverablesBtn} (${displayCount} ${t.slotsColumn.toLowerCase()})`}
+                      </span>
+                    </button>
+                  );
+                })()}
               </form>
             )}
           </div>
@@ -1360,8 +1387,8 @@ export default function BloggerCabinetView({
                           </td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-0.5 rounded font-bold text-[9px] border uppercase ${sub.status === 'approved'
-                                ? 'bg-black text-white border-black'
-                                : 'bg-white text-neutral-600 border-neutral-200'
+                              ? 'bg-black text-white border-black'
+                              : 'bg-white text-neutral-600 border-neutral-200'
                               }`}>
                               {sub.status === 'approved' ? t.statusApproved : t.statusPending}
                             </span>

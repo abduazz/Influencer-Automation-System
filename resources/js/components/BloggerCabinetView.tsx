@@ -1328,6 +1328,8 @@ export default function BloggerCabinetView({
                 </div>
 
                 {(() => {
+                  const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
+                  const submittedData = existingSub?.data || {};
                   const unsubmittedIndices = sortedSlotIndices.filter(idx => !submittedData[`slot_${idx + 1}`]);
                   const newlyFilledCount = unsubmittedIndices.filter(idx => !!formData[`slot_${idx + 1}`]?.trim()).length;
                   const displayCount = newlyFilledCount > 0

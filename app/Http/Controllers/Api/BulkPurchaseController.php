@@ -243,6 +243,10 @@ class BulkPurchaseController extends Controller
                 }
             }
 
+            if (empty($existingIntegration->kanban_stage) || in_array($existingIntegration->kanban_stage, ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'], true)) {
+                $updateData['kanban_stage'] = 'paid_in_progress';
+            }
+
             $existingIntegration->update($updateData);
         } else {
             $token = Integration::generateCabinetToken($cleanBloggerName);
@@ -260,6 +264,7 @@ class BulkPurchaseController extends Controller
                 'paid_slots_count' => $slotsToAllocate,
                 'end_date' => $endDate,
                 'status' => 'active',
+                'kanban_stage' => 'paid_in_progress',
                 'blogger_cabinet_token' => $token,
                 'slots_config' => $allocatedSlotsConfig,
             ]);

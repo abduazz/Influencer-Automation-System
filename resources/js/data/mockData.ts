@@ -40,13 +40,13 @@ export interface KanbanColumn {
 }
 
 export const INITIAL_KANBAN_COLUMNS: KanbanColumn[] = [
-  { id: 'backlog', title: 'Backlog', color: 'slate', hidden: true },
   { id: 'wishlist', title: 'Желаемые', color: 'purple' },
   { id: 'negotiation', title: 'Обговорить', color: 'amber' },
   { id: 'requisites_pending', title: 'Получить реквизиты', color: 'blue' },
   { id: 'ready_for_payment', title: 'Готов к оплате', color: 'indigo' },
   { id: 'paid_in_progress', title: 'Оплачено / В работе', color: 'emerald' },
   { id: 'completed', title: 'Завершено', color: 'neutral' },
+  { id: 'backlog', title: 'Backlog', color: 'slate', hidden: true },
 ];
 
 export interface BloggerRequisites {

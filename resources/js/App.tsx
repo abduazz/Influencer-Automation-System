@@ -786,16 +786,17 @@ export default function App() {
     }
   };
 
-  const handleClearKanbanStage = async (stage: string) => {
+  const handleClearKanbanStage = async (stage: string, projectId?: string) => {
     setIntegrations((prev) => prev.map((item) => {
-      if (item.kanbanStage === stage) {
+      const matchProject = !projectId || projectId === 'all' || String(item.projectId) === String(projectId);
+      if (item.kanbanStage === stage && matchProject) {
         return { ...item, kanbanStage: undefined };
       }
       return item;
     }));
 
     try {
-      await clearKanbanStageApi(stage);
+      await clearKanbanStageApi(stage, projectId);
     } catch (err) {
       console.error('Failed to clear kanban stage on backend:', err);
     }
@@ -808,8 +809,10 @@ export default function App() {
         createdBy: newInt.createdBy || currentUserName || currentUserEmail || undefined,
       }, currentUserEmail || undefined);
       setIntegrations((prev) => [created, ...prev]);
+      return created;
     } catch (err) {
       console.error('Failed to create integration in Kanban:', err);
+      throw err;
     }
   };
 
@@ -1254,14 +1257,14 @@ export default function App() {
                 onUpdateIntegrationStage={handleUpdateIntegrationStage}
                 onAddIntegration={handleAddIntegrationToKanban}
                 onEditIntegration={handleEditIntegration}
-                onDeleteIntegration={currentUserRole === 'super_admin' ? handleDeleteIntegration : undefined}
+                onDeleteIntegration={(currentUserRole === 'super_admin' || currentUserRole === 'pr_manager') ? handleDeleteIntegration : undefined}
                 lang={lang}
                 userRole={currentUserRole}
                 currentUserEmail={currentUserEmail}
                 currentUserName={currentUserName}
                 bloggerRequisitesList={bloggerRequisitesList}
                 onOpenRequisitesDirectory={() => setActiveTab('requisites_directory')}
-                onClearStage={handleClearKanbanStage}
+                onClearStage={currentUserRole === 'super_admin' ? handleClearKanbanStage : undefined}
                 onRefreshSubscribers={handleRefreshIntegrationSubscribers}
                 onResetSubscribersHistory={handleResetIntegrationSubscribersHistory}
                 onAddManualSnapshot={handleAddIntegrationSubscriberHistory}
@@ -1390,7 +1393,7 @@ export default function App() {
                 currentUserEmail={currentUserEmail}
                 onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
                 onEditIntegration={handleEditIntegration}
-                onDeleteIntegration={currentUserRole === 'super_admin' ? handleDeleteIntegration : undefined}
+                onDeleteIntegration={(currentUserRole === 'super_admin' || currentUserRole === 'pr_manager') ? handleDeleteIntegration : undefined}
                 onEditReport={handleEditReport}
                 title={translations[lang].reportsListTab || translations[lang].pageReportsFeed || (lang === 'ru' ? 'Список отчетов' : lang === 'uz' ? 'Hisobotlar ro‘yxati' : 'Reports List')}
                 description={
@@ -1420,7 +1423,7 @@ export default function App() {
                 currentUserEmail={currentUserEmail}
                 onDeleteReport={currentUserRole === 'super_admin' ? handleDeleteReport : undefined}
                 onEditIntegration={handleEditIntegration}
-                onDeleteIntegration={currentUserRole === 'super_admin' ? handleDeleteIntegration : undefined}
+                onDeleteIntegration={(currentUserRole === 'super_admin' || currentUserRole === 'pr_manager') ? handleDeleteIntegration : undefined}
                 onEditReport={handleEditReport}
                 title={translations[lang].otherExpensesTab}
                 description={

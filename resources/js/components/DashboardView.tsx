@@ -2401,14 +2401,27 @@ return (
                 <Edit3 className="w-3.5 h-3.5 text-neutral-600" />
                 <span>{lang === 'ru' ? 'Редактировать' : lang === 'uz' ? 'Tahrirlash' : 'Edit'}</span>
               </button>
-              {userRole === 'super_admin' && (
+              {(userRole === 'super_admin' || userRole === 'pr_manager') && (
                 <button
                   type="button"
                   onClick={() => {
-                    if (confirm(t.confirmDeleteIntegration)) {
-                      onDeleteIntegration(selectedIntegrationForDetails.id);
-                      setSelectedIntegrationForDetails(null);
-                    }
+                    const name = selectedIntegrationForDetails.bloggerName || '';
+                    const msg1 = lang === 'uz'
+                      ? `«${name}» bitimini o‘chirishni xohlaysizmi?`
+                      : lang === 'en'
+                        ? `Are you sure you want to delete the deal for "${name}"?`
+                        : `Вы действительно хотите удалить сделку блогера «${name}»?`;
+                    if (!window.confirm(msg1)) return;
+
+                    const msg2 = lang === 'uz'
+                      ? `DIQQAT! Ushbu amal qaytarilmaydi.\n\n«${name}» kartochkasi tizimdan butunlay o‘chiriladi. Haqiqatan ham tasdiqlaysizmi?`
+                      : lang === 'en'
+                        ? `WARNING! This action cannot be undone.\n\nThe deal for "${name}" will be permanently removed. Are you completely sure?`
+                        : `ВНИМАНИЕ! Это действие необратимо.\n\nКарточка блогера «${name}» будет безвозвратно удалена. Вы точно подтверждаете удаление?`;
+                    if (!window.confirm(msg2)) return;
+
+                    onDeleteIntegration(selectedIntegrationForDetails.id);
+                    setSelectedIntegrationForDetails(null);
                   }}
                   className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[10px] uppercase tracking-wide rounded-lg transition flex items-center gap-1 cursor-pointer border border-red-100"
                 >

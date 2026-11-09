@@ -125,16 +125,36 @@ class KanbanColumnController extends Controller
 
     public function clearStage(Request $request)
     {
-        $stage = $request->input('stage');
-        $clearedCount = 0;
-        if ($stage) {
-            $clearedCount = \App\Models\Integration::where('kanban_stage', $stage)->update(['kanban_stage' => null]);
+        $request->validate([
+            'stage' => 'required|string',
+            'projectId' => 'nullable|string',
+        ]);
 
-            \App\Services\ActivityLogger::kanban('CLEAR_STAGE', "Очищен этап '{$stage}' на Канбан доске (затронуто интеграций: {$clearedCount})", [
+        $stage = $request->input('stage');
+        $projectId = $request->input('projectId') ?? $request->input('project_id');
+        $clearedCount = 0;
+
+        if ($stage) {
+            $query = \App\Models\Integration::where('kanban_stage', $stage);
+
+            if (!empty($projectId) && $projectId !== 'all') {
+                $query->where('project_id', $projectId);
+            } else {
+                $scopedProjectIds = \App\Services\SubdomainService::getScopedProjectIds($request);
+                if ($scopedProjectIds !== null) {
+                    $query->whereIn('project_id', $scopedProjectIds);
+                }
+            }
+
+            $clearedCount = $query->update(['kanban_stage' => null]);
+
+            \App\Services\ActivityLogger::kanban('CLEAR_STAGE', "Очищен этап '{$stage}' на Канбан доске (проект: " . ($projectId ?: 'все') . ", затронуто интеграций: {$clearedCount})", [
                 'stage' => $stage,
+                'project_id' => $projectId ?: 'all',
                 'cleared_count' => $clearedCount,
             ]);
         }
-        return response()->json(['success' => true]);
+
+        return response()->json(['success' => true, 'cleared_count' => $clearedCount]);
     }
 }

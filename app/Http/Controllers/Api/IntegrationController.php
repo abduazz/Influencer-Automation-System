@@ -194,7 +194,7 @@ class IntegrationController extends Controller
             'currency' => $request->input('currency') ?: 'UZS',
             'end_date' => $request->endDate ?? now()->addDays(30)->format('Y-m-d'),
             'status' => $request->status ?? 'active',
-            'kanban_stage' => $request->input('kanbanStage'),
+            'kanban_stage' => $request->input('kanbanStage') ?: 'wishlist',
             'created_by' => $createdByName,
             'slots_config' => $request->slotsConfig,
             'comments' => $request->comments,

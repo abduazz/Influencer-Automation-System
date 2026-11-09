@@ -64,7 +64,7 @@ interface KanbanViewProps {
   currentUserName?: string | null;
   bloggerRequisitesList?: BloggerRequisites[];
   onOpenRequisitesDirectory?: () => void;
-  onClearStage?: (stageId: string) => void | Promise<void>;
+  onClearStage?: (stageId: string, projectId?: string) => void | Promise<void>;
   onRefreshSubscribers?: (integrationId: string, overrides?: any) => Promise<any>;
   onResetSubscribersHistory?: (integrationId: string) => Promise<any>;
   onAddManualSnapshot?: (integrationId: string, date: string, count: number, note?: string) => Promise<void>;
@@ -202,6 +202,12 @@ export default function KanbanView({
 
   const visibleColumns = useMemo(() => {
     return columns.filter(col => !col.hidden);
+  }, [columns]);
+
+  const selectableColumns = useMemo(() => {
+    const regular = columns.filter(c => c.id !== 'backlog');
+    const backlog = columns.find(c => c.id === 'backlog');
+    return backlog ? [...regular, backlog] : regular;
   }, [columns]);
 
   const isBacklogHidden = useMemo(() => {
@@ -621,7 +627,12 @@ export default function KanbanView({
 
     filteredIntegrations.forEach((item) => {
       if (!item.kanbanStage) return;
-      const stage = item.kanbanStage;
+      let stage = item.kanbanStage;
+      if (!map.has(stage)) {
+        // Fallback for orphaned stage (e.g. if custom column was deleted or renamed)
+        const fallbackStage = visibleColumns.find(c => c.id !== 'backlog')?.id || visibleColumns[0]?.id || 'wishlist';
+        stage = map.has(fallbackStage) ? fallbackStage : (columns.find(c => c.id !== 'backlog')?.id || 'wishlist');
+      }
       if (map.has(stage)) {
         map.get(stage)!.push(item);
       }
@@ -721,7 +732,10 @@ export default function KanbanView({
     setIsTgFocused(false);
     setEditPlatform('Instagram');
     setEditProjectId(selectedProjectId !== 'all' ? selectedProjectId : (projects[0]?.id || ''));
-    const startStage = stageId || columns[0]?.id || 'wishlist';
+    const defaultVisibleStage = visibleColumns.find(c => c.id !== 'backlog')?.id
+      || columns.find(c => !c.hidden && c.id !== 'backlog')?.id
+      || 'wishlist';
+    const startStage = stageId || defaultVisibleStage;
     setEditKanbanStage(startStage);
     setInitialKanbanStage(startStage);
     setEditPricePerSlot(0);
@@ -755,7 +769,10 @@ export default function KanbanView({
     setIsTgFocused(false);
     setEditPlatform(deal.platform || 'Instagram');
     setEditProjectId(deal.projectId || (projects[0] ? projects[0].id : ''));
-    const startStage = deal.kanbanStage || columns[0]?.id || 'wishlist';
+    const defaultVisibleStage = visibleColumns.find(c => c.id !== 'backlog')?.id
+      || columns.find(c => !c.hidden && c.id !== 'backlog')?.id
+      || 'wishlist';
+    const startStage = deal.kanbanStage || defaultVisibleStage;
     setEditKanbanStage(startStage);
     setInitialKanbanStage(startStage);
     setEditPricePerSlot(deal.pricePerSlot ?? 0);
@@ -794,6 +811,35 @@ export default function KanbanView({
     setSaveSuccess(false);
     setModalActiveTab('details');
     setIsOpeningChat(false);
+  };
+
+  // Delete deal with double confirmation safeguard
+  const handleConfirmDeleteDeal = (dealId: string, bloggerName?: string, onCloseModal?: () => void) => {
+    if (!onDeleteIntegration) return;
+    const name = (bloggerName || '').trim() || (lang === 'uz' ? 'ushbu blogger' : lang === 'en' ? 'this blogger' : 'этого блогера');
+
+    // 1-й вопрос
+    const msg1 = lang === 'uz'
+      ? `«${name}» bitimini o‘chirishni xohlaysizmi?`
+      : lang === 'en'
+        ? `Are you sure you want to delete the deal for "${name}"?`
+        : `Вы действительно хотите удалить сделку блогера «${name}»?`;
+
+    if (!window.confirm(msg1)) return;
+
+    // 2-й вопрос (строгое повторное подтверждение)
+    const msg2 = lang === 'uz'
+      ? `DIQQAT! Ushbu amal qaytarilmaydi.\n\n«${name}» kartochkasi tizimdan butunlay o‘chiriladi. Haqiqatan ham tasdiqlaysizmi?`
+      : lang === 'en'
+        ? `WARNING! This action cannot be undone.\n\nThe deal for "${name}" will be permanently removed. Are you completely sure?`
+        : `ВНИМАНИЕ! Это действие необратимо.\n\nКарточка блогера «${name}» будет безвозвратно удалена. Вы точно подтверждаете удаление?`;
+
+    if (!window.confirm(msg2)) return;
+
+    onDeleteIntegration(dealId);
+    if (onCloseModal) {
+      onCloseModal();
+    }
   };
 
   // Quick Move & Save directly to payment column ("Готов к оплате")
@@ -1002,6 +1048,27 @@ export default function KanbanView({
           subscribersCount: editSubscribersCount !== '' ? Number(editSubscribersCount) : undefined,
           requisites: requisitesPayload,
         });
+
+        // Ensure newly created deal is not hidden by active board filters!
+        if (selectedProjectId !== 'all' && String(selectedProjectId) !== String(targetProjectId)) {
+          handleSelectProject(String(targetProjectId));
+        }
+        if (searchQuery.trim() && !editBloggerName.toLowerCase().includes(searchQuery.toLowerCase())) {
+          setSearchQuery('');
+        }
+        if (selectedPlatform !== 'all' && selectedPlatform !== editPlatform) {
+          setSelectedPlatform('all');
+        }
+
+        // If target stage is hidden, notify user or unhide so they immediately see their card
+        const targetCol = columns.find(c => c.id === finalKanbanStage);
+        if (targetCol?.hidden) {
+          if (finalKanbanStage === 'backlog') {
+            setBacklogNotification({ bloggerName: editBloggerName.trim(), dealId: 'new' });
+          } else {
+            handleToggleColumnVisibility(finalKanbanStage);
+          }
+        }
       } else if (selectedDeal) {
         const currentTg = editTelegramUsername.trim();
         const oldTg = (selectedDeal.telegramUsername || '').trim();
@@ -1496,13 +1563,35 @@ export default function KanbanView({
                       <button
                         type="button"
                         onClick={() => {
-                          if (window.confirm(lang === 'ru'
-                            ? `Убрать все карточки (${columnDeals.length}) из столбца "${getLocalizedColumnTitle(column, lang)}" с доски? Сами интеграции и статистика блогеров останутся в системе.`
-                            : lang === 'uz'
-                              ? `"${getLocalizedColumnTitle(column, lang)}" ustunidagi barcha kartochkalarni (${columnDeals.length}) doskadan olib tashlansinmi? Integratsiyalar va statistika tizimda saqlanib qoladi.`
-                              : `Remove all cards (${columnDeals.length}) from "${getLocalizedColumnTitle(column, lang)}"? Integrations and blogger statistics will remain preserved.`
-                          )) {
-                            onClearStage(column.id);
+                          const activeProj = selectedProjectId !== 'all' ? projects.find(p => String(p.id) === String(selectedProjectId)) : null;
+                          const projName = activeProj ? activeProj.name : null;
+
+                          const msgRu1 = projName
+                            ? `Убрать карточки (${columnDeals.length}) из столбца "${getLocalizedColumnTitle(column, lang)}" для проекта "${projName}"? Сами интеграции и статистика сохранятся.`
+                            : `ВНИМАНИЕ: Выбран режим «Все проекты». Убрать ВСЕ карточки (${columnDeals.length}) из столбца "${getLocalizedColumnTitle(column, lang)}" ВО ВСЕХ ПРОЕКТАХ? Сами интеграции сохранятся.`;
+
+                          const msgUz1 = projName
+                            ? `"${projName}" loyihasidagi "${getLocalizedColumnTitle(column, lang)}" ustunidan barcha kartochkalarni (${columnDeals.length}) doskadan olib tashlansinmi? Integratsiyalar tizimda saqlanib qoladi.`
+                            : `DIQQAT: "Barcha loyihalar" rejimi tanlangan. BARCHA LOYIHALARDAGI "${getLocalizedColumnTitle(column, lang)}" ustunidan barcha kartochkalar (${columnDeals.length}) olib tashlansinmi?`;
+
+                          const msgEn1 = projName
+                            ? `Remove cards (${columnDeals.length}) from "${getLocalizedColumnTitle(column, lang)}" for project "${projName}"? Integrations will remain preserved.`
+                            : `WARNING: "All Projects" mode is active. Remove ALL cards (${columnDeals.length}) from "${getLocalizedColumnTitle(column, lang)}" ACROSS ALL PROJECTS?`;
+
+                          const confirmText1 = lang === 'uz' ? msgUz1 : lang === 'en' ? msgEn1 : msgRu1;
+
+                          // 1-й вопрос
+                          if (!window.confirm(confirmText1)) return;
+
+                          // 2-й контрольный вопрос для защиты от случайного нажатия
+                          const msgRu2 = `ПОДТВЕРЖДЕНИЕ: Вы точно уверены? Все карточки (${columnDeals.length}) столбца "${getLocalizedColumnTitle(column, lang)}" будут убраны с доски. Продолжить?`;
+                          const msgUz2 = `TASDIQLASH: Haqiqatan ham ishonchingiz komilmi? "${getLocalizedColumnTitle(column, lang)}" ustunidagi (${columnDeals.length}) kartochka doskadan olinadi. Davom etilsinmi?`;
+                          const msgEn2 = `CONFIRMATION: Are you completely sure? All (${columnDeals.length}) cards from "${getLocalizedColumnTitle(column, lang)}" will be removed from the board. Proceed?`;
+
+                          const confirmText2 = lang === 'uz' ? msgUz2 : lang === 'en' ? msgEn2 : msgRu2;
+
+                          if (window.confirm(confirmText2)) {
+                            onClearStage(column.id, selectedProjectId !== 'all' ? selectedProjectId : undefined);
                           }
                         }}
                         title={`${t.kanbanClearStageTooltip || 'Очистить столбец'} (${getLocalizedColumnTitle(column, lang)})`}
@@ -1591,7 +1680,7 @@ export default function KanbanView({
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onDeleteIntegration(deal.id);
+                                    handleConfirmDeleteDeal(deal.id, deal.bloggerName);
                                   }}
                                   className="p-0.5 text-slate-400 hover:text-rose-600 transition cursor-pointer"
                                   title={t.deleteTooltip || 'Удалить'}
@@ -1794,11 +1883,15 @@ export default function KanbanView({
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => {
                               e.stopPropagation();
-                              onUpdateIntegrationStage(deal.id, e.target.value);
+                              const nextStage = e.target.value;
+                              onUpdateIntegrationStage(deal.id, nextStage);
+                              if (nextStage === 'backlog') {
+                                setBacklogNotification({ bloggerName: deal.bloggerName, dealId: deal.id });
+                              }
                             }}
                             className="w-full text-[10px] font-medium bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded px-1.5 py-0.5 text-slate-600 hover:text-slate-900 focus:outline-none focus:ring-1 focus:ring-black cursor-pointer transition"
                           >
-                            {columns.map(c => (
+                            {selectableColumns.map(c => (
                               <option key={c.id} value={c.id}>
                                 {getLocalizedColumnTitle(c, lang)} {c.id === 'backlog' ? `📁 (${t.kanbanBacklogBadge || 'Отказы'})` : c.hidden ? `(${t.kanbanHiddenBadge || 'скрытая'})` : ''}
                               </option>
@@ -2497,7 +2590,7 @@ export default function KanbanView({
                       onChange={(e) => setEditKanbanStage(e.target.value)}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition cursor-pointer"
                     >
-                      {columns.map((c) => (
+                      {selectableColumns.map((c) => (
                         <option key={c.id} value={c.id}>
                           {getLocalizedColumnTitle(c, lang)} {c.id === 'backlog' ? `📁 (${t.kanbanBacklogBadge || 'Отказы'})` : c.hidden ? `(${t.kanbanHiddenBadge || 'скрытая'})` : ''}
                         </option>
@@ -3003,10 +3096,7 @@ export default function KanbanView({
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm(t.kanbanDeleteDealConfirm || 'Вы уверены, что хотите удалить эту сделку?')) {
-                        onDeleteIntegration(selectedDeal.id);
-                        handleCloseDealModal();
-                      }
+                      handleConfirmDeleteDeal(selectedDeal.id, selectedDeal.bloggerName, handleCloseDealModal);
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
                   >

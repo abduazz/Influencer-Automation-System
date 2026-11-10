@@ -110,9 +110,16 @@ class BloggerSubmissionController extends Controller
             }
 
             $isBase64Image = str_starts_with($val, 'data:image/');
+            $isStories = strtolower($slotFormat) === 'stories';
 
             if ($isBase64Image) {
-                // Screenshot/image proof is valid for any slot platform and format
+                if (!$isStories) {
+                    return response()->json([
+                        'message' => "Slot #{$slotNum} ({$slotPlatform} - {$slotFormat}): Rasm va skrinshotlar faqat Stories uchun ruxsat etilgan. Iltimos, e'lon qilingan video/post havolasini kiriting!",
+                        'errors' => [$key => ["Rasm va skrinshotlar faqat Stories uchun ruxsat etilgan."]]
+                    ], 422);
+                }
+                // Screenshot/image proof is valid only for Stories
                 continue;
             }
 
@@ -130,6 +137,14 @@ class BloggerSubmissionController extends Controller
             }
 
             $trimmedLower = strtolower($trimmed);
+
+            // Block raw image file URLs for non-Stories
+            if (!$isStories && preg_match('/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i', $trimmedLower)) {
+                return response()->json([
+                    'message' => "Slot #{$slotNum} ({$slotPlatform} - {$slotFormat}): Rasm fayli havolasi qabul qilinmaydi. Iltimos, e'lon qilingan video/post havolasini kiriting!",
+                    'errors' => [$key => ["Rasm fayli havolasi qabul qilinmaydi."]]
+                ], 422);
+            }
 
             // 1. Block cabinet links
             if (
@@ -153,11 +168,22 @@ class BloggerSubmissionController extends Controller
             }
 
             // 3. Platform specific domain validation
-            if ($slotPlatform === 'Instagram' && !str_contains($trimmedLower, 'instagram.com') && !str_contains($trimmedLower, 'instagr.am')) {
-                return response()->json([
-                    'message' => "Slot #{$slotNum} (Instagram): Iltimos, haqiqiy Instagram havolasini kiriting!",
-                    'errors' => [$key => ["Haqiqiy Instagram havolasi talab qilinadi."]]
-                ], 422);
+            if ($slotPlatform === 'Instagram') {
+                if (!str_contains($trimmedLower, 'instagram.com') && !str_contains($trimmedLower, 'instagr.am')) {
+                    return response()->json([
+                        'message' => "Slot #{$slotNum} (Instagram): Iltimos, haqiqiy Instagram havolasini kiriting!",
+                        'errors' => [$key => ["Haqiqiy Instagram havolasi talab qilinadi."]]
+                    ], 422);
+                }
+                if (strtolower($slotFormat) === 'reels') {
+                    if (!str_contains($trimmedLower, '/reel/') && !str_contains($trimmedLower, '/reels/') && !str_contains($trimmedLower, '/p/')) {
+                        return response()->json([
+                            'message' => "Slot #{$slotNum} (Instagram - Reels): Iltimos, haqiqiy Reels video havolasini kiriting (https://www.instagram.com/reel/...)!",
+                            'errors' => [$key => ["Haqiqiy Reels video havolasi talab qilinadi."]]
+                        ], 422);
+                    }
+                }
+            } elseif ($slotPlatform === 'Telegram' && !str_contains($trimmedLower, 't.me') && !str_contains($trimmedLower, 'telegram.me') && !str_contains($trimmedLower, 'telegram.org') && !str_contains($trimmedLower, 'telegram.dog')) {
             } elseif ($slotPlatform === 'Telegram' && !str_contains($trimmedLower, 't.me') && !str_contains($trimmedLower, 'telegram.me') && !str_contains($trimmedLower, 'telegram.org') && !str_contains($trimmedLower, 'telegram.dog')) {
                 return response()->json([
                     'message' => "Slot #{$slotNum} (Telegram): Iltimos, haqiqiy Telegram havolasini kiriting!",

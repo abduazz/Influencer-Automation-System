@@ -191,6 +191,7 @@ class IntegrationController extends Controller
             'price_per_slot' => $request->pricePerSlot,
             'slots_count' => $request->slotsCount,
             'paid_slots_count' => $request->paidSlotsCount ?? $request->slotsCount,
+            'total_amount' => $request->input('totalAmount', $request->input('total_amount')),
             'currency' => $request->input('currency') ?: 'UZS',
             'end_date' => $request->endDate ?? now()->addDays(30)->format('Y-m-d'),
             'status' => $request->status ?? 'active',
@@ -323,6 +324,8 @@ class IntegrationController extends Controller
             $updateData['price_per_slot'] = $request->pricePerSlot;
         if ($request->has('slotsCount'))
             $updateData['slots_count'] = $request->slotsCount;
+        if ($request->has('totalAmount') || $request->has('total_amount'))
+            $updateData['total_amount'] = $request->input('totalAmount', $request->input('total_amount'));
         if ($request->has('paidSlotsCount'))
             $updateData['paid_slots_count'] = $request->paidSlotsCount;
         if ($request->has('paidAmount'))
@@ -432,7 +435,9 @@ class IntegrationController extends Controller
                     $repUpdate['blogger_page_link'] = $updateData['blogger_page_link'];
                 if (isset($updateData['referral_link']))
                     $repUpdate['destination'] = $updateData['referral_link'];
-                if (isset($updateData['price_per_slot'])) {
+                if (isset($updateData['total_amount'])) {
+                    $repUpdate['total_amount'] = $updateData['total_amount'];
+                } elseif (isset($updateData['price_per_slot'])) {
                     $rawTot = ($rep->slots_count ?: 1) * $updateData['price_per_slot'];
                     $rawPaid = ($rep->paid_slots_count ?: $rep->slots_count ?: 1) * $updateData['price_per_slot'];
                     $repUpdate['total_amount'] = (abs($rawTot - round($rawTot)) < 0.05) ? round($rawTot) : round($rawTot, 2);

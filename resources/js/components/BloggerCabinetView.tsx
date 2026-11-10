@@ -349,6 +349,17 @@ export default function BloggerCabinetView({
   // Process an image file from file input, drop or clipboard paste
   const handleFileProcess = async (slotKey: string, file: File) => {
     if (!file) return;
+
+    // Check if slot format permits screenshots (strictly Stories)
+    const slotNum = parseInt(slotKey.replace('slot_', ''));
+    const slotCfg = selectedIntegration?.slotsConfig?.[slotNum - 1];
+    const slotPlatform = slotCfg?.platform || activePlatform;
+    const slotFormat = slotCfg?.format || (slotPlatform === 'Instagram' ? 'Stories' : 'Post');
+    if (slotFormat !== 'Stories') {
+      alert(t.screenshotNotAllowed.replace('{platform}', slotPlatform).replace('{format}', slotFormat));
+      return;
+    }
+
     // Automatically switch this slot to screenshot mode so the user sees the preview immediately
     setSlotInputModes(prev => ({ ...prev, [slotKey]: 'screenshot' }));
     try {
@@ -404,9 +415,6 @@ export default function BloggerCabinetView({
       const images = extractImagesFromDataTransfer(e.clipboardData);
       if (images.length === 0) return;
 
-      e.preventDefault();
-      e.stopPropagation();
-
       // Check which slot to target:
       // 1. Element inside a slot container
       let targetSlotKey: string | null = null;
@@ -438,8 +446,22 @@ export default function BloggerCabinetView({
         targetSlotKey = 'slot_1';
       }
 
-      handleFileProcess(targetSlotKey, images[0]);
       const slotNumStr = targetSlotKey.replace('slot_', '');
+      const slotNum = parseInt(slotNumStr);
+      const slotCfg = selectedIntegration?.slotsConfig?.[slotNum - 1];
+      const slotPlat = slotCfg?.platform || activePlatform;
+      const slotFmt = slotCfg?.format || (slotPlat === 'Instagram' ? 'Stories' : 'Post');
+      if (slotFmt !== 'Stories') {
+        e.preventDefault();
+        e.stopPropagation();
+        alert(t.screenshotNotAllowed.replace('{platform}', slotPlat).replace('{format}', slotFmt));
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      handleFileProcess(targetSlotKey, images[0]);
       setPasteNotification(
         lang === 'ru'
           ? `✓ Скриншот слота #${slotNumStr} добавлен из буфера обмена (Ctrl+V / ⌘V)`
@@ -451,7 +473,7 @@ export default function BloggerCabinetView({
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [formSubmitted, activeSlotsCount, formData, activeFocusedSlotKey, lang]);
+  }, [formSubmitted, activeSlotsCount, formData, activeFocusedSlotKey, lang, selectedIntegration, activePlatform, t]);
 
   const handleClearSlot = (slotKey: string) => {
     setFilePreviews(prev => {
@@ -476,12 +498,17 @@ export default function BloggerCabinetView({
     url: string,
     platform: string,
     _format?: string
-  ): { valid: boolean; errorKey?: 'cabinetUrlForbidden' | 'invalidPlatformUrl' } => {
+  ): { valid: boolean; errorKey?: 'cabinetUrlForbidden' | 'invalidPlatformUrl' | 'screenshotNotAllowed' | 'invalidReelsUrl' } => {
     if (!url || typeof url !== 'string' || !url.trim()) {
       return { valid: true };
     }
 
+    const isScreenshotAllowed = _format === 'Stories';
+
     if (url.startsWith('data:image/') || url.startsWith('mock')) {
+      if (!isScreenshotAllowed) {
+        return { valid: false, errorKey: 'screenshotNotAllowed' };
+      }
       return { valid: true };
     }
 
@@ -491,6 +518,11 @@ export default function BloggerCabinetView({
     }
 
     const lower = trimmed.toLowerCase();
+
+    // Block direct image file URLs for non-Stories formats
+    if (!isScreenshotAllowed && /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(lower)) {
+      return { valid: false, errorKey: 'screenshotNotAllowed' };
+    }
 
     // 1. Block cabinet links
     const isCabinetLink = lower.includes('/c/') ||
@@ -506,10 +538,16 @@ export default function BloggerCabinetView({
       return { valid: false, errorKey: 'invalidPlatformUrl' };
     }
 
-    // 3. Platform specific rules
+    // 3. Platform & format specific rules
     if (platform === 'Instagram') {
       if (!lower.includes('instagram.com') && !lower.includes('instagr.am')) {
         return { valid: false, errorKey: 'invalidPlatformUrl' };
+      }
+      if (_format === 'Reels') {
+        const isReelUrl = lower.includes('/reel/') || lower.includes('/reels/') || lower.includes('/p/');
+        if (!isReelUrl) {
+          return { valid: false, errorKey: 'invalidReelsUrl' };
+        }
       }
     } else if (platform === 'Telegram') {
       if (!lower.includes('t.me') && !lower.includes('telegram.me') && !lower.includes('telegram.org') && !lower.includes('telegram.dog')) {
@@ -588,7 +626,11 @@ export default function BloggerCabinetView({
         if (!validation.valid) {
           const errorMsg = validation.errorKey === 'cabinetUrlForbidden'
             ? `Slot #${slotNum} (${slotPlatform}): ${t.cabinetUrlForbidden}`
-            : `Slot #${slotNum} (${slotPlatform}): ${t.invalidPlatformUrl.replace('{platform}', slotPlatform)}`;
+            : validation.errorKey === 'screenshotNotAllowed'
+              ? `Slot #${slotNum} (${slotPlatform} - ${slotFormat}): ${t.screenshotNotAllowed.replace('{platform}', slotPlatform).replace('{format}', slotFormat)}`
+              : validation.errorKey === 'invalidReelsUrl'
+                ? `Slot #${slotNum} (${slotPlatform} - ${slotFormat}): ${t.invalidReelsUrl}`
+                : `Slot #${slotNum} (${slotPlatform}): ${t.invalidPlatformUrl.replace('{platform}', slotPlatform)}`;
           alert(errorMsg);
           return;
         }
@@ -963,12 +1005,11 @@ export default function BloggerCabinetView({
                       : true; // fallback to true if no integration mapped
 
                     const slotVal = formData[slotKey] || '';
+                    const isScreenshotAllowed = slotFormat === 'Stories';
                     const isImageValue = slotVal.startsWith('data:image/') || slotVal.startsWith('mock') || !!filePreviews[slotKey];
-                    const currentMode = slotInputModes[slotKey] || (
-                      isImageValue
-                        ? 'screenshot'
-                        : (slotPlatform === 'Instagram' && slotFormat === 'Stories' ? 'screenshot' : 'link')
-                    );
+                    const currentMode = isScreenshotAllowed
+                      ? (slotInputModes[slotKey] || (isImageValue ? 'screenshot' : 'screenshot'))
+                      : 'link';
 
                     return (
                       <React.Fragment key={slotKey}>
@@ -1009,6 +1050,10 @@ export default function BloggerCabinetView({
                             setDraggingOverSlotKey(null);
                             const images = extractImagesFromDataTransfer(e.dataTransfer);
                             if (images.length > 0) {
+                              if (!isScreenshotAllowed) {
+                                alert(t.screenshotNotAllowed.replace('{platform}', slotPlatform).replace('{format}', slotFormat));
+                                return;
+                              }
                               handleFileProcess(slotKey, images[0]);
                               setPasteNotification(
                                 lang === 'ru'
@@ -1024,6 +1069,10 @@ export default function BloggerCabinetView({
                             if (images.length > 0) {
                               e.preventDefault();
                               e.stopPropagation();
+                              if (!isScreenshotAllowed) {
+                                alert(t.screenshotNotAllowed.replace('{platform}', slotPlatform).replace('{format}', slotFormat));
+                                return;
+                              }
                               handleFileProcess(slotKey, images[0]);
                               setPasteNotification(
                                 lang === 'ru'
@@ -1070,8 +1119,8 @@ export default function BloggerCabinetView({
                             </span>
                           </div>
 
-                          {/* Submission Mode Selector (Link vs Screenshot) - when slot is not locked */}
-                          {!isSlotSubmitted && (
+                          {/* Submission Mode Selector (Link vs Screenshot) - only when slot is not locked AND screenshots are allowed */}
+                          {!isSlotSubmitted && isScreenshotAllowed && (
                             <div className="flex items-center gap-1 bg-neutral-100 p-0.5 rounded-lg border border-neutral-200 w-fit text-[10px] font-bold">
                               <button
                                 type="button"
@@ -1260,6 +1309,10 @@ export default function BloggerCabinetView({
                                         if (images.length > 0) {
                                           e.preventDefault();
                                           e.stopPropagation();
+                                          if (!isScreenshotAllowed) {
+                                            alert(t.screenshotNotAllowed.replace('{platform}', slotPlatform).replace('{format}', slotFormat));
+                                            return;
+                                          }
                                           handleFileProcess(slotKey, images[0]);
                                           setPasteNotification(
                                             lang === 'ru'
@@ -1272,12 +1325,14 @@ export default function BloggerCabinetView({
                                       }}
                                       placeholder={
                                         slotPlatform === 'Instagram'
-                                          ? `e.g. https://instagram.com/reel/abc123xyz (${slotFormat})`
+                                          ? (slotFormat === 'Reels'
+                                            ? 'e.g. https://www.instagram.com/reel/abc123xyz/'
+                                            : `e.g. https://instagram.com/p/abc123xyz/ (${slotFormat})`)
                                           : slotPlatform === 'Telegram'
                                             ? `e.g. https://t.me/channel_name/123 (${slotFormat})`
                                             : `e.g. https://youtube.com/watch?v=abc123xyz (${slotFormat})`
                                       }
-                                      value={slotVal}
+                                      value={slotVal.startsWith('data:image/') || slotVal.startsWith('mock') ? '' : slotVal}
                                       onChange={(e) => handleLinkChange(slotKey, e.target.value)}
                                       onBlur={(e) => {
                                         let v = e.target.value.trim();
@@ -1294,12 +1349,18 @@ export default function BloggerCabinetView({
                                 })()}
                               </div>
                               <div className="flex items-center justify-between text-[7.5px] text-neutral-400 px-0.5">
-                                <span>{lang === 'ru' ? 'Вставьте ссылку или скриншот:' : lang === 'uz' ? 'Havola yoki skrinshotni qo‘ying:' : 'Paste link or screenshot:'}</span>
-                                <span className="inline-flex items-center gap-1 font-mono">
-                                  <kbd className="px-1 py-0.2 bg-neutral-100 border border-neutral-200 rounded text-[7px] font-bold text-neutral-600 shadow-2xs">Ctrl + V</kbd>
-                                  <span>/</span>
-                                  <kbd className="px-1 py-0.2 bg-neutral-100 border border-neutral-200 rounded text-[7px] font-bold text-neutral-600 shadow-2xs">⌘V</kbd>
+                                <span>
+                                  {isScreenshotAllowed
+                                    ? (lang === 'ru' ? 'Вставьте ссылку или скриншот:' : lang === 'uz' ? 'Havola yoki skrinshotni qo‘ying:' : 'Paste link or screenshot:')
+                                    : (lang === 'ru' ? 'Вставьте ссылку на публикацию:' : lang === 'uz' ? 'Nashr havolasini qo‘ying:' : 'Paste publication link:')}
                                 </span>
+                                {isScreenshotAllowed && (
+                                  <span className="inline-flex items-center gap-1 font-mono">
+                                    <kbd className="px-1 py-0.2 bg-neutral-100 border border-neutral-200 rounded text-[7px] font-bold text-neutral-600 shadow-2xs">Ctrl + V</kbd>
+                                    <span>/</span>
+                                    <kbd className="px-1 py-0.2 bg-neutral-100 border border-neutral-200 rounded text-[7px] font-bold text-neutral-600 shadow-2xs">⌘V</kbd>
+                                  </span>
+                                )}
                               </div>
                               {(() => {
                                 if (slotVal.trim() !== '') {
@@ -1311,7 +1372,11 @@ export default function BloggerCabinetView({
                                         <span>
                                           {v.errorKey === 'cabinetUrlForbidden'
                                             ? t.cabinetUrlForbidden
-                                            : t.invalidPlatformUrl.replace('{platform}', slotPlatform)}
+                                            : v.errorKey === 'screenshotNotAllowed'
+                                              ? t.screenshotNotAllowed.replace('{platform}', slotPlatform).replace('{format}', slotFormat)
+                                              : v.errorKey === 'invalidReelsUrl'
+                                                ? t.invalidReelsUrl
+                                                : t.invalidPlatformUrl.replace('{platform}', slotPlatform)}
                                         </span>
                                       </p>
                                     );

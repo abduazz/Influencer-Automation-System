@@ -152,7 +152,7 @@ export function fetchIntegrations(): Promise<Integration[]> {
   return request<Integration[]>('/api/integrations');
 }
 export function createIntegration(
-  data: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'>,
+  data: Omit<Integration, 'id' | 'paidAmount' | 'bloggerCabinetToken'> & { totalAmount?: number; paidAmount?: number },
   userEmail?: string
 ): Promise<Integration> {
   const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;

@@ -153,6 +153,7 @@ export const translations = {
     cabinetUrlForbidden: 'Using your cabinet link as a publication proof is forbidden. Please paste a direct publication link!',
     invalidPlatformUrl: 'Invalid {platform} URL. Please provide a valid publication link for {platform}.',
     screenshotNotAllowed: 'Screenshots/images are only allowed for Instagram Stories. Please provide a direct publication link for {platform} - {format}.',
+    invalidReelsUrl: 'Please provide a valid Instagram Reels video link (e.g. https://instagram.com/reel/...)',
 
     // Extra fields to ensure absolute TS safety across all views
     editIntegration: 'Edit Integration',
@@ -668,6 +669,7 @@ export const translations = {
     cabinetUrlForbidden: 'Использование ссылки на кабинет в качестве отчета запрещено. Вставьте прямую ссылку на публикацию!',
     invalidPlatformUrl: 'Неверный формат ссылки для {platform}. Укажите прямую ссылку на публикацию {platform}.',
     screenshotNotAllowed: 'Скриншоты и изображения разрешены только для Instagram Stories. Укажите прямую ссылку на публикацию для {platform} - {format}.',
+    invalidReelsUrl: 'Пожалуйста, укажите прямую ссылку на видео Instagram Reels (например: https://instagram.com/reel/...)',
 
     // Extra fields to ensure absolute TS safety across all views
     editIntegration: 'Редактировать интеграцию',
@@ -1183,6 +1185,7 @@ export const translations = {
     cabinetUrlForbidden: 'Kabinet havolasini yuborish taqiqlangan. Iltimos, e’lon qilingan post/stories havolasini kiriting!',
     invalidPlatformUrl: '{platform} uchun havola formati noto‘g‘ri. Iltimos, haqiqiy {platform} havolasini kiriting.',
     screenshotNotAllowed: 'Rasm va skrinshotlar faqat Instagram Stories uchun ruxsat etilgan. Iltimos, {platform} - {format} uchun to‘g‘ridan-to‘g‘ri havola kiriting.',
+    invalidReelsUrl: 'Iltimos, haqiqiy Instagram Reels video havolasini kiriting (masalan: https://instagram.com/reel/...)',
 
     // Extra fields to ensure absolute TS safety across all views
     editIntegration: 'Integratsiyani tahrirlash',

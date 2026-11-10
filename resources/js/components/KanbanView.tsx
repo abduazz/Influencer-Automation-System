@@ -9,7 +9,7 @@ import { Language, translations } from '../translations';
 import { getCabinetUrl } from '../utils/url';
 import { copyToClipboard } from '../utils/clipboard';
 import { getPlatformBadgeClasses, formatTelegramLink } from '../utils/platform';
-import { cleanAmount, formatPrice } from '../utils/format';
+import { cleanAmount, formatPrice, parsePrice } from '../utils/format';
 import {
   Search,
   Plus,
@@ -55,7 +55,7 @@ interface KanbanViewProps {
   columns?: KanbanColumn[];
   onUpdateColumns?: (columns: KanbanColumn[]) => void;
   onUpdateIntegrationStage: (integrationId: string, newStage: string) => void;
-  onAddIntegration: (integration: Omit<Integration, 'id' | 'totalAmount'>) => void;
+  onAddIntegration: (integration: Omit<Integration, 'id'> & { totalAmount?: number }) => void;
   onEditIntegration?: (integrationId: string, updatedFields: Partial<Integration>) => void | Promise<void>;
   onDeleteIntegration?: (integrationId: string) => void;
   lang: Language;
@@ -402,6 +402,7 @@ export default function KanbanView({
   const [initialKanbanStage, setInitialKanbanStage] = useState('');
   const [isQuickMoving, setIsQuickMoving] = useState(false);
   const [editPricePerSlot, setEditPricePerSlot] = useState<number | ''>(0);
+  const [editTotalAmount, setEditTotalAmount] = useState<number | ''>(0);
   const [editCurrency, setEditCurrency] = useState<'UZS' | 'USD' | 'RUB' | 'TJS' | 'KGS' | 'KZT'>('UZS');
   const [editSlotsCount, setEditSlotsCount] = useState<number | ''>(1);
   const [editPaidAmount, setEditPaidAmount] = useState<number | ''>(0);
@@ -419,6 +420,42 @@ export default function KanbanView({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const isDraggingRef = React.useRef(false);
+
+  const handlePricePerSlotChange = (newPrice: number | '') => {
+    setEditPricePerSlot(newPrice);
+    if (newPrice === '') {
+      setEditTotalAmount('');
+      return;
+    }
+    const slotsNum = typeof editSlotsCount === 'number' && editSlotsCount > 0 ? editSlotsCount : 1;
+    setEditTotalAmount(cleanAmount(Number(newPrice) * slotsNum));
+  };
+
+  const handleTotalAmountChange = (newTotal: number | '') => {
+    setEditTotalAmount(newTotal);
+    if (newTotal === '') {
+      setEditPricePerSlot('');
+      return;
+    }
+    const t = Number(newTotal);
+    const slotsNum = typeof editSlotsCount === 'number' && editSlotsCount > 0 ? editSlotsCount : 1;
+    const computedPrice = slotsNum > 0 ? (t / slotsNum) : 0;
+    const roundedPrice = Math.round(computedPrice * 100) / 100;
+    setEditPricePerSlot(cleanAmount(roundedPrice));
+  };
+
+  const handleSlotsCountChange = (val: string) => {
+    const newSlots = val === '' ? '' : parseInt(val, 10) || 1;
+    setEditSlotsCount(newSlots);
+    const slotsNum = typeof newSlots === 'number' && newSlots > 0 ? newSlots : 1;
+    if (editPricePerSlot !== '' && Number(editPricePerSlot) > 0) {
+      setEditTotalAmount(cleanAmount(Number(editPricePerSlot) * slotsNum));
+    } else if (editTotalAmount !== '' && Number(editTotalAmount) > 0) {
+      const computedPrice = slotsNum > 0 ? (Number(editTotalAmount) / slotsNum) : 0;
+      const roundedPrice = Math.round(computedPrice * 100) / 100;
+      setEditPricePerSlot(cleanAmount(roundedPrice));
+    }
+  };
 
   const handleCardNumberChange = (raw: string) => {
     if (/^[\d\s]*$/.test(raw)) {
@@ -739,6 +776,7 @@ export default function KanbanView({
     setEditKanbanStage(startStage);
     setInitialKanbanStage(startStage);
     setEditPricePerSlot(0);
+    setEditTotalAmount(0);
     setEditCurrency('UZS');
     setEditSlotsCount(1);
     setEditPaidAmount(0);
@@ -775,13 +813,19 @@ export default function KanbanView({
     const startStage = deal.kanbanStage || defaultVisibleStage;
     setEditKanbanStage(startStage);
     setInitialKanbanStage(startStage);
-    setEditPricePerSlot(deal.pricePerSlot ?? 0);
+    const initialSlots = deal.slotsCount || 1;
+    const initialPrice = deal.pricePerSlot ?? 0;
+    const initialTotal = deal.totalAmount !== undefined && deal.totalAmount !== null
+      ? deal.totalAmount
+      : cleanAmount(initialPrice * initialSlots);
+    setEditPricePerSlot(initialPrice);
+    setEditTotalAmount(initialTotal);
+    setEditSlotsCount(initialSlots);
     const validCurrencies = ['UZS', 'USD', 'RUB', 'TJS', 'KGS', 'KZT'];
     const cur = (deal.currency && validCurrencies.includes(String(deal.currency).toUpperCase()))
       ? (String(deal.currency).toUpperCase() as 'UZS' | 'USD' | 'RUB' | 'TJS' | 'KGS' | 'KZT')
       : 'UZS';
     setEditCurrency(cur);
-    setEditSlotsCount(deal.slotsCount || 1);
     setEditPaidAmount(deal.paidAmount || 0);
     setEditPaidSlotsCount(deal.paidSlotsCount ?? (deal.paidAmount && deal.pricePerSlot ? Math.min(deal.slotsCount, Math.floor(deal.paidAmount / deal.pricePerSlot)) : 0));
     setEditStartDate(deal.startDate || new Date().toISOString().split('T')[0]);
@@ -856,7 +900,7 @@ export default function KanbanView({
     if (selectedDeal) {
       setIsQuickMoving(true);
       try {
-        const calculatedTotal = cleanAmount(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0));
+        const calculatedTotal = cleanAmount(editTotalAmount !== '' ? Number(editTotalAmount) : (Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)));
 
         let finalComments = [...editCommentsList];
         if (newCommentInput.trim()) {
@@ -969,7 +1013,7 @@ export default function KanbanView({
 
     setIsSavingEdit(true);
     try {
-      const calculatedTotal = cleanAmount(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0));
+      const calculatedTotal = cleanAmount(editTotalAmount !== '' ? Number(editTotalAmount) : (Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)));
 
       // Append typed comment in input box if user didn't explicitly click "Отправить"
       let finalComments = [...editCommentsList];
@@ -1035,6 +1079,7 @@ export default function KanbanView({
           platform: editPlatform,
           pricePerSlot: Number(editPricePerSlot) || 0,
           slotsCount: Number(editSlotsCount) || 1,
+          totalAmount: calculatedTotal,
           paidSlotsCount: Number(editPaidSlotsCount) || 0,
           paidAmount: Number(editPaidAmount) || 0,
           currency: editCurrency,
@@ -1134,6 +1179,79 @@ export default function KanbanView({
     await copyToClipboard(url);
     setCopiedId(integration.id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Helper to check if a stage represents "Оплачено"
+  const isPaidStage = (stageId?: string) => {
+    if (!stageId) return false;
+    if (stageId === 'paid_in_progress') return true;
+    const col = columns.find(c => c.id === stageId);
+    if (!col) return false;
+    return col.id === 'paid_in_progress' || /оплачен|paid|to.langan/i.test(col.title || '');
+  };
+
+  // Generates notification message text for blogger upon payment
+  const buildPaymentInstructionText = (deal: Integration, overrides?: {
+    projectId?: string;
+    totalAmount?: number | '';
+    pricePerSlot?: number | '';
+    slotsCount?: number | '';
+    currency?: string;
+    referralLink?: string;
+  }): string => {
+    const targetProjectId = overrides?.projectId || deal.projectId;
+    const project = projects.find(p => String(p.id) === String(targetProjectId));
+    const projectName = project ? project.name : (targetProjectId || '');
+
+    const total = overrides?.totalAmount !== undefined && overrides?.totalAmount !== ''
+      ? Number(overrides.totalAmount)
+      : (deal.totalAmount !== undefined && deal.totalAmount !== null
+        ? deal.totalAmount
+        : cleanAmount(Number(overrides?.pricePerSlot ?? deal.pricePerSlot ?? 0) * Number(overrides?.slotsCount ?? deal.slotsCount ?? 1)));
+
+    const cur = overrides?.currency || deal.currency || 'UZS';
+    const formattedAmount = `${formatPrice(total)} ${cur}`.trim();
+
+    const cabinetUrl = getCabinetUrl(deal.bloggerCabinetToken || deal.id);
+
+    let rawRef = overrides?.referralLink !== undefined ? overrides.referralLink : (deal.referralLink || '');
+    rawRef = rawRef.trim();
+    const referralUrl = rawRef ? (rawRef.startsWith('http://') || rawRef.startsWith('https://') ? rawRef : `https://${rawRef}`) : '';
+
+    return `Assalomu alaykum. ${projectName} brendini reklama qilishingiz uchun sizga kelishilgan ${formattedAmount} mablag' ko'rsatilgan kartaga muvaffaqqiyatli o'tkazildi.
+Sizga pastda ikkita havola (link) beriladi:
+1. Bajarilgan (joylangan) materillarni hisobot shaklida yuborish uchun maxsus platformaga havola;
+2. Storisda belgilash (otmetka qilish) uchun unikal havola.
+Sizdan e'tiborli bo'lishni va havola (link)larni adashtirib yubormaslikni so'raymiz!
+
+${cabinetUrl}
+
+Bu sizni shaxsiy kabinetingizga havola
+chiqarilgan / joylangan (publish) reels va storis havolalarini joylash uchun.
+
+${referralUrl}
+
+Bu esa storisda otmetka qilish uchun.
+
+‼️Faqat linklarni adashtirib yubormang iltimos‼️`;
+  };
+
+  // Copy payment instruction text to clipboard
+  const handleCopyPaymentInstruction = async (deal: Integration, overrides?: {
+    projectId?: string;
+    totalAmount?: number | '';
+    pricePerSlot?: number | '';
+    slotsCount?: number | '';
+    currency?: string;
+    referralLink?: string;
+  }, isModal = false) => {
+    const text = buildPaymentInstructionText(deal, overrides);
+    await copyToClipboard(text);
+    const key = isModal ? `instruction-modal-${deal.id}` : `instruction-${deal.id}`;
+    setCopiedId(key);
+    setTimeout(() => {
+      setCopiedId(prev => (prev === key ? null : prev));
+    }, 2000);
   };
 
   // Add / Edit Column logic
@@ -1236,16 +1354,16 @@ export default function KanbanView({
               type="button"
               onClick={() => handleSelectProject('all')}
               className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all duration-150 cursor-pointer shrink-0 ${selectedProjectId === 'all'
-                  ? 'bg-black text-white font-bold shadow-2xs'
-                  : 'bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200/80'
+                ? 'bg-black text-white font-bold shadow-2xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200/80'
                 }`}
             >
               <Layers className={`w-3.5 h-3.5 ${selectedProjectId === 'all' ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
               <span>{t.kanbanAllProjects || 'Все проекты'}</span>
               <span
                 className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold transition-colors ${selectedProjectId === 'all'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-slate-200/80 text-slate-600 group-hover:bg-slate-300/80'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-200/80 text-slate-600 group-hover:bg-slate-300/80'
                   }`}
               >
                 {loading && integrations.length === 0 ? (
@@ -1266,15 +1384,15 @@ export default function KanbanView({
                   type="button"
                   onClick={() => handleSelectProject(isSelected ? 'all' : String(project.id))}
                   className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all duration-150 cursor-pointer shrink-0 ${isSelected
-                      ? 'bg-black text-white font-bold shadow-2xs'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200/80'
+                    ? 'bg-black text-white font-bold shadow-2xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200/80'
                     }`}
                 >
                   <span>{project.name}</span>
                   <span
                     className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold transition-colors ${isSelected
-                        ? 'bg-white/20 text-white'
-                        : 'bg-slate-200/80 text-slate-600 group-hover:bg-slate-300/80'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-200/80 text-slate-600 group-hover:bg-slate-300/80'
                       }`}
                   >
                     {count}
@@ -1365,10 +1483,10 @@ export default function KanbanView({
                 type="button"
                 onClick={() => setIsGatewayModalOpen(true)}
                 className={`flex items-center gap-1.5 h-8 px-2.5 font-semibold text-xs rounded-lg border transition cursor-pointer shadow-2xs ${gatewayStatus && !gatewayStatus.isAuthorized
-                    ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300 ring-2 ring-rose-400/50 animate-pulse'
-                    : gatewayStatus?.isAuthorized
-                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
-                      : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'
+                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300 ring-2 ring-rose-400/50 animate-pulse'
+                  : gatewayStatus?.isAuthorized
+                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                    : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'
                   }`}
                 title={
                   gatewayStatus && !gatewayStatus.isAuthorized
@@ -1510,10 +1628,10 @@ export default function KanbanView({
                   handleDropOnColumn(e, column.id);
                 }}
                 className={`relative flex flex-col bg-white rounded-xl border overflow-hidden transition-all duration-150 w-[290px] min-w-[290px] shrink-0 h-full max-h-full ${isBacklogOverFirstCol
-                    ? 'border-neutral-900 ring-2 ring-neutral-900/40 bg-neutral-100/60 shadow-md'
-                    : isOver
-                      ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/20 shadow-md'
-                      : 'border-neutral-200 shadow-2xs'
+                  ? 'border-neutral-900 ring-2 ring-neutral-900/40 bg-neutral-100/60 shadow-md'
+                  : isOver
+                    ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/20 shadow-md'
+                    : 'border-neutral-200 shadow-2xs'
                   }`}
               >
                 {/* Backlog Drop Hint on first column when hovering left edge */}
@@ -1951,8 +2069,8 @@ export default function KanbanView({
                     type="button"
                     onClick={() => handleToggleColumnVisibility('backlog')}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 shrink-0 ${isVisible
-                        ? 'bg-white text-rose-600 border-rose-200 hover:bg-rose-50 shadow-2xs'
-                        : 'bg-black text-white border-black hover:bg-neutral-800 shadow-xs'
+                      ? 'bg-white text-rose-600 border-rose-200 hover:bg-rose-50 shadow-2xs'
+                      : 'bg-black text-white border-black hover:bg-neutral-800 shadow-xs'
                       }`}
                   >
                     {isVisible ? (
@@ -2026,8 +2144,8 @@ export default function KanbanView({
                       onDrop={(e) => handleSettingsDrop(e, col.id)}
                       onDragEnd={() => setDraggedSettingsColId(null)}
                       className={`flex items-center justify-between p-2.5 sm:p-3 bg-slate-50 rounded-xl border transition-all ${isDraggingThis
-                          ? 'opacity-40 border-dashed border-indigo-500 bg-indigo-50/20'
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-white shadow-2xs'
+                        ? 'opacity-40 border-dashed border-indigo-500 bg-indigo-50/20'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-white shadow-2xs'
                         }`}
                     >
                       <div className="flex items-center gap-2 truncate min-w-0 flex-1">
@@ -2094,8 +2212,8 @@ export default function KanbanView({
                           type="button"
                           onClick={() => handleToggleColumnVisibility(col.id)}
                           className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${!col.hidden
-                              ? 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
-                              : 'bg-slate-200/80 text-slate-500 border-slate-300 hover:bg-slate-300'
+                            ? 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                            : 'bg-slate-200/80 text-slate-500 border-slate-300 hover:bg-slate-300'
                             }`}
                           title={col.hidden ? (t.kanbanShowOnBoard || 'Показать на доске') : (t.kanbanHideFromBoard || 'Скрыть с доски')}
                         >
@@ -2282,6 +2400,34 @@ export default function KanbanView({
                   </button>
                 )}
 
+                {isPaidStage(editKanbanStage || selectedDeal.kanbanStage) && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPaymentInstruction(selectedDeal, {
+                      projectId: editProjectId,
+                      totalAmount: editTotalAmount,
+                      pricePerSlot: editPricePerSlot,
+                      slotsCount: editSlotsCount,
+                      currency: editCurrency,
+                      referralLink: editReferralLink,
+                    }, true)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-xl border border-emerald-200 transition cursor-pointer shadow-2xs shrink-0"
+                    title={lang === 'uz' ? 'Bloggerga to‘lov xabarini nusxalash' : 'Скопировать текст сообщения блогеру'}
+                  >
+                    {copiedId === `instruction-modal-${selectedDeal.id}` ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{t.kanbanCopiedSuccess || 'Скопировано!'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{lang === 'uz' ? 'Xabar' : lang === 'en' ? 'Text' : 'Текст'}</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
 
 
 
@@ -2296,8 +2442,8 @@ export default function KanbanView({
                   }}
                   disabled={isOpeningChat}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition cursor-pointer ${modalActiveTab === 'chat'
-                      ? 'bg-[#229ED9] text-white border-[#229ED9] shadow-xs'
-                      : 'bg-sky-50 hover:bg-sky-100 text-[#229ED9] border-sky-200/80'
+                    ? 'bg-[#229ED9] text-white border-[#229ED9] shadow-xs'
+                    : 'bg-sky-50 hover:bg-sky-100 text-[#229ED9] border-sky-200/80'
                     }`}
                   title="Открыть онлайн Telegram-чат прямо в карточке"
                 >
@@ -2457,8 +2603,8 @@ export default function KanbanView({
                                   onClick={handleOpenChatTab}
                                   disabled={isCreateMode || !selectedDeal || isOpeningChat}
                                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition shadow-xs cursor-pointer ${isCreateMode || !selectedDeal
-                                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                                      : 'bg-[#229ED9] hover:bg-[#1b8bc2] active:bg-[#177fa2] text-white'
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                                    : 'bg-[#229ED9] hover:bg-[#1b8bc2] active:bg-[#177fa2] text-white'
                                     }`}
                                   title={
                                     isCreateMode || !selectedDeal
@@ -2623,7 +2769,7 @@ export default function KanbanView({
                     <div className="text-xs font-bold text-slate-500">
                       {t.kanbanTotalPayable || 'Итого к оплате:'}{' '}
                       <span className="font-black text-slate-900">
-                        {formatPrice(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0))} {editCurrency}
+                        {formatPrice(editTotalAmount !== '' ? editTotalAmount : (Number(editPricePerSlot || 0) * Number(editSlotsCount || 0)))} {editCurrency}
                       </span>
                     </div>
                   </div>
@@ -2656,7 +2802,7 @@ export default function KanbanView({
                         min="1"
                         required
                         value={editSlotsCount}
-                        onChange={(e) => setEditSlotsCount(e.target.value === '' ? '' : parseInt(e.target.value, 10) || 1)}
+                        onChange={(e) => handleSlotsCountChange(e.target.value)}
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black"
                       />
                     </div>
@@ -2666,11 +2812,10 @@ export default function KanbanView({
                         {lang === 'uz' ? `Slot narxi (${editCurrency})` : lang === 'en' ? `Price per Slot (${editCurrency})` : `Цена за слот (${editCurrency})`}
                       </label>
                       <input
-                        type="number"
-                        min="0"
-                        required
+                        type="text"
+                        inputMode="numeric"
                         placeholder="0"
-                        value={editPricePerSlot}
+                        value={editPricePerSlot === '' ? '' : formatPrice(editPricePerSlot)}
                         onFocus={(e) => {
                           if (editPricePerSlot === 0 || editPricePerSlot === '0' as any) {
                             setEditPricePerSlot('');
@@ -2680,19 +2825,12 @@ export default function KanbanView({
                         }}
                         onBlur={() => {
                           if (editPricePerSlot === '') {
-                            setEditPricePerSlot(0);
+                            handlePricePerSlotChange(0);
                           }
                         }}
                         onChange={(e) => {
-                          let val = e.target.value;
-                          if (val === '') {
-                            setEditPricePerSlot('');
-                            return;
-                          }
-                          if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
-                            val = val.replace(/^0+/, '');
-                          }
-                          setEditPricePerSlot(val === '' ? '' : parseFloat(val) || 0);
+                          const val = parsePrice(e.target.value);
+                          handlePricePerSlotChange(val);
                         }}
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-black"
                       />
@@ -2704,10 +2842,26 @@ export default function KanbanView({
                       </label>
                       <input
                         type="text"
-                        readOnly
-                        tabIndex={-1}
-                        value={formatPrice(Number(editPricePerSlot || 0) * Number(editSlotsCount || 0))}
-                        className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 cursor-default focus:outline-none select-none"
+                        inputMode="numeric"
+                        placeholder="0"
+                        value={editTotalAmount === '' ? '' : formatPrice(editTotalAmount)}
+                        onFocus={(e) => {
+                          if (editTotalAmount === 0 || editTotalAmount === '0' as any) {
+                            setEditTotalAmount('');
+                          } else {
+                            e.target.select();
+                          }
+                        }}
+                        onBlur={() => {
+                          if (editTotalAmount === '') {
+                            handleTotalAmountChange(0);
+                          }
+                        }}
+                        onChange={(e) => {
+                          const val = parsePrice(e.target.value);
+                          handleTotalAmountChange(val);
+                        }}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-black transition"
                       />
                     </div>
                   </div>

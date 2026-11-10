@@ -802,7 +802,7 @@ export default function App() {
     }
   };
 
-  const handleAddIntegrationToKanban = async (newInt: Omit<Integration, 'id' | 'totalAmount'>) => {
+  const handleAddIntegrationToKanban = async (newInt: Omit<Integration, 'id'> & { totalAmount?: number }) => {
     try {
       const created = await createIntegration({
         ...newInt,

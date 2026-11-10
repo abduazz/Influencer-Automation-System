@@ -323,7 +323,7 @@ class Integration extends Model
             }
 
             if (!$hasReports) {
-                if ($integration->total_amount === null || $integration->isDirty('price_per_slot') || $integration->isDirty('slots_count')) {
+                if (($integration->total_amount === null || $integration->isDirty('price_per_slot') || $integration->isDirty('slots_count')) && !$integration->isDirty('total_amount')) {
                     $raw = $integration->price_per_slot * $integration->slots_count;
                     $integration->total_amount = (abs($raw - round($raw)) < 0.15) ? round($raw) : round($raw, 2);
                 }

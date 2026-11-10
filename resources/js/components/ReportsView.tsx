@@ -312,9 +312,9 @@ export default function ReportsView({
 
     // 8. Deal / Integration link
     const targetDeal =
-      bestInt && (bestInt.kanbanStage === 'ready_for_payment' || bestInt.status === 'active' || String(bestInt.id) === given.integrationId)
+      bestInt && (bestInt.kanbanStage === 'ready_for_payment' || bestInt.status === 'active' || bestInt.kanbanStage === 'completed' || bestInt.status === 'completed' || String(bestInt.id) === given.integrationId)
         ? bestInt
-        : matchingInts.find((i) => i.kanbanStage === 'ready_for_payment');
+        : matchingInts.find((i) => i.kanbanStage === 'ready_for_payment') || matchingInts[0];
     if (targetDeal && (!preserve || given.integrationId === undefined)) {
       setCurrentIntegrationId(String(targetDeal.id));
     }

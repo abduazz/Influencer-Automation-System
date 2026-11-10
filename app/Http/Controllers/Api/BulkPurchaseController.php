@@ -215,10 +215,33 @@ class BulkPurchaseController extends Controller
 
         // Auto-create or merge Integration record for target project
         $cleanBloggerName = trim(str_replace(['@', '#'], '', $bulkPurchase->blogger_name));
+        $cleanPlatform = strtolower(trim($bulkPurchase->platform ?? ''));
         $existingIntegration = Integration::where('project_id', $projectId)
-            ->where('platform', $bulkPurchase->platform)
-            ->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+            ->where(function ($q) use ($cleanPlatform) {
+                if (!empty($cleanPlatform)) {
+                    $q->whereRaw('LOWER(platform) = ?', [$cleanPlatform]);
+                }
+            })
+            ->where(function ($q) use ($cleanBloggerName) {
+                $q->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
+                    ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . strtolower($cleanBloggerName)])
+                    ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [strtolower($cleanBloggerName)]);
+            })
             ->first();
+
+        if (!$existingIntegration) {
+            $normTarget = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanBloggerName));
+            $existingIntegration = Integration::where('project_id', $projectId)
+                ->get()
+                ->first(function ($int) use ($normTarget, $cleanPlatform) {
+                    $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
+                    if ($iNorm !== $normTarget) return false;
+                    if (!empty($cleanPlatform) && !empty($int->platform) && strtolower(trim($int->platform)) !== $cleanPlatform) {
+                        return false;
+                    }
+                    return true;
+                });
+        }
 
         if ($existingIntegration) {
             $newSlotsCount = $existingIntegration->slots_count + $slotsToAllocate;
@@ -230,6 +253,8 @@ class BulkPurchaseController extends Controller
                 'slots_count' => $newSlotsCount,
                 'paid_slots_count' => $newPaidSlotsCount,
                 'slots_config' => $mergedSlotsConfig,
+                'kanban_stage' => 'paid_in_progress',
+                'status' => 'active',
             ];
 
             if (!empty($bulkPurchase->purchase_date)) {

@@ -294,6 +294,49 @@ Artisan::command('integrations:sync-reports {--id= : Specific integration ID to 
         $this->info("Updated Report #{$rep->id} ({$rep->channel_blogger}): paid_amount fixed to {$rep->total_amount}");
     }
 
+    // 2. Merge duplicate integrations for the same blogger & project
+    $allDeals = \App\Models\Integration::all();
+    $grouped = [];
+    foreach ($allDeals as $int) {
+        if (empty($int->blogger_name) || empty($int->project_id)) continue;
+        $norm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($int->blogger_name)));
+        $key = "{$int->project_id}_{$norm}";
+        $grouped[$key][] = $int;
+    }
+    foreach ($grouped as $key => $dealList) {
+        if (count($dealList) <= 1) continue;
+        usort($dealList, function ($a, $b) {
+            $aDate = $a->start_date ? $a->start_date->format('Y-m-d') : '9999-99-99';
+            $bDate = $b->start_date ? $b->start_date->format('Y-m-d') : '9999-99-99';
+            $cmp = strcmp($aDate, $bDate);
+            return $cmp !== 0 ? $cmp : ($a->id - $b->id);
+        });
+        $primary = array_shift($dealList);
+        foreach ($dealList as $dup) {
+            $this->comment("Merging duplicate integration #{$dup->id} into primary #{$primary->id}...");
+            $primarySub = \App\Models\BloggerSubmission::where('integration_id', $primary->id)->first();
+            $dupSub = \App\Models\BloggerSubmission::where('integration_id', $dup->id)->first();
+            if ($dupSub) {
+                if (!$primarySub) {
+                    $dupSub->update(['integration_id' => $primary->id]);
+                } else {
+                    $mergedData = array_merge($primarySub->data ?? [], $dupSub->data ?? []);
+                    $primarySub->update(['data' => $mergedData]);
+                    $dupSub->delete();
+                }
+            }
+            if (!\App\Models\BloggerRequisite::where('integration_id', $primary->id)->exists()) {
+                \App\Models\BloggerRequisite::where('integration_id', $dup->id)->update(['integration_id' => $primary->id]);
+            } else {
+                \App\Models\BloggerRequisite::where('integration_id', $dup->id)->delete();
+            }
+            \App\Models\ChatMessage::where('integration_id', $dup->id)->update(['integration_id' => $primary->id]);
+            $dup->delete();
+        }
+        $primary->refresh();
+        $primary->syncWithReports();
+    }
+
     $id = $this->option('id');
     $query = \App\Models\Integration::query();
     if ($id) {

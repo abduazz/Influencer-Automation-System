@@ -278,6 +278,10 @@ export default function DashboardView({
   };
 
   const handleReorderIntegration = (integration: Integration) => {
+    if (onNavigateToReports) {
+      onNavigateToReports(integration);
+      return;
+    }
     setEditingIntegration(null);
     setBloggerName(integration.bloggerName);
     setBloggerPageLink(integration.bloggerPageLink || '');

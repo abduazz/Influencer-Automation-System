@@ -230,8 +230,13 @@ class ReportController extends Controller
                         $existingIntegration = Integration::find($request->input('integrationId'));
                     }
                     if (!$existingIntegration) {
+                        $cleanPlatform = strtolower(trim($report->platform ?? ''));
                         $existingIntegration = Integration::where('project_id', $targetProjectId)
-                            ->where('platform', $report->platform)
+                            ->where(function ($q) use ($cleanPlatform) {
+                                if (!empty($cleanPlatform)) {
+                                    $q->whereRaw('LOWER(platform) = ?', [$cleanPlatform]);
+                                }
+                            })
                             ->where(function ($q) use ($cleanBloggerName) {
                                 $q->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
                                     ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . strtolower($cleanBloggerName)])
@@ -242,11 +247,14 @@ class ReportController extends Controller
                         if (!$existingIntegration) {
                             $normTarget = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanBloggerName));
                             $existingIntegration = Integration::where('project_id', $targetProjectId)
-                                ->where('platform', $report->platform)
                                 ->get()
-                                ->first(function ($int) use ($normTarget) {
+                                ->first(function ($int) use ($normTarget, $cleanPlatform) {
                                     $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
-                                    return $iNorm === $normTarget;
+                                    if ($iNorm !== $normTarget) return false;
+                                    if (!empty($cleanPlatform) && !empty($int->platform) && strtolower(trim($int->platform)) !== $cleanPlatform) {
+                                        return false;
+                                    }
+                                    return true;
                                 });
                         }
                     }
@@ -262,42 +270,6 @@ class ReportController extends Controller
                         $groupPaidSlotsCount = ($report->slots_count > 0)
                             ? (int) round(($groupSlotsCount / $report->slots_count) * $report->paid_slots_count)
                             : $report->paid_slots_count;
-                    }
-
-                    $isCompletedDeal = ($existingIntegration && ($existingIntegration->kanban_stage === 'completed' || $existingIntegration->status === 'completed'));
-
-                    if ($existingIntegration && $isCompletedDeal && $paymentType !== 'remaining') {
-                        // The previous integration was already completed.
-                        // Create a separate new integration for this new report/re-order with a unique blogger cabinet token and reused contacts.
-                        $token = Integration::generateCabinetToken($cleanBloggerName);
-                        $referralLink = $report->destination ?: $existingIntegration->referral_link;
-                        $startDate = \Carbon\Carbon::parse($report->date);
-                        $endDate = $startDate->copy()->addDays(14);
-
-                        $newIntegration = Integration::create([
-                            'project_id' => $targetProjectId,
-                            'blogger_name' => $existingIntegration->blogger_name ?: $cleanBloggerName,
-                            'blogger_page_link' => $report->blogger_page_link ?: $existingIntegration->blogger_page_link,
-                            'telegram_username' => $existingIntegration->telegram_username,
-                            'telegram_chat_id' => $existingIntegration->telegram_chat_id,
-                            'start_date' => $startDate,
-                            'platform' => $report->platform ?: $existingIntegration->platform,
-                            'referral_link' => $referralLink,
-                            'price_per_slot' => $report->price_per_slot,
-                            'slots_count' => $groupSlotsCount,
-                            'paid_slots_count' => $groupPaidSlotsCount,
-                            'end_date' => $endDate,
-                            'status' => 'active',
-                            'kanban_stage' => 'paid_in_progress',
-                            'blogger_cabinet_token' => $token,
-                            'slots_config' => $groupSlotsConfig,
-                            'created_by' => $createdByName,
-                            'currency' => $existingIntegration->currency ?: 'UZS',
-                            'requisites' => $existingIntegration->requisites,
-                        ]);
-
-                        $cabinetToken = $newIntegration->blogger_cabinet_token;
-                        continue;
                     }
 
                     if ($existingIntegration) {
@@ -347,6 +319,7 @@ class ReportController extends Controller
                                 'slots_count' => $newSlotsCount,
                                 'paid_slots_count' => $newPaidSlotsCount,
                                 'slots_config' => $mergedSlotsConfig,
+                                'kanban_stage' => 'paid_in_progress',
                                 'status' => 'active',
                             ];
                             if (!empty($report->blogger_page_link)) {

@@ -109,12 +109,15 @@ class Integration extends Model
 
         $cleanName = strtolower(trim(str_replace(['@', '#'], '', $this->blogger_name)));
         $normalizedName = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($this->blogger_name)));
+        $cleanPlatform = strtolower(trim($this->platform ?? ''));
 
         $reports = Report::where('project_id', $this->project_id)
-            ->where(function ($q) {
-                $q->where('platform', $this->platform)
-                    ->orWhereNull('platform')
-                    ->orWhere('platform', '');
+            ->where(function ($q) use ($cleanPlatform) {
+                if (!empty($cleanPlatform)) {
+                    $q->whereRaw('LOWER(platform) = ?', [$cleanPlatform])
+                        ->orWhereNull('platform')
+                        ->orWhere('platform', '');
+                }
             })
             ->get()
             ->filter(function ($r) use ($cleanName, $normalizedName) {

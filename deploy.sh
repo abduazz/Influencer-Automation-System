@@ -24,6 +24,9 @@ echo "🗃️ Running database migrations and seeding..."
 php artisan migrate --force
 php artisan db:seed --force
 
+echo "🔄 Syncing integrations from reports..."
+php artisan integrations:sync-reports || echo "⚠️ Integration sync encountered an issue, continuing deployment..."
+
 echo "🔄 Syncing reports..."
 php artisan reports:sync || echo "⚠️ Report sync encountered an issue, continuing deployment..."
 

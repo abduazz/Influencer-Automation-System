@@ -68,7 +68,20 @@ Route::get('/{any}', function (Request $request) {
                     'activeSubdomain' => '1',
                 ];
             } else {
-                $bootstrapData = app(BootstrapController::class)->getBootstrapData($request);
+                $bootstrapData = [
+                    'users' => [],
+                    'projects' => [],
+                    'allProjects' => [],
+                    'subdomains' => [],
+                    'integrations' => [],
+                    'reports' => [],
+                    'submissions' => [],
+                    'bulkPurchases' => [],
+                    'kanbanColumns' => [],
+                    'bloggerRequisites' => [],
+                    'activeSubdomain' => '1',
+                    'cabinetNotFound' => true,
+                ];
             }
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Cabinet bootstrap preload in Blade failed: ' . $e->getMessage());
@@ -99,7 +112,20 @@ Route::get('/{any}', function (Request $request) {
                     'activeSubdomain' => '1',
                 ];
             } else {
-                $bootstrapData = app(BootstrapController::class)->getBootstrapData($request);
+                $bootstrapData = [
+                    'users' => [],
+                    'projects' => [],
+                    'allProjects' => [],
+                    'subdomains' => [],
+                    'integrations' => [],
+                    'reports' => [],
+                    'submissions' => [],
+                    'bulkPurchases' => [],
+                    'kanbanColumns' => [],
+                    'bloggerRequisites' => [],
+                    'activeSubdomain' => '1',
+                    'cabinetNotFound' => true,
+                ];
             }
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Requisites bootstrap preload in Blade failed: ' . $e->getMessage());

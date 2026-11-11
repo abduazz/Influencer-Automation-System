@@ -442,8 +442,8 @@ export default function App() {
     let cancelled = false;
 
     async function loadData() {
-      // If guest route already has preloaded data, skip downloading the whole CRM database
-      if ((isBloggerCabinetRoute || isRequisitesRoute) && integrations.length > 0) {
+      // If guest route already has preloaded data or cabinet not found, skip downloading the whole CRM database
+      if ((isBloggerCabinetRoute || isRequisitesRoute) && (integrations.length > 0 || (initialBootstrap as any)?.cabinetNotFound)) {
         if (!cancelled) {
           setAllowedUsersLoading(false);
           setLoading(false);

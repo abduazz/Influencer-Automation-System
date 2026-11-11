@@ -6,16 +6,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Integration, BloggerRequisites } from '../data/mockData';
 import { Language, translations } from '../translations';
-import { 
-  ShieldCheck, 
-  Lock, 
-  FileText, 
-  CreditCard, 
-  UserCheck, 
-  CheckCircle, 
+import {
+  ShieldCheck,
+  Lock,
+  FileText,
+  CreditCard,
+  UserCheck,
+  CheckCircle,
   CheckCircle2,
-  Radio, 
-  Eye, 
+  Radio,
+  Eye,
   Globe,
   Sparkles,
   UploadCloud,
@@ -24,7 +24,8 @@ import {
   X,
   ZoomIn,
   FileCheck,
-  ArrowLeft
+  ArrowLeft,
+  AlertCircle
 } from 'lucide-react';
 
 import idCardSampleFront from '../../images/id_card_sample_front.png';
@@ -472,47 +473,48 @@ export default function BloggerRequisitesView({
   const rt = requisitesTranslations[currentLang] || requisitesTranslations['ru'];
 
   // Resolve integration from token or fallback to demo context
-  const activeIntegration = integrations.find(i => i.id === integrationToken) || {
-    id: integrationToken || 'demo-integration-id',
-    bloggerName: '@blogger_official',
-    platform: 'Instagram' as const,
-    totalAmount: 1500000,
-    pricePerSlot: 1500000,
-    slotsCount: 1
-  };
+    const matchedIntegration = integrations.find(i => String(i.id) === String(integrationToken) || i.bloggerCabinetToken === integrationToken);
+    const activeIntegration = matchedIntegration || {
+      id: integrationToken || 'demo-integration-id',
+      bloggerName: '@blogger_official',
+      platform: 'Instagram' as const,
+      totalAmount: 1500000,
+      pricePerSlot: 1500000,
+      slotsCount: 1
+    };
 
-  // Form State - 2 formats: 'card_transfer' or 'contract'
-  const [taxStatus, setTaxStatus] = useState<'card_transfer' | 'contract'>('card_transfer');
-  const [fullName, setFullName] = useState('');
-  const [passportSeriesNumber, setPassportSeriesNumber] = useState('');
-  const [pinflOrTin, setPinflOrTin] = useState('');
-  const [passportIssueDate, setPassportIssueDate] = useState('');
-  const [passportIssuedBy, setPassportIssuedBy] = useState('');
-  const [registrationAddress, setRegistrationAddress] = useState('');
-  const [passportFrontScan, setPassportFrontScan] = useState<string | null>(null);
-  const [passportBackScan, setPassportBackScan] = useState<string | null>(null);
-  const [cardNumberOrIban, setCardNumberOrIban] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [bankInn, setBankInn] = useState('');
-  const [mfo, setMfo] = useState('');
-  const [transitAccount, setTransitAccount] = useState('');
-  const [recipientName, setRecipientName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [telegramHandle, setTelegramHandle] = useState('');
-  const [agreementChecked, setAgreementChecked] = useState(true);
+    // Form State - 2 formats: 'card_transfer' or 'contract'
+    const [taxStatus, setTaxStatus] = useState<'card_transfer' | 'contract'>('card_transfer');
+    const [fullName, setFullName] = useState('');
+    const [passportSeriesNumber, setPassportSeriesNumber] = useState('');
+    const [pinflOrTin, setPinflOrTin] = useState('');
+    const [passportIssueDate, setPassportIssueDate] = useState('');
+    const [passportIssuedBy, setPassportIssuedBy] = useState('');
+    const [registrationAddress, setRegistrationAddress] = useState('');
+    const [passportFrontScan, setPassportFrontScan] = useState<string | null>(null);
+    const [passportBackScan, setPassportBackScan] = useState<string | null>(null);
+    const [cardNumberOrIban, setCardNumberOrIban] = useState('');
+    const [bankName, setBankName] = useState('');
+    const [bankInn, setBankInn] = useState('');
+    const [mfo, setMfo] = useState('');
+    const [transitAccount, setTransitAccount] = useState('');
+    const [recipientName, setRecipientName] = useState('');
+    const [phone, setPhone] = useState('');
+    const [telegramHandle, setTelegramHandle] = useState('');
+    const [agreementChecked, setAgreementChecked] = useState(true);
 
-  const [isPreviewContractOpen, setIsPreviewContractOpen] = useState(false);
-  const [isSampleModalOpen, setIsSampleModalOpen] = useState(false);
-  const [activeLightboxImg, setActiveLightboxImg] = useState<{ src: string; title: string } | null>(null);
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+    const [isPreviewContractOpen, setIsPreviewContractOpen] = useState(false);
+    const [isSampleModalOpen, setIsSampleModalOpen] = useState(false);
+    const [activeLightboxImg, setActiveLightboxImg] = useState<{ src: string; title: string } | null>(null);
+    const [isSubmitted, setIsSubmitted] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const frontInputRef = useRef<HTMLInputElement>(null);
-  const backInputRef = useRef<HTMLInputElement>(null);
+    const frontInputRef = useRef<HTMLInputElement>(null);
+    const backInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-fill recipient name if empty when full name changes
-  useEffect(() => {
+    // Auto-fill recipient name if empty when full name changes
+    useEffect(() => {
     if (!recipientName && fullName) {
       setRecipientName(fullName);
     }
@@ -593,6 +595,39 @@ export default function BloggerRequisitesView({
     }
   };
 
+  if (integrationToken && !matchedIntegration) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-white border border-neutral-200 rounded-2xl p-8 shadow-xs">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mx-auto mb-4">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-black text-neutral-900 mb-2">
+            {currentLang === 'ru' ? 'Форма реквизитов не найдена' : currentLang === 'uz' ? 'Rekvizitlar formasi topilmadi' : 'Requisites Form Not Found'}
+          </h2>
+          <p className="text-xs text-neutral-500 mb-6 leading-relaxed">
+            {currentLang === 'ru'
+              ? 'Ссылка устарела, была изменена или блогер был удален. Пожалуйста, обратитесь к PR-менеджеру для получения актуальной ссылки.'
+              : currentLang === 'uz'
+                ? 'Havola eskirgan, o‘zgartirilgan yoki blogger o‘chirilgan. Iltimos, yangi havola olish uchun PR-menejer bilan bog‘laning.'
+                : 'The link has expired, was changed, or the blogger was removed. Please contact your PR manager for an up-to-date link.'}
+          </p>
+          <div className="bg-neutral-100 rounded-lg px-3 py-1.5 text-xs font-mono text-neutral-600 border border-neutral-200 mb-4 break-all">
+            {integrationToken}
+          </div>
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="px-4 py-2 bg-black hover:bg-neutral-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              {currentLang === 'uz' ? 'Orqaga qaytish' : 'Вернуться назад'}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col justify-between py-10 px-4 sm:px-6 lg:px-8 font-sans antialiased">
       {/* Top Bar with Language Switcher */}
@@ -622,11 +657,10 @@ export default function BloggerRequisitesView({
               key={l}
               type="button"
               onClick={() => handleLanguageChange(l)}
-              className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg transition cursor-pointer ${
-                currentLang === l
+              className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg transition cursor-pointer ${currentLang === l
                   ? 'bg-black text-white'
                   : 'text-neutral-500 hover:text-black hover:bg-neutral-100'
-              }`}
+                }`}
             >
               {l}
             </button>
@@ -689,11 +723,10 @@ export default function BloggerRequisitesView({
                 <button
                   type="button"
                   onClick={() => setTaxStatus('card_transfer')}
-                  className={`p-4 rounded-2xl border text-left transition flex items-start gap-3.5 cursor-pointer ${
-                    taxStatus === 'card_transfer'
+                  className={`p-4 rounded-2xl border text-left transition flex items-start gap-3.5 cursor-pointer ${taxStatus === 'card_transfer'
                       ? 'bg-black border-black text-white shadow-sm ring-2 ring-black/20'
                       : 'bg-neutral-50 border-neutral-200 text-neutral-700 hover:bg-neutral-100'
-                  }`}
+                    }`}
                 >
                   <div className={`p-2.5 rounded-xl shrink-0 ${taxStatus === 'card_transfer' ? 'bg-white/10 text-white' : 'bg-white text-black border border-neutral-200'}`}>
                     <CreditCard className="w-5 h-5" />
@@ -711,11 +744,10 @@ export default function BloggerRequisitesView({
                 <button
                   type="button"
                   onClick={() => setTaxStatus('contract')}
-                  className={`p-4 rounded-2xl border text-left transition flex items-start gap-3.5 cursor-pointer ${
-                    taxStatus === 'contract'
+                  className={`p-4 rounded-2xl border text-left transition flex items-start gap-3.5 cursor-pointer ${taxStatus === 'contract'
                       ? 'bg-black border-black text-white shadow-sm ring-2 ring-black/20'
                       : 'bg-neutral-50 border-neutral-200 text-neutral-700 hover:bg-neutral-100'
-                  }`}
+                    }`}
                 >
                   <div className={`p-2.5 rounded-xl shrink-0 ${taxStatus === 'contract' ? 'bg-white/10 text-white' : 'bg-white text-black border border-neutral-200'}`}>
                     <FileText className="w-5 h-5" />
@@ -920,18 +952,17 @@ export default function BloggerRequisitesView({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                         {/* Front Side Upload Card */}
-                        <div 
+                        <div
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => {
                             e.preventDefault();
                             const file = e.dataTransfer.files?.[0];
                             if (file) handleFileUpload('front', file);
                           }}
-                          className={`relative rounded-2xl border transition-all p-3.5 flex flex-col justify-between ${
-                            passportFrontScan 
-                              ? 'bg-neutral-50/90 border-neutral-300' 
+                          className={`relative rounded-2xl border transition-all p-3.5 flex flex-col justify-between ${passportFrontScan
+                              ? 'bg-neutral-50/90 border-neutral-300'
                               : 'bg-white border-2 border-dashed border-neutral-300 hover:border-black hover:bg-neutral-50/50'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-1.5">
@@ -959,12 +990,12 @@ export default function BloggerRequisitesView({
 
                           {passportFrontScan ? (
                             <div className="space-y-2">
-                              <div 
+                              <div
                                 onClick={() => setActiveLightboxImg({ src: passportFrontScan, title: rt.passportFrontTitle })}
                                 className="relative h-32 rounded-xl overflow-hidden border border-neutral-200 bg-black/5 group cursor-pointer"
                               >
-                                <img 
-                                  src={passportFrontScan} 
+                                <img
+                                  src={passportFrontScan}
                                   alt={rt.passportFrontTitle}
                                   className="w-full h-full object-cover transition duration-200 group-hover:scale-105"
                                 />
@@ -1003,14 +1034,14 @@ export default function BloggerRequisitesView({
                               </div>
                             </div>
                           ) : (
-                            <div 
+                            <div
                               onClick={() => frontInputRef.current?.click()}
                               className="py-2 flex flex-col items-center justify-center text-center cursor-pointer space-y-2.5 select-none group"
                             >
                               {/* Illustrated Front Sample */}
                               <div className="relative w-full max-w-[250px] aspect-[368/232] rounded-xl overflow-hidden border border-neutral-200 shadow-2xs bg-neutral-100 group-hover:border-black/60 group-hover:shadow-xs transition duration-200">
-                                <img 
-                                  src={idCardSampleFront} 
+                                <img
+                                  src={idCardSampleFront}
                                   alt={rt.passportFrontTitle}
                                   className="w-full h-full object-cover group-hover:scale-102 transition duration-200"
                                 />
@@ -1045,18 +1076,17 @@ export default function BloggerRequisitesView({
                         </div>
 
                         {/* Back Side Upload Card */}
-                        <div 
+                        <div
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => {
                             e.preventDefault();
                             const file = e.dataTransfer.files?.[0];
                             if (file) handleFileUpload('back', file);
                           }}
-                          className={`relative rounded-2xl border transition-all p-3.5 flex flex-col justify-between ${
-                            passportBackScan 
-                              ? 'bg-neutral-50/90 border-neutral-300' 
+                          className={`relative rounded-2xl border transition-all p-3.5 flex flex-col justify-between ${passportBackScan
+                              ? 'bg-neutral-50/90 border-neutral-300'
                               : 'bg-white border-2 border-dashed border-neutral-300 hover:border-black hover:bg-neutral-50/50'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-1.5">
@@ -1084,12 +1114,12 @@ export default function BloggerRequisitesView({
 
                           {passportBackScan ? (
                             <div className="space-y-2">
-                              <div 
+                              <div
                                 onClick={() => setActiveLightboxImg({ src: passportBackScan, title: rt.passportBackTitle })}
                                 className="relative h-32 rounded-xl overflow-hidden border border-neutral-200 bg-black/5 group cursor-pointer"
                               >
-                                <img 
-                                  src={passportBackScan} 
+                                <img
+                                  src={passportBackScan}
                                   alt={rt.passportBackTitle}
                                   className="w-full h-full object-cover transition duration-200 group-hover:scale-105"
                                 />
@@ -1128,14 +1158,14 @@ export default function BloggerRequisitesView({
                               </div>
                             </div>
                           ) : (
-                            <div 
+                            <div
                               onClick={() => backInputRef.current?.click()}
                               className="py-2 flex flex-col items-center justify-center text-center cursor-pointer space-y-2.5 select-none group"
                             >
                               {/* Illustrated Back Sample */}
                               <div className="relative w-full max-w-[250px] aspect-[368/232] rounded-xl overflow-hidden border border-neutral-200 shadow-2xs bg-neutral-100 group-hover:border-black/60 group-hover:shadow-xs transition duration-200">
-                                <img 
-                                  src={idCardSampleBack} 
+                                <img
+                                  src={idCardSampleBack}
                                   alt={rt.passportBackTitle}
                                   className="w-full h-full object-cover group-hover:scale-102 transition duration-200"
                                 />
@@ -1471,14 +1501,14 @@ export default function BloggerRequisitesView({
                 {passportFrontScan || passportBackScan ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     {passportFrontScan ? (
-                      <div 
+                      <div
                         onClick={() => setActiveLightboxImg({ src: passportFrontScan, title: rt.contractScansFrontBadge })}
                         className="group relative rounded-xl border border-neutral-200 overflow-hidden cursor-pointer bg-neutral-50 hover:border-black transition"
                       >
-                        <img 
-                          src={passportFrontScan} 
-                          alt={rt.contractScansFrontBadge} 
-                          className="w-full h-28 object-cover group-hover:scale-105 transition duration-200" 
+                        <img
+                          src={passportFrontScan}
+                          alt={rt.contractScansFrontBadge}
+                          className="w-full h-28 object-cover group-hover:scale-105 transition duration-200"
                         />
                         <div className="p-2 bg-white/95 border-t border-neutral-100 flex items-center justify-between px-3">
                           <span className="text-[11px] font-bold text-neutral-800">{rt.contractScansFrontBadge}</span>
@@ -1495,14 +1525,14 @@ export default function BloggerRequisitesView({
                     )}
 
                     {passportBackScan ? (
-                      <div 
+                      <div
                         onClick={() => setActiveLightboxImg({ src: passportBackScan, title: rt.contractScansBackBadge })}
                         className="group relative rounded-xl border border-neutral-200 overflow-hidden cursor-pointer bg-neutral-50 hover:border-black transition"
                       >
-                        <img 
-                          src={passportBackScan} 
-                          alt={rt.contractScansBackBadge} 
-                          className="w-full h-28 object-cover group-hover:scale-105 transition duration-200" 
+                        <img
+                          src={passportBackScan}
+                          alt={rt.contractScansBackBadge}
+                          className="w-full h-28 object-cover group-hover:scale-105 transition duration-200"
                         />
                         <div className="p-2 bg-white/95 border-t border-neutral-100 flex items-center justify-between px-3">
                           <span className="text-[11px] font-bold text-neutral-800">{rt.contractScansBackBadge}</span>
@@ -1554,7 +1584,7 @@ export default function BloggerRequisitesView({
 
       {/* Lightbox / Zoom Modal for Passport Scans */}
       {activeLightboxImg && (
-        <div 
+        <div
           className="fixed inset-0 z-60 flex items-center justify-center bg-black/85 backdrop-blur-md p-4"
           onClick={() => setActiveLightboxImg(null)}
         >
@@ -1580,11 +1610,11 @@ export default function BloggerRequisitesView({
 
       {/* ID Card Sample Reference Modal */}
       {isSampleModalOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto"
           onClick={() => setIsSampleModalOpen(false)}
         >
-          <div 
+          <div
             className="bg-white border border-neutral-200 rounded-3xl max-w-2xl w-full p-6 sm:p-7 space-y-5 shadow-2xl text-neutral-900 my-8 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1607,9 +1637,9 @@ export default function BloggerRequisitesView({
             {/* Illustration Display */}
             <div className="space-y-3.5">
               <div className="rounded-2xl overflow-hidden border border-neutral-200 shadow-sm bg-neutral-50">
-                <img 
-                  src={idCardSampleFull} 
-                  alt="Uzbekistan ID Card Sample" 
+                <img
+                  src={idCardSampleFull}
+                  alt="Uzbekistan ID Card Sample"
                   className="w-full h-auto object-contain"
                 />
               </div>

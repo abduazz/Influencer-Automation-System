@@ -128,18 +128,64 @@ export function fetchBootstrapData(): Promise<BootstrapData> {
 export function fetchProjects(): Promise<Project[]> {
   return request<Project[]>('/api/projects');
 }
-export function createProject(name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, subdomain?: string): Promise<Project> {
+export function createProject(
+  name: string,
+  description: string,
+  telegramThreadId?: string,
+  monthlyLimit?: number | null,
+  subdomain?: string,
+  prefix?: string,
+  telegramChatId?: string,
+  telegramTopicId?: string,
+  telegramSubmissionsThreadId?: string,
+  telegramSubmissionsTopicId?: string
+): Promise<Project> {
   return request<Project>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit, subdomain }),
+    body: JSON.stringify({
+      name,
+      description,
+      telegramThreadId,
+      monthlyLimit,
+      subdomain,
+      prefix,
+      telegramChatId,
+      telegramTopicId,
+      telegramSubmissionsThreadId,
+      telegramSubmissionsTopicId,
+    }),
   });
 }
-export function updateProject(id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, userEmail?: string, subdomain?: string): Promise<Project> {
+export function updateProject(
+  id: string,
+  name: string,
+  description: string,
+  telegramThreadId?: string,
+  monthlyLimit?: number | null,
+  userEmail?: string,
+  subdomain?: string,
+  prefix?: string,
+  telegramChatId?: string,
+  telegramTopicId?: string,
+  telegramSubmissionsThreadId?: string,
+  telegramSubmissionsTopicId?: string
+): Promise<Project> {
   const headers = userEmail ? { 'X-User-Email': userEmail } : undefined;
   return request<Project>(`/api/projects/${id}`, {
     method: 'PUT',
     headers,
-    body: JSON.stringify({ name, description, telegramThreadId, monthlyLimit, subdomain }),
+    body: JSON.stringify({
+      name,
+      description,
+      telegramThreadId,
+      monthlyLimit,
+      subdomain,
+      prefix,
+      telegramChatId,
+      telegramTopicId,
+      telegramSubmissionsThreadId,
+      telegramSubmissionsTopicId,
+    }),
   });
 }
 export function deleteProject(id: string, userEmail?: string): Promise<void> {

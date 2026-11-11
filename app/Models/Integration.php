@@ -326,13 +326,13 @@ class Integration extends Model
             }
 
             if (!$hasReports) {
-                if (($integration->total_amount === null || $integration->isDirty('price_per_slot') || $integration->isDirty('slots_count')) && !$integration->isDirty('total_amount')) {
-                    $raw = $integration->price_per_slot * $integration->slots_count;
+                if ($integration->total_amount === null || $integration->total_amount === '' || (($integration->isDirty('price_per_slot') || $integration->isDirty('slots_count')) && !$integration->isDirty('total_amount'))) {
+                    $raw = (float) ($integration->price_per_slot ?? 0) * (int) ($integration->slots_count ?? 1);
                     $integration->total_amount = (abs($raw - round($raw)) < 0.15) ? round($raw) : round($raw, 2);
                 }
-                if ($integration->paid_amount === null || (!$integration->isDirty('paid_amount') && ($integration->isDirty('price_per_slot') || $integration->isDirty('paid_slots_count')))) {
-                    $paidSlots = $integration->paid_slots_count ?? $integration->slots_count;
-                    $rawPaid = $integration->price_per_slot * $paidSlots;
+                if ($integration->paid_amount === null || $integration->paid_amount === '' || (!$integration->isDirty('paid_amount') && ($integration->isDirty('price_per_slot') || $integration->isDirty('paid_slots_count')))) {
+                    $paidSlots = $integration->paid_slots_count ?? $integration->slots_count ?? 1;
+                    $rawPaid = (float) ($integration->price_per_slot ?? 0) * (int) $paidSlots;
                     $integration->paid_amount = (abs($rawPaid - round($rawPaid)) < 0.15) ? round($rawPaid) : round($rawPaid, 2);
                 }
             } else {
@@ -342,6 +342,11 @@ class Integration extends Model
                 if ($integration->paid_amount !== null && abs($integration->paid_amount - round($integration->paid_amount)) < 0.15) {
                     $integration->paid_amount = round($integration->paid_amount);
                 }
+            }
+
+            if (empty($integration->end_date)) {
+                $start = $integration->start_date ? \Illuminate\Support\Carbon::parse($integration->start_date) : now();
+                $integration->end_date = $start->copy()->addDays(14)->format('Y-m-d');
             }
 
             if (blank($integration->blogger_cabinet_token)) {

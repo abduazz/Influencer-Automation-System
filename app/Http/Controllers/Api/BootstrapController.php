@@ -28,8 +28,13 @@ class BootstrapController extends Controller
             'allProjects' => \App\Models\Project::all()->map(fn($p) => [
                 'id' => (string) $p->id,
                 'name' => $p->name,
+                'prefix' => $p->prefix ?? '',
                 'description' => $p->description ?? '',
                 'telegramThreadId' => $p->telegram_thread_id ?? '',
+                'telegramSubmissionsThreadId' => $p->telegram_submissions_thread_id ?? '',
+                'telegramChatId' => $p->telegram_chat_id ?? '',
+                'telegramTopicId' => $p->telegram_topic_id ?? '',
+                'telegramSubmissionsTopicId' => $p->telegram_submissions_topic_id ?? '',
                 'monthlyLimit' => $p->monthly_limit !== null ? (int) $p->monthly_limit : null,
                 'subdomain' => $p->subdomain ?? '1',
                 'createdAt' => $p->created_at->format('Y-m-d'),

@@ -6,8 +6,13 @@
 export interface Project {
   id: string;
   name: string;
+  prefix?: string;
   description: string;
   telegramThreadId?: string;
+  telegramSubmissionsThreadId?: string;
+  telegramChatId?: string;
+  telegramTopicId?: string;
+  telegramSubmissionsTopicId?: string;
   createdAt: string;
   monthlyLimit?: number | null;
   subdomain?: string;
@@ -159,6 +164,7 @@ export interface Integration {
 
 export interface Report {
   id: string;
+  formattedId?: string;
   date: string;
   projectId: string;
   projectName?: string; // resolved for display
@@ -180,6 +186,7 @@ export interface Report {
   lang?: string;
   bloggerCabinetToken?: string | null;
   telegramMessageUrl?: string | null;
+  telegramDuplicateMessageUrl?: string | null;
   createdBy?: string | null;
 }
 

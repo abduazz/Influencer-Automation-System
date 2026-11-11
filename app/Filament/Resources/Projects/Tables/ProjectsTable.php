@@ -19,6 +19,11 @@ class ProjectsTable
                     ->label('Название')
                     ->searchable()
                     ->sortable(),
+                TextColumn::make('prefix')
+                    ->label('Префикс')
+                    ->badge()
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('subdomain')
                     ->label('Субдомен')
                     ->badge()

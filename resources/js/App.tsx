@@ -550,12 +550,48 @@ export default function App() {
 
   // State manipulation handlers
   const handleAddProject = async (newProj: Omit<Project, 'id' | 'createdAt'>) => {
-    const project = await createProject(newProj.name, newProj.description, newProj.telegramThreadId, newProj.monthlyLimit, newProj.subdomain);
+    const project = await createProject(
+      newProj.name,
+      newProj.description,
+      newProj.telegramThreadId,
+      newProj.monthlyLimit,
+      newProj.subdomain,
+      newProj.prefix,
+      newProj.telegramChatId,
+      newProj.telegramTopicId,
+      newProj.telegramSubmissionsThreadId,
+      newProj.telegramSubmissionsTopicId
+    );
     setProjects((prev) => [...prev, project]);
   };
 
-  const handleEditProject = async (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, subdomain?: string) => {
-    const updated = await updateProject(id, name, description, telegramThreadId, monthlyLimit, currentUserEmail || undefined, subdomain);
+  const handleEditProject = async (
+    id: string,
+    name: string,
+    description: string,
+    telegramThreadId?: string,
+    monthlyLimit?: number | null,
+    subdomain?: string,
+    prefix?: string,
+    telegramChatId?: string,
+    telegramTopicId?: string,
+    telegramSubmissionsThreadId?: string,
+    telegramSubmissionsTopicId?: string
+  ) => {
+    const updated = await updateProject(
+      id,
+      name,
+      description,
+      telegramThreadId,
+      monthlyLimit,
+      currentUserEmail || undefined,
+      subdomain,
+      prefix,
+      telegramChatId,
+      telegramTopicId,
+      telegramSubmissionsThreadId,
+      telegramSubmissionsTopicId
+    );
     setProjects((prev) => prev.map(p => p.id === id ? updated : p));
   };
 
@@ -567,12 +603,17 @@ export default function App() {
     setIntegrations(ints);
   };
 
-  const handleAddIntegration = async (newInt: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'>) => {
-    const integration = await createIntegration({
-      ...newInt,
-      createdBy: newInt.createdBy || currentUserName || currentUserEmail || undefined,
-    }, currentUserEmail || undefined);
-    setIntegrations((prev) => [integration, ...prev]);
+  const handleAddIntegration = async (newInt: Omit<Integration, 'id' | 'totalAmount' | 'paidAmount' | 'bloggerCabinetToken'> & { totalAmount?: number; paidAmount?: number }) => {
+    try {
+      const integration = await createIntegration({
+        ...newInt,
+        createdBy: newInt.createdBy || currentUserName || currentUserEmail || undefined,
+      }, currentUserEmail || undefined);
+      setIntegrations((prev) => [integration, ...prev]);
+    } catch (err: any) {
+      console.error('Failed to create integration in Dashboard:', err);
+      alert(err?.message || (lang === 'ru' ? 'Не удалось создать интеграцию' : 'Failed to create integration'));
+    }
   };
 
   const handleEditIntegration = async (id: string, updatedFields: Partial<Integration>) => {

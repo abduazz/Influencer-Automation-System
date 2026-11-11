@@ -32,6 +32,7 @@ class ReportController extends Controller
         return response()->json($query->get()->map(function ($report) {
             return [
                 'id' => (string) $report->id,
+                'formattedId' => $report->formatted_id,
                 'date' => $report->date ? \Carbon\Carbon::parse($report->date)->format('Y-m-d') : '',
                 'projectId' => $report->project_id ? (string) $report->project_id : null,
                 'projectName' => $report->project?->name ?? '',
@@ -50,6 +51,7 @@ class ReportController extends Controller
                 'receipt' => $report->receipt,
                 'receipts' => $report->receipts,
                 'telegramMessageUrl' => $report->telegram_message_url ?? null,
+                'telegramDuplicateMessageUrl' => $report->telegram_duplicate_message_url ?? null,
                 'createdBy' => $report->created_by,
             ];
         }));
@@ -472,8 +474,11 @@ class ReportController extends Controller
                 }
             })->afterResponse();
 
-            \App\Services\ActivityLogger::report('CREATED', "Создан финансовый отчет #{$report->id} ({$report->channel_blogger}, сумма: {$report->paid_amount})", [
+            $report->loadMissing('project');
+
+            \App\Services\ActivityLogger::report('CREATED', "Создан финансовый отчет {$report->formatted_id} ({$report->channel_blogger}, сумма: {$report->paid_amount})", [
                 'report_id' => $report->id,
+                'formatted_id' => $report->formatted_id,
                 'channel_blogger' => $report->channel_blogger,
                 'platform' => $report->platform,
                 'payment_type' => $report->payment_type,
@@ -483,6 +488,7 @@ class ReportController extends Controller
 
             return response()->json([
                 'id' => (string) $report->id,
+                'formattedId' => $report->formatted_id,
                 'date' => $report->date ? \Carbon\Carbon::parse($report->date)->format('Y-m-d') : '',
                 'projectId' => $report->project_id ? (string) $report->project_id : null,
                 'projectName' => $report->project?->name ?? '',
@@ -500,6 +506,7 @@ class ReportController extends Controller
                 'receipt' => $report->receipt,
                 'receipts' => $report->receipts,
                 'telegramMessageUrl' => $report->telegram_message_url ?? null,
+                'telegramDuplicateMessageUrl' => $report->telegram_duplicate_message_url ?? null,
                 'bloggerCabinetToken' => $cabinetToken,
                 'createdBy' => $report->created_by,
             ], 201);
@@ -691,14 +698,18 @@ class ReportController extends Controller
                 }
             })->afterResponse();
 
-            \App\Services\ActivityLogger::report('UPDATED', "Обновлен финансовый отчет #{$report->id} ({$report->channel_blogger}, сумма: {$report->paid_amount})", [
+            $report->loadMissing('project');
+
+            \App\Services\ActivityLogger::report('UPDATED', "Обновлен финансовый отчет {$report->formatted_id} ({$report->channel_blogger}, сумма: {$report->paid_amount})", [
                 'report_id' => $report->id,
+                'formatted_id' => $report->formatted_id,
                 'channel_blogger' => $report->channel_blogger,
                 'paid_amount' => $report->paid_amount,
             ]);
 
             return response()->json([
                 'id' => (string) $report->id,
+                'formattedId' => $report->formatted_id,
                 'date' => $report->date ? \Carbon\Carbon::parse($report->date)->format('Y-m-d') : '',
                 'projectId' => $report->project_id ? (string) $report->project_id : null,
                 'projectName' => $report->project?->name ?? '',
@@ -717,6 +728,7 @@ class ReportController extends Controller
                 'receipt' => $report->receipt,
                 'receipts' => $report->receipts,
                 'telegramMessageUrl' => $report->telegram_message_url ?? null,
+                'telegramDuplicateMessageUrl' => $report->telegram_duplicate_message_url ?? null,
                 'createdBy' => $report->created_by,
             ]);
         } catch (\Throwable $e) {

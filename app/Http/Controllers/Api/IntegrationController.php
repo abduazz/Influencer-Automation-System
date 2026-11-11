@@ -179,21 +179,43 @@ class IntegrationController extends Controller
             $tgClean = implode(', ', $cleanedParts) ?: null;
         }
 
+        $pricePerSlot = (float) ($request->pricePerSlot ?? 0);
+        $slotsCount = (int) ($request->slotsCount ?? 1);
+        $paidSlotsCount = $request->has('paidSlotsCount') && $request->paidSlotsCount !== null ? (int) $request->paidSlotsCount : $slotsCount;
+
+        $totalAmount = $request->input('totalAmount', $request->input('total_amount'));
+        if ($totalAmount === null || $totalAmount === '') {
+            $totalAmount = $pricePerSlot * $slotsCount;
+        } else {
+            $totalAmount = (float) $totalAmount;
+        }
+
+        $paidAmount = $request->input('paidAmount', $request->input('paid_amount'));
+        if ($paidAmount === null || $paidAmount === '') {
+            $paidAmount = $pricePerSlot * $paidSlotsCount;
+        } else {
+            $paidAmount = (float) $paidAmount;
+        }
+
+        $startDate = $request->startDate ? $request->startDate : now()->format('Y-m-d');
+        $endDate = $request->endDate ? $request->endDate : \Illuminate\Support\Carbon::parse($startDate)->addDays(14)->format('Y-m-d');
+
         $integration = Integration::create([
             'project_id' => $request->projectId,
             'blogger_name' => $request->bloggerName,
             'blogger_page_link' => $request->bloggerPageLink,
             'telegram_username' => $tgClean,
             'telegram_chat_id' => $request->input('telegramChatId') ?? $request->input('telegram_chat_id'),
-            'start_date' => $request->startDate ?? now()->format('Y-m-d'),
+            'start_date' => $startDate,
             'platform' => $request->platform,
             'referral_link' => $request->referralLink,
-            'price_per_slot' => $request->pricePerSlot,
-            'slots_count' => $request->slotsCount,
-            'paid_slots_count' => $request->paidSlotsCount ?? $request->slotsCount,
-            'total_amount' => $request->input('totalAmount', $request->input('total_amount')),
+            'price_per_slot' => $pricePerSlot,
+            'slots_count' => $slotsCount,
+            'paid_slots_count' => $paidSlotsCount,
+            'total_amount' => $totalAmount,
+            'paid_amount' => $paidAmount,
             'currency' => $request->input('currency') ?: 'UZS',
-            'end_date' => $request->endDate ?? now()->addDays(30)->format('Y-m-d'),
+            'end_date' => $endDate,
             'status' => $request->status ?? 'active',
             'kanban_stage' => $request->input('kanbanStage') ?: 'wishlist',
             'created_by' => $createdByName,

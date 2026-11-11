@@ -56,6 +56,7 @@ class Report extends Model
         'slots_config',
         'receipt',
         'telegram_message_url',
+        'telegram_duplicate_message_url',
         'telegram_sent',
         'sheets_sent',
         'created_by',
@@ -95,7 +96,17 @@ class Report extends Model
 
     protected $appends = [
         'receipts',
+        'formatted_id',
     ];
+
+    public function getFormattedIdAttribute(): string
+    {
+        $prefix = !empty($this->project?->prefix) ? strtoupper(trim((string) $this->project->prefix)) : null;
+        if ($prefix) {
+            return "#{$prefix}-{$this->id}";
+        }
+        return "#{$this->id}";
+    }
 
     public function getReceiptsAttribute(): array
     {

@@ -12,11 +12,21 @@ class Project extends Model
 
     protected $fillable = [
         'name',
+        'prefix',
         'description',
         'telegram_thread_id',
+        'telegram_submissions_thread_id',
+        'telegram_chat_id',
+        'telegram_topic_id',
+        'telegram_submissions_topic_id',
         'monthly_limit',
         'subdomain',
     ];
+
+    public function setPrefixAttribute($value): void
+    {
+        $this->attributes['prefix'] = $value !== null ? strtoupper(trim((string) $value)) : null;
+    }
 
     public function integrations(): HasMany
     {

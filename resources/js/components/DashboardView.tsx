@@ -46,9 +46,21 @@ interface DashboardViewProps {
   reports?: Report[];
   bulkPurchases?: BulkPurchase[];
   onAddProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
-  onEditProject?: (id: string, name: string, description: string, telegramThreadId?: string, monthlyLimit?: number | null, subdomain?: string) => void;
+  onEditProject?: (
+    id: string,
+    name: string,
+    description: string,
+    telegramThreadId?: string,
+    monthlyLimit?: number | null,
+    subdomain?: string,
+    prefix?: string,
+    telegramChatId?: string,
+    telegramTopicId?: string,
+    telegramSubmissionsThreadId?: string,
+    telegramSubmissionsTopicId?: string
+  ) => void;
   onDeleteProject: (id: string) => void;
-  onAddIntegration: (integration: Omit<Integration, 'id' | 'totalAmount'>) => void;
+  onAddIntegration: (integration: Omit<Integration, 'id' | 'paidAmount' | 'bloggerCabinetToken'> & { totalAmount?: number; paidAmount?: number }) => void;
   onEditIntegration: (id: string, integration: Partial<Integration>) => void;
   onDeleteIntegration: (id: string) => void;
   lang: Language;
@@ -59,6 +71,37 @@ interface DashboardViewProps {
   onNavigateToReports?: (projectId: string, bloggerName: string, paymentType: 'remaining') => void;
   loading?: boolean;
 }
+
+const cleanTelegramThreadInput = (val: string): string => {
+  const trimmed = val.trim();
+  if (/^https?:\/\/t\.me\/c\/\d+\/(\d+)/i.test(trimmed)) {
+    const m = trimmed.match(/t\.me\/c\/\d+\/(\d+)/i);
+    if (m) return m[1];
+  }
+  if (/^https?:\/\/t\.me\//i.test(trimmed)) {
+    const m = trimmed.match(/\/(\d+)\/?$/);
+    if (m) return m[1];
+  }
+  return trimmed;
+};
+
+const cleanTelegramChatInput = (val: string): string => {
+  let trimmed = val.trim();
+  if (/^https?:\/\/t\.me\/c\/(\d+)/i.test(trimmed)) {
+    const m = trimmed.match(/t\.me\/c\/(\d+)/i);
+    if (m) return '-100' + m[1];
+  }
+  if (trimmed.startsWith('-100') || trimmed.startsWith('-')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('100') && trimmed.length >= 11) {
+    return '-' + trimmed;
+  }
+  if (/^\d{8,}$/.test(trimmed)) {
+    return '-100' + trimmed;
+  }
+  return trimmed;
+};
 
 export default function DashboardView({
   projects,
@@ -185,26 +228,47 @@ export default function DashboardView({
         setAccountingMode(saved);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAddProjectModal(false);
+        setShowEditProjectModal(false);
+        setShowAddIntegrationModal(false);
+        setEditingIntegration(null);
+        setSelectedIntegrationForDetails(null);
+      }
+    };
     window.addEventListener('storage', handleSync);
     window.addEventListener('accounting_mode_changed', handleSync);
+    window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('accounting_mode_changed', handleSync);
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
   // New Project Form state
   const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectPrefix, setNewProjectPrefix] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [newProjectThreadId, setNewProjectThreadId] = useState('');
+  const [newProjectSubmissionsThreadId, setNewProjectSubmissionsThreadId] = useState('');
+  const [newProjectChatId, setNewProjectChatId] = useState('');
+  const [newProjectTopicId, setNewProjectTopicId] = useState('');
+  const [newProjectSubmissionsTopicId, setNewProjectSubmissionsTopicId] = useState('');
   const [newProjectMonthlyLimit, setNewProjectMonthlyLimit] = useState('');
   const [newProjectSubdomain, setNewProjectSubdomain] = useState('1');
 
   // Edit Project Form state
   const [showEditProjectModal, setShowEditProjectModal] = useState(false);
   const [editProjectName, setEditProjectName] = useState('');
+  const [editProjectPrefix, setEditProjectPrefix] = useState('');
   const [editProjectDesc, setEditProjectDesc] = useState('');
   const [editProjectThreadId, setEditProjectThreadId] = useState('');
+  const [editProjectSubmissionsThreadId, setEditProjectSubmissionsThreadId] = useState('');
+  const [editProjectChatId, setEditProjectChatId] = useState('');
+  const [editProjectTopicId, setEditProjectTopicId] = useState('');
+  const [editProjectSubmissionsTopicId, setEditProjectSubmissionsTopicId] = useState('');
   const [editProjectMonthlyLimit, setEditProjectMonthlyLimit] = useState('');
   const [editProjectSubdomain, setEditProjectSubdomain] = useState('1');
 
@@ -333,15 +397,25 @@ export default function DashboardView({
     e.preventDefault();
     if (!newProjectName.trim()) return;
     onAddProject({
-      name: newProjectName,
-      description: newProjectDesc,
-      telegramThreadId: newProjectThreadId,
+      name: newProjectName.trim(),
+      prefix: newProjectPrefix.trim() ? newProjectPrefix.trim().toUpperCase() : undefined,
+      description: newProjectDesc.trim(),
+      telegramThreadId: cleanTelegramThreadInput(newProjectThreadId) || undefined,
+      telegramSubmissionsThreadId: cleanTelegramThreadInput(newProjectSubmissionsThreadId) || undefined,
+      telegramChatId: cleanTelegramChatInput(newProjectChatId) || undefined,
+      telegramTopicId: cleanTelegramThreadInput(newProjectTopicId) || undefined,
+      telegramSubmissionsTopicId: cleanTelegramThreadInput(newProjectSubmissionsTopicId) || undefined,
       monthlyLimit: newProjectMonthlyLimit ? parseInt(newProjectMonthlyLimit, 10) : null,
       subdomain: newProjectSubdomain || '1',
     });
     setNewProjectName('');
+    setNewProjectPrefix('');
     setNewProjectDesc('');
     setNewProjectThreadId('');
+    setNewProjectSubmissionsThreadId('');
+    setNewProjectChatId('');
+    setNewProjectTopicId('');
+    setNewProjectSubmissionsTopicId('');
     setNewProjectMonthlyLimit('');
     setNewProjectSubdomain('1');
     setShowAddProjectModal(false);
@@ -353,11 +427,16 @@ export default function DashboardView({
     if (onEditProject) {
       onEditProject(
         selectedProject.id,
-        editProjectName,
-        editProjectDesc,
-        editProjectThreadId,
+        editProjectName.trim(),
+        editProjectDesc.trim(),
+        cleanTelegramThreadInput(editProjectThreadId) || undefined,
         editProjectMonthlyLimit ? parseInt(editProjectMonthlyLimit, 10) : null,
-        editProjectSubdomain || '1'
+        editProjectSubdomain || '1',
+        editProjectPrefix.trim() ? editProjectPrefix.trim().toUpperCase() : undefined,
+        cleanTelegramChatInput(editProjectChatId) || undefined,
+        cleanTelegramThreadInput(editProjectTopicId) || undefined,
+        cleanTelegramThreadInput(editProjectSubmissionsThreadId) || undefined,
+        cleanTelegramThreadInput(editProjectSubmissionsTopicId) || undefined
       );
     }
     setShowEditProjectModal(false);
@@ -365,7 +444,7 @@ export default function DashboardView({
 
   const handleSubmitIntegration = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!bloggerName.trim() || !bloggerPageLink.trim() || !startDate) return;
+    if (!bloggerName.trim() || !startDate) return;
 
     let finalSlotsConfig: SlotConfig[] = [];
     if (customizeSlots) {
@@ -393,6 +472,9 @@ export default function DashboardView({
       }
     }
 
+    const calculatedTotalAmount = pricePerSlot * slotsCount;
+    const effectiveEndDate = endDate || (startDate ? new Date(new Date(startDate).getTime() + 14 * 86400000).toISOString().split('T')[0] : new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]);
+
     if (editingIntegration) {
       let preservedSlotsConfig = finalSlotsConfig;
       if (!customizeSlots && editingIntegration.slotsConfig && editingIntegration.slotsConfig.length > 0) {
@@ -410,33 +492,37 @@ export default function DashboardView({
       }
 
       onEditIntegration(editingIntegration.id, {
-        bloggerName,
-        bloggerPageLink,
+        bloggerName: bloggerName.trim(),
+        bloggerPageLink: bloggerPageLink.trim(),
         telegramUsername: telegramUsername.trim() || undefined,
         startDate,
-        endDate,
+        endDate: effectiveEndDate,
         platform,
-        referralLink,
+        referralLink: referralLink.trim() || undefined,
         pricePerSlot,
         slotsCount,
-        totalAmount: pricePerSlot * slotsCount,
+        totalAmount: calculatedTotalAmount,
         paidSlotsCount: editingIntegration.paidSlotsCount,
         paidAmount: editingIntegration.paidAmount,
         slotsConfig: preservedSlotsConfig
       });
       setEditingIntegration(null);
     } else {
+      const targetProjectId = selectedProjectId || (selectedProject ? selectedProject.id : (projects[0]?.id || ''));
       onAddIntegration({
-        projectId: selectedProjectId,
-        bloggerName,
-        bloggerPageLink,
+        projectId: targetProjectId,
+        bloggerName: bloggerName.trim(),
+        bloggerPageLink: bloggerPageLink.trim(),
         telegramUsername: telegramUsername.trim() || undefined,
         startDate,
-        endDate,
+        endDate: effectiveEndDate,
         platform,
-        referralLink,
+        referralLink: referralLink.trim() || undefined,
         pricePerSlot,
         slotsCount,
+        totalAmount: calculatedTotalAmount,
+        paidSlotsCount: slotsCount,
+        paidAmount: calculatedTotalAmount,
         status: 'active',
         kanbanStage: 'paid_in_progress',
         slotsConfig: finalSlotsConfig,
@@ -840,8 +926,13 @@ return (
                   <button
                     onClick={() => {
                       setEditProjectName(selectedProject.name);
+                      setEditProjectPrefix(selectedProject.prefix || '');
                       setEditProjectDesc(selectedProject.description || '');
                       setEditProjectThreadId(selectedProject.telegramThreadId || '');
+                      setEditProjectSubmissionsThreadId(selectedProject.telegramSubmissionsThreadId || '');
+                      setEditProjectChatId(selectedProject.telegramChatId || '');
+                      setEditProjectTopicId(selectedProject.telegramTopicId || '');
+                      setEditProjectSubmissionsTopicId(selectedProject.telegramSubmissionsTopicId || '');
                       setEditProjectMonthlyLimit(selectedProject.monthlyLimit ? String(selectedProject.monthlyLimit) : '');
                       setEditProjectSubdomain(selectedProject.subdomain || '1');
                       setShowEditProjectModal(true);
@@ -1454,101 +1545,254 @@ return (
 
     {/* --- MODAL 1: ADD PROJECT --- */}
     {showAddProjectModal && (
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-100">
-          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
-            <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-              <Plus className="w-4 h-4 text-black" /> {t.addProjectTitle}
-            </h3>
+      <div
+        onClick={() => setShowAddProjectModal(false)}
+        className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto animate-in fade-in duration-100"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white rounded-2xl shadow-2xl border border-neutral-200/90 w-full max-w-2xl my-auto max-h-[90vh] flex flex-col overflow-hidden text-left"
+        >
+          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-100 shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center border border-neutral-200/60">
+                <Plus className="w-4 h-4 text-neutral-800" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-neutral-900 leading-tight">
+                  {t.addProjectTitle}
+                </h3>
+                <p className="text-[11px] text-neutral-400">
+                  {lang === 'ru' ? 'Создание нового проекта и настройка Telegram' : lang === 'uz' ? 'Yangi loyiha yaratish va Telegram sozlamalari' : 'Create new project and configure Telegram'}
+                </p>
+              </div>
+            </div>
             <button
+              type="button"
               onClick={() => setShowAddProjectModal(false)}
-              className="text-neutral-400 hover:text-black font-bold text-sm"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
             >
-              ✕
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          <form onSubmit={handleSubmitProject} className="p-6 space-y-4 text-left">
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {t.projectNameLabel}
-              </label>
-              <input
-                type="text"
-                required
-                placeholder={t.projectNamePlaceholder}
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
+          <form onSubmit={handleSubmitProject} className="flex flex-col flex-1 min-h-0 text-left">
+            <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Основная информация */}
+              <div className="space-y-3">
+                <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                  {lang === 'ru' ? 'Основная информация' : lang === 'uz' ? 'Asosiy ma\'lumotlar' : 'General Information'}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                      {t.projectNameLabel} <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={t.projectNamePlaceholder}
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-medium text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-1">
+                    <label className="block text-[11px] font-bold text-neutral-700 mb-1 flex items-center justify-between">
+                      <span>{lang === 'ru' ? 'Префикс' : 'Prefiks'}</span>
+                      <span className="text-[10px] text-neutral-400 font-mono font-normal">#TZPY-294</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. TZPY"
+                      maxLength={10}
+                      value={newProjectPrefix}
+                      onChange={(e) => setNewProjectPrefix(e.target.value.toUpperCase())}
+                      className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono font-bold uppercase tracking-wider text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                    {t.projectDescLabel}
+                  </label>
+                  <textarea
+                    placeholder={t.projectDescPlaceholder}
+                    value={newProjectDesc}
+                    onChange={(e) => setNewProjectDesc(e.target.value)}
+                    rows={2}
+                    className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs text-neutral-900 focus:outline-none transition duration-150 resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                      {t.monthlyLimit} (UZS)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 2000000000"
+                      value={newProjectMonthlyLimit}
+                      onChange={(e) => setNewProjectMonthlyLimit(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-semibold text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 mb-1 flex items-center justify-between">
+                      <span>{lang === 'ru' ? 'Субдомен (Subdomain)' : 'Subdomen'}</span>
+                      <span className="text-[10px] text-neutral-400 font-normal">1 для 1.tezi.uz</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="1"
+                      value={newProjectSubdomain}
+                      onChange={(e) => setNewProjectSubdomain(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-semibold text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Настройки Telegram */}
+              <div className="space-y-3 pt-3 border-t border-neutral-100">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                  <Send className="w-3 h-3 text-neutral-400" />
+                  <span>{lang === 'ru' ? 'Маршрутизация отчетов в Telegram' : lang === 'uz' ? 'Telegram hisobot marshrutlash' : 'Telegram Reports Routing'}</span>
+                </div>
+
+                {/* Card 1: Общая группа компании */}
+                <div className="p-3.5 bg-neutral-50/80 rounded-xl border border-neutral-200/70 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-neutral-800 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                      {lang === 'ru' ? 'Общая группа компании' : lang === 'uz' ? 'Kompaniyaning umumiy guruhi' : 'Main Company Group'}
+                    </span>
+                    <span className="text-[10px] text-neutral-400 font-medium">
+                      {lang === 'ru' ? 'Темы форума (Topics)' : 'Forum mavzulari'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                        {lang === 'ru' ? 'Тема финотчетов (Thread ID)' : lang === 'uz' ? 'Fin hisobotlar mavzusi' : 'Fin Reports Thread ID'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 12345"
+                        value={newProjectThreadId}
+                        onChange={(e) => setNewProjectThreadId(e.target.value)}
+                        onBlur={(e) => setNewProjectThreadId(cleanTelegramThreadInput(e.target.value))}
+                        className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                      />
+                      <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                        {lang === 'ru' ? 'Номер темы или ссылка t.me/c/...' : 'Mavzu raqami yoki havola'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                        {lang === 'ru' ? 'Тема блогеров / слотов (опция)' : lang === 'uz' ? 'Blogger mavzusi (ixtiyoriy)' : 'Submissions Thread ID'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 12346"
+                        value={newProjectSubmissionsThreadId}
+                        onChange={(e) => setNewProjectSubmissionsThreadId(e.target.value)}
+                        onBlur={(e) => setNewProjectSubmissionsThreadId(cleanTelegramThreadInput(e.target.value))}
+                        className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                      />
+                      <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                        {lang === 'ru' ? 'Для отчетов о выполнении блогеров' : 'Bajarilgan slotlar hisoboti'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 2: Персональная группа проекта */}
+                <div className="p-3.5 bg-neutral-50/80 rounded-xl border border-neutral-200/70 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-neutral-800 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                      {lang === 'ru' ? 'Персональная группа проекта' : lang === 'uz' ? 'Loyiha shaxsiy guruhi' : 'Project Dedicated Group'}
+                    </span>
+                    <span className="text-[10px] text-neutral-400 font-medium">
+                      {lang === 'ru' ? 'Дублирование отчетов' : 'Hisobotlarni nusxalash'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                      {lang === 'ru' ? 'Telegram Chat ID группы проекта' : lang === 'uz' ? 'Guruh Chat ID' : 'Group Chat ID'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. -1001234567890"
+                      value={newProjectChatId}
+                      onChange={(e) => setNewProjectChatId(e.target.value)}
+                      onBlur={(e) => setNewProjectChatId(cleanTelegramChatInput(e.target.value))}
+                      className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                    <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                      {lang === 'ru' ? 'Если указан, отчеты будут дублироваться в эту группу' : 'Kiritilsa, hisobotlar ushbu guruhga ham yuboriladi'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-neutral-200/50">
+                    <div>
+                      <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                        {lang === 'ru' ? 'Тема финотчетов (Topic ID)' : lang === 'uz' ? 'Fin hisobotlar mavzusi' : 'Fin Reports Topic ID'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 326"
+                        value={newProjectTopicId}
+                        onChange={(e) => setNewProjectTopicId(e.target.value)}
+                        onBlur={(e) => setNewProjectTopicId(cleanTelegramThreadInput(e.target.value))}
+                        className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                      />
+                      <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                        {lang === 'ru' ? 'Пусто = общая лента чата' : 'Bo‘sh = umumiy lenta'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                        {lang === 'ru' ? 'Тема блогеров / слотов (Topic ID)' : lang === 'uz' ? 'Blogger hisobotlari mavzusi' : 'Submissions Topic ID'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 327"
+                        value={newProjectSubmissionsTopicId}
+                        onChange={(e) => setNewProjectSubmissionsTopicId(e.target.value)}
+                        onBlur={(e) => setNewProjectSubmissionsTopicId(cleanTelegramThreadInput(e.target.value))}
+                        className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                      />
+                      <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                        {lang === 'ru' ? 'Отчеты о выполнении блогеров' : 'Bajarilgan ishlar mavzusi'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {t.projectDescLabel}
-              </label>
-              <textarea
-                placeholder={t.projectDescPlaceholder}
-                value={newProjectDesc}
-                onChange={(e) => setNewProjectDesc(e.target.value)}
-                rows={3}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {lang === 'ru' ? 'Telegram ID Темы (Thread ID)' : lang === 'uz' ? 'Telegram Mavzu ID (Thread ID)' : 'Telegram Thread ID'}
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 12345"
-                value={newProjectThreadId}
-                onChange={(e) => setNewProjectThreadId(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {t.monthlyLimit}
-              </label>
-              <input
-                type="number"
-                placeholder="e.g. 12131000"
-                value={newProjectMonthlyLimit}
-                onChange={(e) => setNewProjectMonthlyLimit(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {lang === 'ru' ? 'Субдомен (Subdomain)' : lang === 'uz' ? 'Subdomen' : 'Subdomain'}
-              </label>
-              <input
-                type="text"
-                placeholder="1"
-                value={newProjectSubdomain}
-                onChange={(e) => setNewProjectSubdomain(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
-              <span className="text-[10px] text-neutral-400 mt-1 block">
-                {lang === 'ru' ? 'Например: 1 для 1.tezi.uz, 2 для 2.tezi.uz' : 'Masalan: 1 (1.tezi.uz uchun), 2 (2.tezi.uz uchun)'}
-              </span>
-            </div>
-
-            <div className="pt-2 flex gap-3">
+            <div className="p-4 bg-neutral-50/90 border-t border-neutral-200 flex gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowAddProjectModal(false)}
-                className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
+                className="flex-1 py-2.5 border border-neutral-200 hover:bg-neutral-100 text-neutral-700 font-bold text-xs rounded-lg transition duration-150 cursor-pointer"
               >
                 {t.cancelBtn}
               </button>
               <button
                 type="submit"
-                className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
+                className="flex-1 py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150 cursor-pointer shadow-xs"
               >
                 {t.createBtn}
               </button>
@@ -1560,101 +1804,254 @@ return (
 
     {/* --- MODAL 1B: EDIT PROJECT --- */}
     {showEditProjectModal && (
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-100">
-          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
-            <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
-              <Edit3 className="w-4 h-4 text-black" /> {lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
-            </h3>
+      <div
+        onClick={() => setShowEditProjectModal(false)}
+        className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto animate-in fade-in duration-100"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white rounded-2xl shadow-2xl border border-neutral-200/90 w-full max-w-2xl my-auto max-h-[90vh] flex flex-col overflow-hidden text-left"
+        >
+          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-100 shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center border border-neutral-200/60">
+                <Edit3 className="w-4 h-4 text-neutral-800" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-neutral-900 leading-tight">
+                  {lang === 'ru' ? 'Редактировать проект' : lang === 'uz' ? 'Loyihani tahrirlash' : 'Edit Project'}
+                </h3>
+                <p className="text-[11px] text-neutral-400">
+                  {selectedProject ? selectedProject.name : ''}
+                </p>
+              </div>
+            </div>
             <button
+              type="button"
               onClick={() => setShowEditProjectModal(false)}
-              className="text-neutral-400 hover:text-black font-bold text-sm"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
             >
-              ✕
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          <form onSubmit={handleSubmitEditProject} className="p-6 space-y-4 text-left">
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {t.projectNameLabel}
-              </label>
-              <input
-                type="text"
-                required
-                placeholder={t.projectNamePlaceholder}
-                value={editProjectName}
-                onChange={(e) => setEditProjectName(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
+          <form onSubmit={handleSubmitEditProject} className="flex flex-col flex-1 min-h-0 text-left">
+            <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Основная информация */}
+              <div className="space-y-3">
+                <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                  {lang === 'ru' ? 'Основная информация' : lang === 'uz' ? 'Asosiy ma\'lumotlar' : 'General Information'}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                      {t.projectNameLabel} <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={t.projectNamePlaceholder}
+                      value={editProjectName}
+                      onChange={(e) => setEditProjectName(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-medium text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-1">
+                    <label className="block text-[11px] font-bold text-neutral-700 mb-1 flex items-center justify-between">
+                      <span>{lang === 'ru' ? 'Префикс' : 'Prefiks'}</span>
+                      <span className="text-[10px] text-neutral-400 font-mono font-normal">#TZPY-294</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. TZPY"
+                      maxLength={10}
+                      value={editProjectPrefix}
+                      onChange={(e) => setEditProjectPrefix(e.target.value.toUpperCase())}
+                      className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono font-bold uppercase tracking-wider text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                    {t.projectDescLabel}
+                  </label>
+                  <textarea
+                    placeholder={t.projectDescPlaceholder}
+                    value={editProjectDesc}
+                    onChange={(e) => setEditProjectDesc(e.target.value)}
+                    rows={2}
+                    className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs text-neutral-900 focus:outline-none transition duration-150 resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                      {t.monthlyLimit} (UZS)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 2000000000"
+                      value={editProjectMonthlyLimit}
+                      onChange={(e) => setEditProjectMonthlyLimit(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-semibold text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 mb-1 flex items-center justify-between">
+                      <span>{lang === 'ru' ? 'Субдомен (Subdomain)' : 'Subdomen'}</span>
+                      <span className="text-[10px] text-neutral-400 font-normal">1 для 1.tezi.uz</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="1"
+                      value={editProjectSubdomain}
+                      onChange={(e) => setEditProjectSubdomain(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-neutral-50/60 hover:bg-white focus:bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-semibold text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Настройки Telegram */}
+              <div className="space-y-3 pt-3 border-t border-neutral-100">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                  <Send className="w-3 h-3 text-neutral-400" />
+                  <span>{lang === 'ru' ? 'Маршрутизация отчетов в Telegram' : lang === 'uz' ? 'Telegram hisobot marshrutlash' : 'Telegram Reports Routing'}</span>
+                </div>
+
+                {/* Card 1: Общая группа компании */}
+                <div className="p-3.5 bg-neutral-50/80 rounded-xl border border-neutral-200/70 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-neutral-800 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                      {lang === 'ru' ? 'Общая группа компании' : lang === 'uz' ? 'Kompaniyaning umumiy guruhi' : 'Main Company Group'}
+                    </span>
+                    <span className="text-[10px] text-neutral-400 font-medium">
+                      {lang === 'ru' ? 'Темы форума (Topics)' : 'Forum mavzulari'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                        {lang === 'ru' ? 'Тема финотчетов (Thread ID)' : lang === 'uz' ? 'Fin hisobotlar mavzusi' : 'Fin Reports Thread ID'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 12345"
+                        value={editProjectThreadId}
+                        onChange={(e) => setEditProjectThreadId(e.target.value)}
+                        onBlur={(e) => setEditProjectThreadId(cleanTelegramThreadInput(e.target.value))}
+                        className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                      />
+                      <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                        {lang === 'ru' ? 'Номер темы или ссылка t.me/c/...' : 'Mavzu raqami yoki havola'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                        {lang === 'ru' ? 'Тема блогеров / слотов (опция)' : lang === 'uz' ? 'Blogger mavzusi (ixtiyoriy)' : 'Submissions Thread ID'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 12346"
+                        value={editProjectSubmissionsThreadId}
+                        onChange={(e) => setEditProjectSubmissionsThreadId(e.target.value)}
+                        onBlur={(e) => setEditProjectSubmissionsThreadId(cleanTelegramThreadInput(e.target.value))}
+                        className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                      />
+                      <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                        {lang === 'ru' ? 'Для отчетов о выполнении блогеров' : 'Bajarilgan slotlar hisoboti'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 2: Персональная группа проекта */}
+                <div className="p-3.5 bg-neutral-50/80 rounded-xl border border-neutral-200/70 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-neutral-800 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                      {lang === 'ru' ? 'Персональная группа проекта' : lang === 'uz' ? 'Loyiha shaxsiy guruhi' : 'Project Dedicated Group'}
+                    </span>
+                    <span className="text-[10px] text-neutral-400 font-medium">
+                      {lang === 'ru' ? 'Дублирование отчетов' : 'Hisobotlarni nusxalash'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                      {lang === 'ru' ? 'Telegram Chat ID группы проекта' : lang === 'uz' ? 'Guruh Chat ID' : 'Group Chat ID'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. -1001234567890"
+                      value={editProjectChatId}
+                      onChange={(e) => setEditProjectChatId(e.target.value)}
+                      onBlur={(e) => setEditProjectChatId(cleanTelegramChatInput(e.target.value))}
+                      className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                    />
+                    <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                      {lang === 'ru' ? 'Если указан, отчеты будут дублироваться в эту группу' : 'Kiritilsa, hisobotlar ushbu guruhga ham yuboriladi'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-neutral-200/50">
+                    <div>
+                      <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                        {lang === 'ru' ? 'Тема финотчетов (Topic ID)' : lang === 'uz' ? 'Fin hisobotlar mavzusi' : 'Fin Reports Topic ID'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 326"
+                        value={editProjectTopicId}
+                        onChange={(e) => setEditProjectTopicId(e.target.value)}
+                        onBlur={(e) => setEditProjectTopicId(cleanTelegramThreadInput(e.target.value))}
+                        className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                      />
+                      <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                        {lang === 'ru' ? 'Пусто = общая лента чата' : 'Bo‘sh = umumiy lenta'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-neutral-600 mb-1">
+                        {lang === 'ru' ? 'Тема блогеров / слотов (Topic ID)' : lang === 'uz' ? 'Blogger hisobotlari mavzusi' : 'Submissions Topic ID'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 327"
+                        value={editProjectSubmissionsTopicId}
+                        onChange={(e) => setEditProjectSubmissionsTopicId(e.target.value)}
+                        onBlur={(e) => setEditProjectSubmissionsTopicId(cleanTelegramThreadInput(e.target.value))}
+                        className="w-full px-3 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs font-mono text-neutral-900 focus:outline-none transition duration-150"
+                      />
+                      <span className="text-[10px] text-neutral-400 mt-0.5 block">
+                        {lang === 'ru' ? 'Отчеты о выполнении блогеров' : 'Bajarilgan ishlar mavzusi'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {t.projectDescLabel}
-              </label>
-              <textarea
-                placeholder={t.projectDescPlaceholder}
-                value={editProjectDesc}
-                onChange={(e) => setEditProjectDesc(e.target.value)}
-                rows={3}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {lang === 'ru' ? 'Telegram ID Темы (Thread ID)' : lang === 'uz' ? 'Telegram Mavzu ID (Thread ID)' : 'Telegram Thread ID'}
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 12345"
-                value={editProjectThreadId}
-                onChange={(e) => setEditProjectThreadId(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {t.monthlyLimit}
-              </label>
-              <input
-                type="number"
-                placeholder="e.g. 12131000"
-                value={editProjectMonthlyLimit}
-                onChange={(e) => setEditProjectMonthlyLimit(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                {lang === 'ru' ? 'Субдомен (Subdomain)' : lang === 'uz' ? 'Subdomen' : 'Subdomain'}
-              </label>
-              <input
-                type="text"
-                placeholder="1"
-                value={editProjectSubdomain}
-                onChange={(e) => setEditProjectSubdomain(e.target.value)}
-                className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
-              />
-              <span className="text-[10px] text-neutral-400 mt-1 block">
-                {lang === 'ru' ? 'Например: 1 для 1.tezi.uz, 2 для 2.tezi.uz' : 'Masalan: 1 (1.tezi.uz uchun), 2 (2.tezi.uz uchun)'}
-              </span>
-            </div>
-
-            <div className="pt-2 flex gap-3">
+            <div className="p-4 bg-neutral-50/90 border-t border-neutral-200 flex gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowEditProjectModal(false)}
-                className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
+                className="flex-1 py-2.5 border border-neutral-200 hover:bg-neutral-100 text-neutral-700 font-bold text-xs rounded-lg transition duration-150 cursor-pointer"
               >
                 {t.cancelBtn}
               </button>
               <button
                 type="submit"
-                className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
+                className="flex-1 py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150 cursor-pointer shadow-xs"
               >
                 {lang === 'ru' ? 'Сохранить' : lang === 'uz' ? 'Saqlash' : 'Save'}
               </button>
@@ -1666,9 +2063,18 @@ return (
 
     {/* --- MODAL 2: ADD/EDIT INTEGRATION --- */}
     {(showAddIntegrationModal || editingIntegration) && (
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-2xl overflow-hidden animate-in fade-in duration-100">
-          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
+      <div
+        onClick={() => {
+          setShowAddIntegrationModal(false);
+          setEditingIntegration(null);
+        }}
+        className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto animate-in fade-in duration-100"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-2xl my-auto max-h-[90vh] flex flex-col overflow-hidden text-left"
+        >
+          <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200 shrink-0">
             <div className="flex items-center gap-3">
               <h3 className="font-bold text-sm uppercase tracking-wider">
                 {editingIntegration ? t.editIntegration : t.newIntegration}
@@ -1687,17 +2093,19 @@ return (
               )}
             </div>
             <button
+              type="button"
               onClick={() => {
                 setShowAddIntegrationModal(false);
                 setEditingIntegration(null);
               }}
-              className="text-neutral-400 hover:text-black font-bold text-sm"
+              className="text-neutral-400 hover:text-black font-bold text-sm cursor-pointer p-1 rounded transition duration-150"
             >
               ✕
             </button>
           </div>
 
-          <form onSubmit={handleSubmitIntegration} className="p-6 space-y-4 text-left">
+          <form onSubmit={handleSubmitIntegration} className="flex flex-col flex-1 min-h-0 text-left">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
@@ -1734,12 +2142,11 @@ return (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                  {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу блогера *' : lang === 'uz' ? 'Blogger sahifasi havolasi *' : 'Blogger Page Link *')}
+                  {t.bloggerPageLinkLabel || (lang === 'ru' ? 'Ссылка на страницу / канал блогера' : lang === 'uz' ? 'Blogger sahifasi / kanali havolasi' : 'Blogger Page / Channel Link')}
                 </label>
                 <input
-                  type="url"
-                  required
-                  placeholder="https://instagram.com/alex_fit"
+                  type="text"
+                  placeholder="https://instagram.com/alex_fit или @username"
                   value={bloggerPageLink}
                   onChange={(e) => setBloggerPageLink(e.target.value)}
                   className="w-full px-4 py-2 bg-white border border-neutral-200 focus:border-black rounded-lg text-xs focus:outline-none transition duration-150"
@@ -1751,7 +2158,7 @@ return (
                   {t.referralLinkField}
                 </label>
                 <input
-                  type="url"
+                  type="text"
                   placeholder="https://saas-ai.com/join?utm_source=alex_fit"
                   value={referralLink}
                   onChange={(e) => setReferralLink(e.target.value)}
@@ -1990,20 +2397,22 @@ return (
               </div>
             )}
 
-            <div className="pt-2 flex gap-3">
+            </div>
+
+            <div className="p-4 bg-neutral-50/90 border-t border-neutral-200 flex gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   setShowAddIntegrationModal(false);
                   setEditingIntegration(null);
                 }}
-                className="flex-1 py-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-bold text-xs rounded-lg transition duration-150"
+                className="flex-1 py-2.5 border border-neutral-200 hover:bg-neutral-100 text-neutral-700 font-bold text-xs rounded-lg transition duration-150 cursor-pointer"
               >
                 {t.cancelBtn}
               </button>
               <button
                 type="submit"
-                className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150"
+                className="flex-1 py-2.5 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-lg transition duration-150 cursor-pointer shadow-xs"
               >
                 {editingIntegration ? t.saveChangesBtn : t.addIntegrationBtn}
               </button>
@@ -2015,8 +2424,14 @@ return (
 
     {/* Detailed Integration Info Modal */}
     {selectedIntegrationForDetails && (
-      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 transition-all duration-200 animate-in fade-in">
-        <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh] text-left border border-neutral-200">
+      <div
+        onClick={() => setSelectedIntegrationForDetails(null)}
+        className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 transition-all duration-200 animate-in fade-in overflow-y-auto"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col my-auto max-h-[85vh] text-left border border-neutral-200"
+        >
           {/* Modal Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 bg-neutral-50/50">
             <div>

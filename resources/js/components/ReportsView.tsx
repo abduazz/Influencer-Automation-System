@@ -961,12 +961,13 @@ export default function ReportsView({
 
     if (paymentType !== 'other' && paymentType !== 'remaining' && existingBloggerReports.length > 0) {
       const lastRep = existingBloggerReports[0];
+      const repCode = lastRep.formattedId || `#${lastRep.id}`;
       const creatorInfo = lastRep.createdBy ? ` (${lang === 'uz' ? 'yaratdi' : lang === 'en' ? 'by' : 'создал'}: ${lastRep.createdBy})` : '';
       const confirmDuplicateMsg = lang === 'ru'
-        ? `Внимание! Для блогера "${channelBlogger}" в этом проекте уже есть отчет #${lastRep.id} от ${lastRep.date} на сумму ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}.\n\nСоздание нового отчета прибавит слоты и сумму к существующей интеграции. Вы уверены, что хотите создать еще один отчет?`
+        ? `Внимание! Для блогера "${channelBlogger}" в этом проекте уже есть отчет ${repCode} от ${lastRep.date} на сумму ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}.\n\nСоздание нового отчета прибавит слоты и сумму к существующей интеграции. Вы уверены, что хотите создать еще один отчет?`
         : lang === 'uz'
-          ? `Diqqat! "${channelBlogger}" blogeri uchun ushbu loyihada #${lastRep.id}-sonli hisobot (${lastRep.date}, ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}) allaqachon mavjud.\n\nYangi hisobot yaratish slotlar va summani mavjud integratsiyaga qo'shadi. Davom etishni xohlaysizmi?`
-          : `Warning! A report #${lastRep.id} (${lastRep.date}, ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}) already exists for "${channelBlogger}" in this project.\n\nCreating a new report will add slots and amount to the existing integration. Are you sure you want to proceed?`;
+          ? `Diqqat! "${channelBlogger}" blogeri uchun ushbu loyihada ${repCode}-sonli hisobot (${lastRep.date}, ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}) allaqachon mavjud.\n\nYangi hisobot yaratish slotlar va summani mavjud integratsiyaga qo'shadi. Davom etishni xohlaysizmi?`
+          : `Warning! A report ${repCode} (${lastRep.date}, ${formatPrice(lastRep.totalAmount)} UZS${creatorInfo}) already exists for "${channelBlogger}" in this project.\n\nCreating a new report will add slots and amount to the existing integration. Are you sure you want to proceed?`;
       if (!window.confirm(confirmDuplicateMsg)) {
         return;
       }
@@ -1257,10 +1258,10 @@ export default function ReportsView({
                             <span>⚠️</span>
                             <span>
                               {lang === 'ru'
-                                ? `По блогеру ${channelBlogger} уже есть отчет #${lastRep.id} в этом проекте!`
+                                ? `По блогеру ${channelBlogger} уже есть отчет ${lastRep.formattedId || `#${lastRep.id}`} в этом проекте!`
                                 : lang === 'uz'
-                                  ? `${channelBlogger} bo'yicha ushbu loyihada #${lastRep.id} hisobot allaqachon mavjud!`
-                                  : `Report #${lastRep.id} already exists for ${channelBlogger} in this project!`}
+                                  ? `${channelBlogger} bo'yicha ushbu loyihada ${lastRep.formattedId || `#${lastRep.id}`} hisobot allaqachon mavjud!`
+                                  : `Report ${lastRep.formattedId || `#${lastRep.id}`} already exists for ${channelBlogger} in this project!`}
                             </span>
                           </div>
                           <p className="text-[10px] text-amber-700 leading-relaxed">
@@ -2290,8 +2291,14 @@ export default function ReportsView({
       )}
       {/* Searchable Blogger Selector Modal */}
       {isBloggerModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4 transition-all duration-200">
-          <div className="w-full md:max-w-md bg-white rounded-t-2xl md:rounded-2xl shadow-xl flex flex-col max-h-[80vh] md:max-h-[600px] overflow-hidden">
+        <div
+          onClick={() => setIsBloggerModalOpen(false)}
+          className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4 transition-all duration-200 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full md:max-w-md bg-white rounded-t-2xl md:rounded-2xl shadow-xl flex flex-col max-h-[80vh] md:max-h-[600px] my-auto overflow-hidden text-left"
+          >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3.5 border-b border-neutral-100 bg-neutral-50/50">
               <span className="font-extrabold text-[13px] text-black uppercase tracking-tight">

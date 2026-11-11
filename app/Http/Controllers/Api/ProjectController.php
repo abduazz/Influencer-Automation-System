@@ -30,8 +30,13 @@ class ProjectController extends Controller
             return [
                 'id' => (string) $project->id,
                 'name' => $project->name,
+                'prefix' => $project->prefix ?? '',
                 'description' => $project->description ?? '',
                 'telegramThreadId' => $project->telegram_thread_id ?? '',
+                'telegramSubmissionsThreadId' => $project->telegram_submissions_thread_id ?? '',
+                'telegramChatId' => $project->telegram_chat_id ?? '',
+                'telegramTopicId' => $project->telegram_topic_id ?? '',
+                'telegramSubmissionsTopicId' => $project->telegram_submissions_topic_id ?? '',
                 'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
                 'subdomain' => $project->subdomain ?? '1',
                 'createdAt' => $project->created_at->format('Y-m-d'),
@@ -43,8 +48,13 @@ class ProjectController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
+            'prefix' => 'nullable|string|max:50',
             'description' => 'nullable|string',
             'telegramThreadId' => 'nullable|string',
+            'telegramSubmissionsThreadId' => 'nullable|string',
+            'telegramChatId' => 'nullable|string|max:100',
+            'telegramTopicId' => 'nullable|string|max:100',
+            'telegramSubmissionsTopicId' => 'nullable|string|max:100',
             'monthlyLimit' => 'nullable|integer|min:0',
             'subdomain' => 'nullable|string|max:100',
         ]);
@@ -54,15 +64,21 @@ class ProjectController extends Controller
 
         $project = Project::create([
             'name' => $request->name,
+            'prefix' => $request->prefix,
             'description' => $request->description,
             'telegram_thread_id' => $request->telegramThreadId,
+            'telegram_submissions_thread_id' => $request->telegramSubmissionsThreadId,
+            'telegram_chat_id' => $request->telegramChatId,
+            'telegram_topic_id' => $request->telegramTopicId,
+            'telegram_submissions_topic_id' => $request->telegramSubmissionsTopicId,
             'monthly_limit' => $request->monthlyLimit,
             'subdomain' => $targetSubdomain,
         ]);
 
-        \App\Services\ActivityLogger::project('CREATED', "Создан проект '{$project->name}' (ID: {$project->id}, субдомен: {$project->subdomain})", [
+        \App\Services\ActivityLogger::project('CREATED', "Создан проект '{$project->name}' (ID: {$project->id}, префикс: {$project->prefix}, субдомен: {$project->subdomain})", [
             'project_id' => $project->id,
             'name' => $project->name,
+            'prefix' => $project->prefix,
             'subdomain' => $project->subdomain,
             'monthly_limit' => $project->monthly_limit,
         ]);
@@ -70,8 +86,13 @@ class ProjectController extends Controller
         return response()->json([
             'id' => (string) $project->id,
             'name' => $project->name,
+            'prefix' => $project->prefix ?? '',
             'description' => $project->description ?? '',
             'telegramThreadId' => $project->telegram_thread_id ?? '',
+            'telegramSubmissionsThreadId' => $project->telegram_submissions_thread_id ?? '',
+            'telegramChatId' => $project->telegram_chat_id ?? '',
+            'telegramTopicId' => $project->telegram_topic_id ?? '',
+            'telegramSubmissionsTopicId' => $project->telegram_submissions_topic_id ?? '',
             'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
             'subdomain' => $project->subdomain ?? '1',
             'createdAt' => $project->created_at->format('Y-m-d'),
@@ -97,16 +118,26 @@ class ProjectController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
+            'prefix' => 'nullable|string|max:50',
             'description' => 'nullable|string',
             'telegramThreadId' => 'nullable|string',
+            'telegramSubmissionsThreadId' => 'nullable|string',
+            'telegramChatId' => 'nullable|string|max:100',
+            'telegramTopicId' => 'nullable|string|max:100',
+            'telegramSubmissionsTopicId' => 'nullable|string|max:100',
             'monthlyLimit' => 'nullable|integer|min:0',
             'subdomain' => 'nullable|string|max:100',
         ]);
 
         $dataToUpdate = [
             'name' => $request->name,
+            'prefix' => $request->prefix,
             'description' => $request->description,
             'telegram_thread_id' => $request->telegramThreadId,
+            'telegram_submissions_thread_id' => $request->telegramSubmissionsThreadId,
+            'telegram_chat_id' => $request->telegramChatId,
+            'telegram_topic_id' => $request->telegramTopicId,
+            'telegram_submissions_topic_id' => $request->telegramSubmissionsTopicId,
             'monthly_limit' => $request->monthlyLimit,
         ];
 
@@ -116,9 +147,10 @@ class ProjectController extends Controller
 
         $project->update($dataToUpdate);
 
-        \App\Services\ActivityLogger::project('UPDATED', "Обновлен проект '{$project->name}' (ID: {$project->id}, субдомен: {$project->subdomain})", [
+        \App\Services\ActivityLogger::project('UPDATED', "Обновлен проект '{$project->name}' (ID: {$project->id}, префикс: {$project->prefix}, субдомен: {$project->subdomain})", [
             'project_id' => $project->id,
             'name' => $project->name,
+            'prefix' => $project->prefix,
             'subdomain' => $project->subdomain,
             'monthly_limit' => $project->monthly_limit,
         ]);
@@ -126,8 +158,13 @@ class ProjectController extends Controller
         return response()->json([
             'id' => (string) $project->id,
             'name' => $project->name,
+            'prefix' => $project->prefix ?? '',
             'description' => $project->description ?? '',
             'telegramThreadId' => $project->telegram_thread_id ?? '',
+            'telegramSubmissionsThreadId' => $project->telegram_submissions_thread_id ?? '',
+            'telegramChatId' => $project->telegram_chat_id ?? '',
+            'telegramTopicId' => $project->telegram_topic_id ?? '',
+            'telegramSubmissionsTopicId' => $project->telegram_submissions_topic_id ?? '',
             'monthlyLimit' => $project->monthly_limit !== null ? (int) $project->monthly_limit : null,
             'subdomain' => $project->subdomain ?? '1',
             'createdAt' => $project->created_at->format('Y-m-d'),

@@ -563,6 +563,7 @@ export default function ReportsFeedView({
 
       const matchesSearch = !searchLower || (
         (rep.id != null && String(rep.id).includes(searchLower.replace(/^#/, ''))) ||
+        (rep.formattedId && rep.formattedId.toLowerCase().includes(searchLower)) ||
         projectName.toLowerCase().includes(searchLower) ||
         blogger.toLowerCase().includes(searchLower) ||
         destination.toLowerCase().includes(searchLower) ||
@@ -840,7 +841,7 @@ export default function ReportsFeedView({
         const projName = resolvedProject ? resolvedProject.name : (rep.projectName || '—');
         return [
           idx + 1,
-          `#${rep.id}`,
+          rep.formattedId || `#${rep.id}`,
           rep.destination || '—',
           rep.channelBlogger || '—',
           '—',
@@ -911,7 +912,7 @@ export default function ReportsFeedView({
 
         return [
           idx + 1,
-          `#${rep.id}`,
+          rep.formattedId || `#${rep.id}`,
           rep.destination || '—',
           rep.channelBlogger || '—',
           rep.platform || '—',
@@ -1458,7 +1459,7 @@ export default function ReportsFeedView({
                       {/* ID */}
                       <td className="px-4 py-4 whitespace-nowrap text-center">
                         <span className="font-mono font-bold text-[11px] text-neutral-600 bg-neutral-100/90 px-2 py-0.5 rounded border border-neutral-200/80">
-                          #{rep.id}
+                          {rep.formattedId || `#${rep.id}`}
                         </span>
                       </td>
 
@@ -1660,7 +1661,7 @@ export default function ReportsFeedView({
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                     <span className="font-mono font-bold text-[9px] text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded border border-neutral-200/80">
-                      #{rep.id}
+                      {rep.formattedId || `#${rep.id}`}
                     </span>
                     {!isOther ? (
                       <span className={`px-2 py-0.5 text-[9px] font-black rounded-md uppercase tracking-wide ${getPlatformBadgeClasses(rep.platform)}`}>
@@ -1856,7 +1857,7 @@ export default function ReportsFeedView({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 flex-wrap mb-1">
                   <span className="font-mono font-bold text-[10px] text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-md border border-neutral-200">
-                    #{selectedReport.id}
+                    {selectedReport.formattedId || `#${selectedReport.id}`}
                   </span>
                   {selectedReport.paymentType === 'other' ? (
                     <span className="px-2 py-0.5 text-[9px] font-black rounded-md uppercase tracking-wide bg-neutral-100 text-neutral-700">
@@ -2185,8 +2186,17 @@ export default function ReportsFeedView({
 
       {/* Edit Integration Modal */}
       {(editingIntegration || editingReport) && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-[110]">
-          <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-2xl overflow-hidden animate-in fade-in duration-100">
+        <div
+          onClick={() => {
+            setEditingIntegration(null);
+            setEditingReport(null);
+          }}
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-[110] overflow-y-auto animate-in fade-in duration-100"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-2xl my-auto max-h-[90vh] flex flex-col overflow-hidden text-left"
+          >
             <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
               <div className="flex items-center gap-3">
                 <h3 className="font-bold text-sm uppercase tracking-wider">
@@ -2553,8 +2563,14 @@ export default function ReportsFeedView({
 
       {/* Edit Other Expense Modal */}
       {editingOtherReport && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-[110]">
-          <div className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-100">
+        <div
+          onClick={() => setEditingOtherReport(null)}
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-[110] overflow-y-auto animate-in fade-in duration-100"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-xl shadow-lg border border-neutral-200 w-full max-w-lg my-auto max-h-[90vh] flex flex-col overflow-hidden text-left"
+          >
             <div className="bg-white px-6 py-4 flex justify-between items-center text-black border-b border-neutral-200">
               <h3 className="font-bold text-sm uppercase tracking-wider">
                 {lang === 'ru' ? 'Редактировать расход' : lang === 'uz' ? 'Xarajatni tahrirlash' : 'Edit Expense'}

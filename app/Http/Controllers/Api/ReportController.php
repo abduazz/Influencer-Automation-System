@@ -214,7 +214,7 @@ class ReportController extends Controller
                     $fallbackProjId = $report->project_id;
                     if (!$fallbackProjId && $request->filled('integrationId')) {
                         $int = Integration::find($request->input('integrationId'));
-                        if ($int && $int->project_id) {
+                        if ($int && $int->project_id && (empty($cleanBloggerName) || Integration::bloggerNamesMatch($int->blogger_name, $cleanBloggerName))) {
                             $fallbackProjId = $int->project_id;
                         }
                     }
@@ -229,31 +229,37 @@ class ReportController extends Controller
                 foreach ($projectGroups as $targetProjectId => $group) {
                     $existingIntegration = null;
                     if ($request->filled('integrationId')) {
-                        $existingIntegration = Integration::find($request->input('integrationId'));
+                        $candidate = Integration::find($request->input('integrationId'));
+                        if ($candidate && (empty($cleanBloggerName) || Integration::bloggerNamesMatch($candidate->blogger_name, $cleanBloggerName))) {
+                            $existingIntegration = $candidate;
+                        }
                     }
                     if (!$existingIntegration) {
-                        $cleanPlatform = strtolower(trim($report->platform ?? ''));
-                        $existingIntegration = Integration::where('project_id', $targetProjectId)
-                            ->where(function ($q) use ($cleanPlatform) {
-                                if (!empty($cleanPlatform)) {
-                                    $q->whereRaw('LOWER(platform) = ?', [$cleanPlatform]);
-                                }
-                            })
-                            ->where(function ($q) use ($cleanBloggerName) {
-                                $q->whereRaw('LOWER(blogger_name) = ?', [strtolower($cleanBloggerName)])
-                                    ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . strtolower($cleanBloggerName)])
-                                    ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [strtolower($cleanBloggerName)]);
-                            })
-                            ->first();
+                        $cleanPlatform = mb_strtolower(trim($report->platform ?? ''), 'UTF-8');
+                        $cleanTarget = Integration::cleanBloggerName($cleanBloggerName);
+                        if ($cleanTarget !== '') {
+                            $existingIntegration = Integration::where('project_id', $targetProjectId)
+                                ->where(function ($q) use ($cleanPlatform) {
+                                    if (!empty($cleanPlatform)) {
+                                        $q->whereRaw('LOWER(platform) = ?', [$cleanPlatform]);
+                                    }
+                                })
+                                ->where(function ($q) use ($cleanTarget) {
+                                    $q->whereRaw('LOWER(blogger_name) = ?', [$cleanTarget])
+                                        ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . $cleanTarget])
+                                        ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [$cleanTarget]);
+                                })
+                                ->first();
+                        }
 
-                        if (!$existingIntegration) {
-                            $normTarget = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanBloggerName));
+                        if (!$existingIntegration && Integration::normalizeBloggerName($cleanBloggerName) !== '') {
                             $existingIntegration = Integration::where('project_id', $targetProjectId)
                                 ->get()
-                                ->first(function ($int) use ($normTarget, $cleanPlatform) {
-                                    $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
-                                    if ($iNorm !== $normTarget) return false;
-                                    if (!empty($cleanPlatform) && !empty($int->platform) && strtolower(trim($int->platform)) !== $cleanPlatform) {
+                                ->first(function ($int) use ($cleanBloggerName, $cleanPlatform) {
+                                    if (!Integration::bloggerNamesMatch($int->blogger_name, $cleanBloggerName)) {
+                                        return false;
+                                    }
+                                    if (!empty($cleanPlatform) && !empty($int->platform) && mb_strtolower(trim($int->platform), 'UTF-8') !== $cleanPlatform) {
                                         return false;
                                     }
                                     return true;
@@ -275,18 +281,11 @@ class ReportController extends Controller
                     }
 
                     if ($existingIntegration) {
-                        $normBlogger = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanBloggerName));
                         $hasPriorReports = Report::where('project_id', $targetProjectId)
                             ->where('platform', $report->platform)
                             ->where('id', '!=', $report->id)
                             ->get()
-                            ->contains(function ($r) use ($cleanBloggerName, $normBlogger) {
-                                if (!$r->channel_blogger)
-                                    return false;
-                                $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
-                                $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
-                                return $rClean === strtolower($cleanBloggerName) || $rNorm === $normBlogger;
-                            });
+                            ->contains(fn($r) => $r->channel_blogger && Integration::bloggerNamesMatch($r->channel_blogger, $cleanBloggerName));
                         $isPrePaymentStage = empty($existingIntegration->kanban_stage)
                             || in_array($existingIntegration->kanban_stage, ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'], true);
 
@@ -448,22 +447,22 @@ class ReportController extends Controller
                 }
             }
 
-            // Trigger Telegram & Google Sheets notifications independently after response to speed up submission
+            // Send Telegram notification synchronously before returning 201 so delivery is immediate and telegram_message_url is populated before any delete/edit action
             $lang = $request->input('lang', 'uz');
             $receiptsForTg = $receipts;
-
             $createdByName = $report->created_by;
 
-            dispatch(function () use ($report, $receiptsForTg, $lang, $createdByName) {
-                try {
-                    $tgSuccess = \App\Services\TelegramService::sendReportNotification($report, $receiptsForTg, $lang, $createdByName);
-                    if ($tgSuccess) {
-                        $report->update(['telegram_sent' => true]);
-                    }
-                } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::error("Failed to send Telegram report notification: " . $e->getMessage());
+            try {
+                $tgSuccess = \App\Services\TelegramService::sendReportNotification($report, $receiptsForTg, $lang, $createdByName);
+                if ($tgSuccess) {
+                    $report->update(['telegram_sent' => true]);
                 }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error("Failed to send Telegram report notification: " . $e->getMessage());
+            }
 
+            // Append to Google Sheets asynchronously after response to keep UI responsive
+            dispatch(function () use ($report) {
                 try {
                     $sheetsSuccess = \App\Services\GoogleSheetsService::appendReport($report);
                     if ($sheetsSuccess) {
@@ -474,6 +473,7 @@ class ReportController extends Controller
                 }
             })->afterResponse();
 
+            $report->refresh();
             $report->loadMissing('project');
 
             \App\Services\ActivityLogger::report('CREATED', "Создан финансовый отчет {$report->formatted_id} ({$report->channel_blogger}, сумма: {$report->paid_amount})", [
@@ -640,42 +640,41 @@ class ReportController extends Controller
                 $targetPlatform = $report->platform ?: $oldPlatform;
                 $targetBlogger = $report->channel_blogger ?: $oldBlogger;
                 if ($targetProject && $targetBlogger) {
-                    $cleanTarget = strtolower(trim(str_replace(['@', '#'], '', $targetBlogger)));
-                    $normTarget = preg_replace('/[@#\s_\-\.]+/', '', strtolower($cleanTarget));
-
+                    $cleanTarget = Integration::cleanBloggerName($targetBlogger);
                     $platformsToCheck = array_values(array_unique(array_filter([$targetPlatform, $oldPlatform])));
 
-                    $integration = Integration::where('project_id', $targetProject)
-                        ->where(function ($q) use ($platformsToCheck) {
-                            if (!empty($platformsToCheck)) {
-                                $q->whereIn('platform', $platformsToCheck);
-                            }
-                        })
-                        ->where(function ($q) use ($cleanTarget) {
-                            $q->whereRaw('LOWER(blogger_name) = ?', [$cleanTarget])
-                                ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . $cleanTarget])
-                                ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [$cleanTarget]);
-                        })
-                        ->first();
-
-                    if (!$integration) {
+                    $integration = null;
+                    if ($cleanTarget !== '') {
                         $integration = Integration::where('project_id', $targetProject)
-                            ->get()
-                            ->first(function ($int) use ($normTarget, $platformsToCheck) {
-                                $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
-                                if ($iNorm !== $normTarget) return false;
-                                return empty($platformsToCheck) || in_array($int->platform, $platformsToCheck);
-                            });
+                            ->where(function ($q) use ($platformsToCheck) {
+                                if (!empty($platformsToCheck)) {
+                                    $q->whereIn('platform', $platformsToCheck);
+                                }
+                            })
+                            ->where(function ($q) use ($cleanTarget) {
+                                $q->whereRaw('LOWER(blogger_name) = ?', [$cleanTarget])
+                                    ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . $cleanTarget])
+                                    ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [$cleanTarget]);
+                            })
+                            ->first();
                     }
 
-                    if (!$integration) {
-                        // Fallback matching strictly by project & blogger name
+                    if (!$integration && Integration::normalizeBloggerName($targetBlogger) !== '') {
                         $integration = Integration::where('project_id', $targetProject)
                             ->get()
-                            ->first(function ($int) use ($normTarget) {
-                                $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
-                                return $iNorm === $normTarget;
+                            ->first(function ($int) use ($targetBlogger, $platformsToCheck) {
+                                if (!Integration::bloggerNamesMatch($int->blogger_name, $targetBlogger)) {
+                                    return false;
+                                }
+                                return empty($platformsToCheck) || in_array($int->platform, $platformsToCheck);
                             });
+
+                        if (!$integration) {
+                            // Fallback matching strictly by project & blogger name
+                            $integration = Integration::where('project_id', $targetProject)
+                                ->get()
+                                ->first(fn($int) => Integration::bloggerNamesMatch($int->blogger_name, $targetBlogger));
+                        }
                     }
 
                     if ($integration) {
@@ -761,26 +760,25 @@ class ReportController extends Controller
         ]);
 
         if ($paymentType !== 'other' && $projectId !== null && $channelBlogger !== null && $platform !== null) {
-            $cleanBloggerName = strtolower(trim(str_replace(['@', '#'], '', $channelBlogger)));
-            $normTarget = preg_replace('/[@#\s_\-\.]+/', '', $cleanBloggerName);
+            $cleanBloggerName = Integration::cleanBloggerName($channelBlogger);
 
-            $integration = Integration::where('project_id', $projectId)
-                ->where('platform', $platform)
-                ->where(function ($q) use ($cleanBloggerName) {
-                    $q->whereRaw('LOWER(blogger_name) = ?', [$cleanBloggerName])
-                        ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . $cleanBloggerName])
-                        ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [$cleanBloggerName]);
-                })
-                ->first();
+            $integration = null;
+            if ($cleanBloggerName !== '') {
+                $integration = Integration::where('project_id', $projectId)
+                    ->where('platform', $platform)
+                    ->where(function ($q) use ($cleanBloggerName) {
+                        $q->whereRaw('LOWER(blogger_name) = ?', [$cleanBloggerName])
+                            ->orWhereRaw('LOWER(blogger_name) = ?', ['@' . $cleanBloggerName])
+                            ->orWhereRaw("LOWER(REPLACE(REPLACE(blogger_name, '@', ''), '#', '')) = ?", [$cleanBloggerName]);
+                    })
+                    ->first();
+            }
 
-            if (!$integration) {
+            if (!$integration && Integration::normalizeBloggerName($channelBlogger) !== '') {
                 $integration = Integration::where('project_id', $projectId)
                     ->where('platform', $platform)
                     ->get()
-                    ->first(function ($int) use ($normTarget) {
-                        $iNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower($int->blogger_name ?? ''));
-                        return $iNorm === $normTarget;
-                    });
+                    ->first(fn($int) => Integration::bloggerNamesMatch($int->blogger_name, $channelBlogger));
             }
 
             if ($integration) {
@@ -788,13 +786,7 @@ class ReportController extends Controller
                 $remainingReports = Report::where('project_id', $projectId)
                     ->where('platform', $platform)
                     ->get()
-                    ->filter(function ($r) use ($cleanBloggerName, $normTarget) {
-                        if (!$r->channel_blogger)
-                            return false;
-                        $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
-                        $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
-                        return $rClean === $cleanBloggerName || $rNorm === $normTarget;
-                    });
+                    ->filter(fn($r) => $r->channel_blogger && Integration::bloggerNamesMatch($r->channel_blogger, $channelBlogger));
 
                 if ($remainingReports->isEmpty()) {
                     $integration->delete();

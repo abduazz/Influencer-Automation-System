@@ -101,15 +101,64 @@ class Integration extends Model
         return $token;
     }
 
+    /**
+     * Resolve an integration by cabinet token first, falling back to numeric ID
+     * only when the identifier consists strictly of digits (preventing MySQL
+     * string-to-int coercion like '24news-abc' -> 24).
+     */
+    public static function resolveByTokenOrId(mixed $rawIdentifier): ?self
+    {
+        $identifier = trim((string) ($rawIdentifier ?? ''), " \t\n\r\0\x0B/");
+        if ($identifier === '') {
+            return null;
+        }
+
+        $byToken = static::where('blogger_cabinet_token', $identifier)->first();
+        if ($byToken) {
+            return $byToken;
+        }
+
+        if (ctype_digit($identifier)) {
+            $numericId = (int) $identifier;
+            if ($numericId > 0) {
+                return static::find($numericId);
+            }
+        }
+
+        return null;
+    }
+
+    public static function cleanBloggerName(?string $name): string
+    {
+        return mb_strtolower(trim(str_replace(['@', '#'], '', (string) $name)), 'UTF-8');
+    }
+
+    public static function normalizeBloggerName(?string $name): string
+    {
+        $lower = mb_strtolower(trim((string) $name), 'UTF-8');
+        return (string) preg_replace('/[@#\s_\-\.]+/u', '', $lower);
+    }
+
+    public static function bloggerNamesMatch(?string $a, ?string $b): bool
+    {
+        $cleanA = static::cleanBloggerName($a);
+        $cleanB = static::cleanBloggerName($b);
+        if ($cleanA !== '' && $cleanA === $cleanB) {
+            return true;
+        }
+
+        $normA = static::normalizeBloggerName($a);
+        $normB = static::normalizeBloggerName($b);
+        return $normA !== '' && $normA === $normB;
+    }
+
     public function syncWithReports(): bool
     {
         if (!$this->exists || !$this->project_id || empty($this->blogger_name)) {
             return false;
         }
 
-        $cleanName = strtolower(trim(str_replace(['@', '#'], '', $this->blogger_name)));
-        $normalizedName = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($this->blogger_name)));
-        $cleanPlatform = strtolower(trim($this->platform ?? ''));
+        $cleanPlatform = mb_strtolower(trim($this->platform ?? ''), 'UTF-8');
 
         $reports = Report::where('project_id', $this->project_id)
             ->where(function ($q) use ($cleanPlatform) {
@@ -120,25 +169,13 @@ class Integration extends Model
                 }
             })
             ->get()
-            ->filter(function ($r) use ($cleanName, $normalizedName) {
-                if (!$r->channel_blogger)
-                    return false;
-                $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
-                $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
-                return $rClean === $cleanName || $rNorm === $normalizedName;
-            });
+            ->filter(fn ($r) => static::bloggerNamesMatch($r->channel_blogger, $this->blogger_name));
 
         // Fallback: match any reports for this blogger and project if platform was updated in report
         if ($reports->isEmpty()) {
             $reports = Report::where('project_id', $this->project_id)
                 ->get()
-                ->filter(function ($r) use ($cleanName, $normalizedName) {
-                    if (!$r->channel_blogger)
-                        return false;
-                    $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
-                    $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
-                    return $rClean === $cleanName || $rNorm === $normalizedName;
-                });
+                ->filter(fn ($r) => static::bloggerNamesMatch($r->channel_blogger, $this->blogger_name));
         }
 
         if ($reports->isEmpty()) {
@@ -309,20 +346,12 @@ class Integration extends Model
     protected static function booted(): void
     {
         static::saving(function (Integration $integration): void {
-            $cleanName = strtolower(trim(str_replace(['@', '#'], '', $integration->blogger_name ?? '')));
-            $normalizedName = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($integration->blogger_name ?? '')));
             $hasReports = false;
-            if ($integration->exists && $integration->project_id && $cleanName !== '') {
+            if ($integration->exists && $integration->project_id && static::cleanBloggerName($integration->blogger_name) !== '') {
                 $hasReports = Report::where('project_id', $integration->project_id)
                     ->where('platform', $integration->platform)
                     ->get()
-                    ->contains(function ($r) use ($cleanName, $normalizedName) {
-                        if (!$r->channel_blogger)
-                            return false;
-                        $rClean = strtolower(trim(str_replace(['@', '#'], '', $r->channel_blogger)));
-                        $rNorm = preg_replace('/[@#\s_\-\.]+/', '', strtolower(trim($r->channel_blogger)));
-                        return $rClean === $cleanName || $rNorm === $normalizedName;
-                    });
+                    ->contains(fn ($r) => $r->channel_blogger && static::bloggerNamesMatch($r->channel_blogger, $integration->blogger_name));
             }
 
             if (!$hasReports) {

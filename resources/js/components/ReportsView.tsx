@@ -1517,6 +1517,7 @@ export default function ReportsView({
                                   onClick={() => {
                                     setBloggerType('new');
                                     setChannelBlogger('');
+                                    setCurrentIntegrationId(null);
                                   }}
                                   className={`py-1 rounded-lg border text-[9px] font-bold transition duration-100 ${bloggerType === 'new'
                                       ? 'bg-black border-black text-white'
@@ -1559,7 +1560,18 @@ export default function ReportsView({
                                     required
                                     placeholder="e.g. @tech_geek_tg"
                                     value={channelBlogger}
-                                    onChange={(e) => setChannelBlogger(e.target.value)}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setChannelBlogger(val);
+                                      if (currentIntegrationId) {
+                                        const linked = integrations.find(i => String(i.id) === String(currentIntegrationId));
+                                        const cleanVal = val.replace(/[@#\s_\-.]+/g, '').toLowerCase();
+                                        const cleanLinked = (linked?.bloggerName || '').replace(/[@#\s_\-.]+/g, '').toLowerCase();
+                                        if (!linked || (cleanVal && cleanLinked && cleanVal !== cleanLinked) || !cleanVal) {
+                                          setCurrentIntegrationId(null);
+                                        }
+                                      }
+                                    }}
                                     className="w-full px-2.5 py-1.5 bg-white border border-neutral-200 focus:border-black rounded-md text-[11px] focus:outline-none transition font-medium text-black"
                                   />
                                   {channelBlogger.trim().length >= 2 && (() => {

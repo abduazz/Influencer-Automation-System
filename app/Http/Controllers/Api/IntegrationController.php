@@ -812,8 +812,7 @@ class IntegrationController extends Controller
             'telegramHandle' => 'nullable|string',
         ]);
 
-        $integration = Integration::find($rawId)
-            ?? Integration::where('blogger_cabinet_token', $rawId)->first();
+        $integration = Integration::resolveByTokenOrId($rawId);
 
         if (!$integration) {
             return response()->json([

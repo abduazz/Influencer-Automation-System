@@ -333,7 +333,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     let integrationId = params.get('integrationId') || params.get('id') || undefined;
     if (window.location.pathname.startsWith('/c/')) {
-      integrationId = window.location.pathname.substring(3);
+      integrationId = window.location.pathname.substring(3).replace(/\/+$/, '') || undefined;
     }
     return {
       platform: params.get('platform') || undefined,
@@ -442,8 +442,9 @@ export default function App() {
     let cancelled = false;
 
     async function loadData() {
-      // If guest route already has preloaded data or cabinet not found, skip downloading the whole CRM database
-      if ((isBloggerCabinetRoute || isRequisitesRoute) && (integrations.length > 0 || (initialBootstrap as any)?.cabinetNotFound)) {
+      // If guest/token cabinet route already has preloaded data or cabinet not found, skip downloading the whole CRM database
+      const isDirectCabinetTokenRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/c/');
+      if ((isBloggerCabinetRoute || isDirectCabinetTokenRoute || isRequisitesRoute) && (integrations.length > 0 || (initialBootstrap as any)?.cabinetNotFound)) {
         if (!cancelled) {
           setAllowedUsersLoading(false);
           setLoading(false);
@@ -787,7 +788,8 @@ export default function App() {
   };
 
   const handleAddSubmission = async (newSub: Omit<BloggerSubmission, 'id' | 'submittedAt'> & { lang?: string }) => {
-    const submission = await createSubmission(newSub.integrationId, newSub.data, newSub.lang);
+    const response = await createSubmission(newSub.integrationId, newSub.data, newSub.lang);
+    const { integration: updatedIntegration, ...submission } = response;
     setSubmissions((prev) => {
       const exists = prev.some(s => String(s.integrationId) === String(newSub.integrationId));
       if (exists) {
@@ -795,8 +797,22 @@ export default function App() {
       }
       return [submission, ...prev];
     });
-    const ints = await fetchIntegrations();
-    setIntegrations(ints);
+    if (updatedIntegration) {
+      setIntegrations((prev) => {
+        const exists = prev.some(i => String(i.id) === String(updatedIntegration.id));
+        if (exists) {
+          return prev.map(i => String(i.id) === String(updatedIntegration.id) ? updatedIntegration : i);
+        }
+        return [updatedIntegration, ...prev];
+      });
+    } else if (currentUserRole) {
+      try {
+        const ints = await fetchIntegrations();
+        setIntegrations(ints);
+      } catch (refreshErr) {
+        console.warn('Background integrations refresh failed after submission:', refreshErr);
+      }
+    }
   };
 
   const handleUpdateKanbanColumns = async (newCols: KanbanColumn[]) => {
@@ -1017,7 +1033,7 @@ export default function App() {
       if (hasCabinetParam) {
         let integrationId = params.get('integrationId') || params.get('id') || undefined;
         if (window.location.pathname.startsWith('/c/')) {
-          integrationId = window.location.pathname.substring(3); // remove "/c/"
+          integrationId = window.location.pathname.substring(3).replace(/\/+$/, '') || undefined; // remove "/c/" and trailing slash
         }
         setSimulatedUrlParams({
           platform: params.get('platform') || undefined,

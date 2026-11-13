@@ -336,8 +336,8 @@ export function deleteReport(id: string): Promise<void> {
 export function fetchSubmissions(): Promise<BloggerSubmission[]> {
   return request<BloggerSubmission[]>('/api/blogger-submissions');
 }
-export function createSubmission(integrationId: string, data: Record<string, string>, lang?: string): Promise<BloggerSubmission> {
-  return request<BloggerSubmission>('/api/blogger-submissions', {
+export function createSubmission(integrationId: string, data: Record<string, string>, lang?: string): Promise<BloggerSubmission & { integration?: Integration | null }> {
+  return request<BloggerSubmission & { integration?: Integration | null }>('/api/blogger-submissions', {
     method: 'POST',
     body: JSON.stringify({ integrationId, data, lang }),
   });

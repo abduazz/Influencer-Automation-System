@@ -54,9 +54,8 @@ class BloggerSubmissionController extends Controller
             'lang' => 'nullable|string|in:ru,en,uz',
         ]);
 
-        // Resolve integration: accept numeric ID OR blogger_cabinet_token
-        $integration = Integration::find($rawId)
-            ?? Integration::where('blogger_cabinet_token', $rawId)->first();
+        // Resolve integration strictly by blogger_cabinet_token first, then numeric ID
+        $integration = Integration::resolveByTokenOrId($rawId);
 
         if (!$integration) {
             Log::error('BloggerSubmission: integration not found for id/token: ' . $rawId);
@@ -184,7 +183,6 @@ class BloggerSubmissionController extends Controller
                     }
                 }
             } elseif ($slotPlatform === 'Telegram' && !str_contains($trimmedLower, 't.me') && !str_contains($trimmedLower, 'telegram.me') && !str_contains($trimmedLower, 'telegram.org') && !str_contains($trimmedLower, 'telegram.dog')) {
-            } elseif ($slotPlatform === 'Telegram' && !str_contains($trimmedLower, 't.me') && !str_contains($trimmedLower, 'telegram.me') && !str_contains($trimmedLower, 'telegram.org') && !str_contains($trimmedLower, 'telegram.dog')) {
                 return response()->json([
                     'message' => "Slot #{$slotNum} (Telegram): Iltimos, haqiqiy Telegram havolasini kiriting!",
                     'errors' => [$key => ["Haqiqiy Telegram havolasi talab qilinadi."]]
@@ -263,29 +261,36 @@ class BloggerSubmissionController extends Controller
 
         Log::info('BloggerSubmission saved, sub ID: ' . $sub->id);
 
-        // Find newly filled slot keys or slots that haven't received telegram confirmation yet
-        $newData = $incomingData;
+        // Find newly filled or genuinely updated slot keys (do not re-send old unchanged slots)
         $newlyFilledKeys = [];
-        foreach ($newData as $key => $value) {
+        $normalizeComparableSlotVal = static function ($val): string {
+            $trimmed = is_string($val) ? trim($val) : (string) $val;
+            if ($trimmed === '' || str_starts_with($trimmed, 'data:')) {
+                return $trimmed;
+            }
+            return (string) preg_replace('~^https?://~i', '', $trimmed);
+        };
+
+        foreach ($incomingData as $key => $value) {
             if (!preg_match('/^slot_\d+$/', $key)) {
                 continue;
             }
-            $oldValue = $oldData[$key] ?? null;
-            $oldTgUrl = $oldData["{$key}_tg_url"] ?? null;
-            if (!empty($value) && (empty($oldValue) || empty($oldTgUrl))) {
+            $newVal = is_string($value) ? trim($value) : $value;
+            $oldVal = isset($oldData[$key]) && is_string($oldData[$key]) ? trim($oldData[$key]) : ($oldData[$key] ?? null);
+            if (!empty($newVal) && (empty($oldVal) || $normalizeComparableSlotVal($newVal) !== $normalizeComparableSlotVal($oldVal))) {
                 $newlyFilledKeys[] = $key;
             }
         }
 
         Log::info('BloggerSubmission diff:', [
-            'oldData' => $oldData,
-            'newData' => $newData,
+            'oldKeys' => array_keys($oldData),
+            'incomingKeys' => array_keys($incomingData),
             'newlyFilledKeys' => $newlyFilledKeys,
         ]);
 
         // Send Telegram notification synchronously to ensure delivery and prevent closure serialization failures with large Base64 screenshots
         $lang = $request->input('lang', 'uz');
-        $data = $incomingData;
+        $data = $mergedData;
         try {
             Log::info('Sending Telegram submission notification for integration: ' . $integration->id . ' blogger: ' . $integration->blogger_name);
             $result = \App\Services\TelegramService::sendSubmissionNotification($integration, $data, $lang, $newlyFilledKeys);
@@ -295,6 +300,7 @@ class BloggerSubmissionController extends Controller
         }
 
         $sub->refresh();
+        $freshIntegration = $integration->fresh();
 
         \App\Services\ActivityLogger::submission('RECEIVED', "Получен отчет от блогера '{$integration->blogger_name}' (интеграция #{$integration->id})", [
             'submission_id' => $sub->id,
@@ -309,6 +315,9 @@ class BloggerSubmissionController extends Controller
             'submittedAt' => $sub->submitted_at->toISOString(),
             'status' => $sub->status,
             'data' => $sub->data ?? [],
+            'integration' => $freshIntegration
+                ? app(IntegrationController::class)->formatIntegration($freshIntegration)
+                : null,
         ], 201);
     }
 

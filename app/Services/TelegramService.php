@@ -103,17 +103,159 @@ class TelegramService
         return $str;
     }
 
+    protected static function httpClient(int $timeout = 15): \Illuminate\Http\Client\PendingRequest
+    {
+        return Http::connectTimeout(5)->timeout($timeout);
+    }
+
+    protected static function isThreadFallbackError(string $body): bool
+    {
+        $lower = strtolower($body);
+        return str_contains($lower, 'thread not found')
+            || str_contains($lower, 'topic_closed')
+            || str_contains($lower, 'topic_deleted');
+    }
+
+    /**
+     * Enforce Telegram's 1024-character media caption limit safely on UTF-8 boundaries.
+     *
+     * @return array{0: ?string, 1: bool} [$safeCaption, $isHtml]
+     */
+    protected static function prepareSafeCaption(?string $caption, bool $preferHtml = true): array
+    {
+        if (blank($caption)) {
+            return [null, false];
+        }
+
+        if ($preferHtml && mb_strlen($caption, 'UTF-8') <= 1024) {
+            return [$caption, true];
+        }
+
+        $plain = strip_tags($caption);
+        if (mb_strlen($plain, 'UTF-8') > 1024) {
+            $plain = mb_substr($plain, 0, 1020, 'UTF-8') . '…';
+        }
+
+        return [$plain, false];
+    }
+
+    /**
+     * Send a photo with automatic supergroup migration, topic fallback, and HTML->plain retry.
+     *
+     * @return array{response: array|false, chat_id: string, thread_id: mixed}
+     */
+    protected static function sendPhotoWithRetries(
+        string $token,
+        string $chatId,
+        $threadId,
+        string $binaryData,
+        string $filename,
+        string $mimeType,
+        string $htmlCaption
+    ): array {
+        $threadId = self::parseThreadId($threadId);
+        $currentChatId = (string) $chatId;
+
+        $postPhoto = function (string $targetChatId, $targetThreadId, ?string $captionText, bool $htmlMode) use ($token, $binaryData, $filename, $mimeType) {
+            $params = [
+                'chat_id' => $targetChatId,
+            ];
+            if (!blank($captionText)) {
+                $params['caption'] = $captionText;
+            }
+            if ($htmlMode) {
+                $params['parse_mode'] = 'HTML';
+            }
+            if ($targetThreadId) {
+                $params['message_thread_id'] = $targetThreadId;
+            }
+
+            return self::httpClient(20)
+                ->attach('photo', $binaryData, $filename, ['Content-Type' => $mimeType])
+                ->post("https://api.telegram.org/bot{$token}/sendPhoto", $params);
+        };
+
+        $attemptWithChatRetries = function (?string $captionText, bool $htmlMode) use (&$currentChatId, &$threadId, $postPhoto) {
+            $response = $postPhoto($currentChatId, $threadId, $captionText, $htmlMode);
+            if ($response->successful()) {
+                return ['ok' => true, 'json' => $response->json(), 'body' => ''];
+            }
+
+            $body = $response->body();
+            $resData = json_decode($body, true);
+            if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                $currentChatId = (string) $resData['parameters']['migrate_to_chat_id'];
+                Log::info("Telegram group upgraded to supergroup. Migrating chat ID to {$currentChatId}");
+                $response = $postPhoto($currentChatId, $threadId, $captionText, $htmlMode);
+                if ($response->successful()) {
+                    return ['ok' => true, 'json' => $response->json(), 'body' => ''];
+                }
+                $body = $response->body();
+            }
+
+            if ($threadId && self::isThreadFallbackError($body)) {
+                Log::warning("Telegram thread {$threadId} rejected in chat {$currentChatId}, retrying photo without thread ID");
+                $threadId = null;
+                $response = $postPhoto($currentChatId, null, $captionText, $htmlMode);
+                if ($response->successful()) {
+                    return ['ok' => true, 'json' => $response->json(), 'body' => ''];
+                }
+                $body = $response->body();
+            }
+
+            return ['ok' => false, 'json' => false, 'body' => $body];
+        };
+
+        [$safeCaption, $useHtml] = self::prepareSafeCaption($htmlCaption, true);
+        $first = $attemptWithChatRetries($safeCaption, $useHtml);
+        if ($first['ok']) {
+            return ['response' => $first['json'], 'chat_id' => $currentChatId, 'thread_id' => $threadId];
+        }
+
+        if ($useHtml) {
+            Log::warning("Telegram sendPhoto HTML failed, retrying plain: " . $first['body']);
+            [$plainCaption] = self::prepareSafeCaption($htmlCaption, false);
+            $second = $attemptWithChatRetries($plainCaption, false);
+            if ($second['ok']) {
+                return ['response' => $second['json'], 'chat_id' => $currentChatId, 'thread_id' => $threadId];
+            }
+        } else {
+            Log::warning("Telegram sendPhoto failed: " . $first['body']);
+        }
+
+        return ['response' => false, 'chat_id' => $currentChatId, 'thread_id' => $threadId];
+    }
+
     public static function resolveReportDestinations($report): array
     {
         if ($report && is_object($report) && method_exists($report, 'loadMissing')) {
             $report->loadMissing('project');
         }
 
+        $projectsToRoute = collect();
+        if ($report?->project) {
+            $projectsToRoute->push($report->project);
+        } elseif (!empty($report?->slots_config) && is_array($report->slots_config)) {
+            $projectIds = collect($report->slots_config)
+                ->pluck('projectId')
+                ->filter(fn($id) => is_numeric($id) && (int) $id > 0)
+                ->map(fn($id) => (int) $id)
+                ->unique()
+                ->values();
+            if ($projectIds->isNotEmpty()) {
+                $projectsToRoute = \App\Models\Project::whereIn('id', $projectIds)->get();
+            }
+        }
+
+        $primaryProject = $projectsToRoute->first();
         $mainChatId = config('services.telegram.reports_chat_id') ?: config('services.telegram.chat_id');
-        $mainThreadId = self::parseThreadId($report->project?->telegram_thread_id ?? null);
+        $mainThreadId = self::parseThreadId($primaryProject?->telegram_thread_id ?? null);
 
         $destinations = [];
+        $seen = [];
         if ($mainChatId) {
+            $mainKey = (string) $mainChatId . '|' . ($mainThreadId ?? '');
+            $seen[$mainKey] = true;
             $destinations[] = [
                 'chat_id' => (string) $mainChatId,
                 'thread_id' => $mainThreadId,
@@ -121,20 +263,22 @@ class TelegramService
             ];
         }
 
-        $projectChatId = self::parseChatId($report->project?->telegram_chat_id ?? null);
-        $projectTopicId = self::parseThreadId($report->project?->telegram_topic_id ?? null);
-        if ($projectChatId) {
-            $isDuplicateOfMain = isset($destinations[0])
-                && (string) $projectChatId === (string) $destinations[0]['chat_id']
-                && $projectTopicId === $destinations[0]['thread_id'];
-
-            if (!$isDuplicateOfMain) {
-                $destinations[] = [
-                    'chat_id' => (string) $projectChatId,
-                    'thread_id' => $projectTopicId,
-                    'is_primary' => false,
-                ];
+        foreach ($projectsToRoute as $proj) {
+            $projectChatId = self::parseChatId($proj->telegram_chat_id ?? null);
+            $projectTopicId = self::parseThreadId($proj->telegram_topic_id ?? null);
+            if (!$projectChatId) {
+                continue;
             }
+            $destKey = (string) $projectChatId . '|' . ($projectTopicId ?? '');
+            if (isset($seen[$destKey])) {
+                continue;
+            }
+            $seen[$destKey] = true;
+            $destinations[] = [
+                'chat_id' => (string) $projectChatId,
+                'thread_id' => $projectTopicId,
+                'is_primary' => false,
+            ];
         }
 
         return $destinations;
@@ -193,9 +337,44 @@ class TelegramService
             return false;
         }
 
+        $currentChatId = $chatId;
+
+        $attemptPost = function (array $params) use ($token, &$currentChatId, &$threadId) {
+            $response = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/sendMessage", $params);
+            if ($response->successful()) {
+                return ['ok' => true, 'json' => $response->json(), 'body' => ''];
+            }
+
+            $body = $response->body();
+            $resData = json_decode($body, true);
+            if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                $currentChatId = $resData['parameters']['migrate_to_chat_id'];
+                Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$params['chat_id']} to {$currentChatId}");
+                $params['chat_id'] = $currentChatId;
+                $response = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/sendMessage", $params);
+                if ($response->successful()) {
+                    return ['ok' => true, 'json' => $response->json(), 'body' => ''];
+                }
+                $body = $response->body();
+            }
+
+            if ($threadId && self::isThreadFallbackError($body)) {
+                Log::warning("Telegram thread {$threadId} rejected in chat {$params['chat_id']}, retrying without thread ID");
+                $threadId = null;
+                unset($params['message_thread_id']);
+                $response = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/sendMessage", $params);
+                if ($response->successful()) {
+                    return ['ok' => true, 'json' => $response->json(), 'body' => ''];
+                }
+                $body = $response->body();
+            }
+
+            return ['ok' => false, 'json' => false, 'body' => $body];
+        };
+
         try {
             $params = [
-                'chat_id' => $chatId,
+                'chat_id' => $currentChatId,
                 'text' => $text,
                 'parse_mode' => 'HTML',
             ];
@@ -206,83 +385,29 @@ class TelegramService
                 $params['link_preview_options'] = $options['link_preview_options'];
             }
 
-            // First attempt: try with HTML parse mode
-            $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $params);
-
-            if ($response->successful()) {
-                return $response->json();
+            // First attempt: HTML parse mode
+            $first = $attemptPost($params);
+            if ($first['ok']) {
+                return $first['json'];
             }
 
-            $body = $response->body();
-            $resData = json_decode($body, true);
-            if (isset($resData['parameters']['migrate_to_chat_id'])) {
-                $newChatId = $resData['parameters']['migrate_to_chat_id'];
-                Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$chatId} to {$newChatId}");
-                $params['chat_id'] = $newChatId;
-                $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $params);
-                if ($response->successful()) {
-                    return $response->json();
-                }
-                $body = $response->body();
-            }
+            Log::warning("Telegram HTML sendMessage failed, retrying as plain text without link_preview_options. Error: " . $first['body']);
 
-            // Fallback for thread not found: if threadId is invalid in this chat, retry without thread ID
-            if ($threadId && str_contains(strtolower($body), 'thread not found')) {
-                Log::warning("Telegram thread {$threadId} not found in chat {$params['chat_id']}, retrying without thread ID");
-                $threadId = null;
-                unset($params['message_thread_id']);
-                $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $params);
-                if ($response->successful()) {
-                    return $response->json();
-                }
-                $body = $response->body();
-            }
-
-            Log::warning("Telegram HTML sendMessage failed, retrying as plain text. Error: " . $body);
-
-            // Second attempt: strip HTML tags and send as plain text (no parse_mode)
-            $plainText = strip_tags($text);
+            // Second attempt: strip HTML tags and drop link_preview_options (external URLs or preview errors can otherwise fail both attempts)
             $plainParams = [
-                'chat_id' => $params['chat_id'],
-                'text' => $plainText,
+                'chat_id' => $currentChatId,
+                'text' => strip_tags($text),
             ];
             if ($threadId) {
                 $plainParams['message_thread_id'] = $threadId;
             }
-            if (!empty($options['link_preview_options'])) {
-                $plainParams['link_preview_options'] = $options['link_preview_options'];
+
+            $second = $attemptPost($plainParams);
+            if ($second['ok']) {
+                return $second['json'];
             }
 
-            $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
-
-            if ($response2->successful()) {
-                return $response2->json();
-            }
-
-            $body2 = $response2->body();
-            $resData2 = json_decode($body2, true);
-            if (isset($resData2['parameters']['migrate_to_chat_id'])) {
-                $newChatId = $resData2['parameters']['migrate_to_chat_id'];
-                Log::info("Telegram group upgraded to supergroup. Migrating chat ID from {$plainParams['chat_id']} to {$newChatId}");
-                $plainParams['chat_id'] = $newChatId;
-                $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
-                if ($response2->successful()) {
-                    return $response2->json();
-                }
-                $body2 = $response2->body();
-            }
-
-            if ($threadId && str_contains(strtolower($body2), 'thread not found')) {
-                Log::warning("Telegram thread {$threadId} not found in chat {$plainParams['chat_id']}, retrying plain text without thread ID");
-                unset($plainParams['message_thread_id']);
-                $response2 = Http::post("https://api.telegram.org/bot{$token}/sendMessage", $plainParams);
-                if ($response2->successful()) {
-                    return $response2->json();
-                }
-                $body2 = $response2->body();
-            }
-
-            Log::error("Telegram API Error (both HTML and plain): " . $body2);
+            Log::error("Telegram API Error (both HTML and plain): " . $second['body']);
             return false;
         } catch (\Throwable $e) {
             Log::error("Telegram exception: " . $e->getMessage());
@@ -292,7 +417,7 @@ class TelegramService
 
     /**
      * Sends an album of photos (media group) to Telegram with robust error handling,
-     * UTF-8 multibyte safety, HTML parse-error retry, and chat migration handling.
+     * UTF-8 multibyte safety, HTML parse-error retry, thread fallback, and chat migration handling.
      */
     public static function sendMediaGroup($chatId, array $items, ?string $caption = null, $threadId = null, bool $useHtml = true)
     {
@@ -303,10 +428,11 @@ class TelegramService
         }
 
         $threadId = self::parseThreadId($threadId);
+        $currentChatId = $chatId;
 
-        $doRequest = function ($targetChatId, $targetCaption, $targetUseHtml) use ($token, $items, $threadId) {
+        $doRequest = function ($targetChatId, $targetThreadId, $targetCaption, $targetUseHtml) use ($token, $items) {
             $media = [];
-            $httpReq = Http::asMultipart();
+            $httpReq = self::httpClient(25)->asMultipart();
 
             foreach ($items as $idx => $item) {
                 $field = "photo_{$idx}";
@@ -339,71 +465,61 @@ class TelegramService
                 'chat_id' => $targetChatId,
                 'media' => json_encode($media, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             ];
-            if ($threadId) {
-                $mediaParams['message_thread_id'] = $threadId;
+            if ($targetThreadId) {
+                $mediaParams['message_thread_id'] = $targetThreadId;
             }
 
             return $httpReq->post("https://api.telegram.org/bot{$token}/sendMediaGroup", $mediaParams);
         };
 
-        // Caption safety check (Telegram media caption limit is 1024 UTF-8 characters)
-        $safeCaption = null;
-        if (!blank($caption)) {
-            if (mb_strlen($caption, 'UTF-8') > 1024) {
-                $safeCaption = mb_substr(strip_tags($caption), 0, 1020, 'UTF-8') . '…';
-                $useHtml = false; // Truncation breaks HTML tags, so use plain text
-            } else {
-                $safeCaption = $caption;
-            }
-        }
-
-        // 1st attempt: requested mode (usually HTML)
-        $response = $doRequest($chatId, $safeCaption, $useHtml);
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        $body = $response->body();
-        $resData = json_decode($body, true);
-
-        // Handle supergroup migration
-        if (isset($resData['parameters']['migrate_to_chat_id'])) {
-            $chatId = $resData['parameters']['migrate_to_chat_id'];
-            Log::info("Telegram group upgraded to supergroup. Migrating chat ID to {$chatId}");
-            $response = $doRequest($chatId, $safeCaption, $useHtml);
+        $attemptMedia = function ($targetCaption, $targetUseHtml) use (&$currentChatId, &$threadId, $doRequest) {
+            $response = $doRequest($currentChatId, $threadId, $targetCaption, $targetUseHtml);
             if ($response->successful()) {
-                return $response->json();
+                return ['ok' => true, 'json' => $response->json(), 'body' => ''];
             }
+
             $body = $response->body();
             $resData = json_decode($body, true);
+            if (isset($resData['parameters']['migrate_to_chat_id'])) {
+                $currentChatId = $resData['parameters']['migrate_to_chat_id'];
+                Log::info("Telegram group upgraded to supergroup. Migrating chat ID to {$currentChatId}");
+                $response = $doRequest($currentChatId, $threadId, $targetCaption, $targetUseHtml);
+                if ($response->successful()) {
+                    return ['ok' => true, 'json' => $response->json(), 'body' => ''];
+                }
+                $body = $response->body();
+            }
+
+            if ($threadId && self::isThreadFallbackError($body)) {
+                Log::warning("Telegram thread {$threadId} rejected for mediaGroup in chat {$currentChatId}, retrying without thread ID");
+                $threadId = null;
+                $response = $doRequest($currentChatId, null, $targetCaption, $targetUseHtml);
+                if ($response->successful()) {
+                    return ['ok' => true, 'json' => $response->json(), 'body' => ''];
+                }
+                $body = $response->body();
+            }
+
+            return ['ok' => false, 'json' => false, 'body' => $body];
+        };
+
+        [$safeCaption, $useHtml] = self::prepareSafeCaption($caption, $useHtml);
+
+        $first = $attemptMedia($safeCaption, $useHtml);
+        if ($first['ok']) {
+            return $first['json'];
         }
 
-        // 2nd attempt: If HTML failed (e.g. invalid entities, unclosed tags), retry with plain text (strip_tags)
         if ($useHtml && !blank($caption)) {
-            Log::warning("Telegram sendMediaGroup HTML failed ({$body}), retrying as plain text caption");
-            $plainCaption = strip_tags($caption);
-            if (mb_strlen($plainCaption, 'UTF-8') > 1024) {
-                $plainCaption = mb_substr($plainCaption, 0, 1020, 'UTF-8') . '…';
+            Log::warning("Telegram sendMediaGroup HTML failed ({$first['body']}), retrying as plain text caption");
+            [$plainCaption] = self::prepareSafeCaption($caption, false);
+            $second = $attemptMedia($plainCaption, false);
+            if ($second['ok']) {
+                return $second['json'];
             }
-
-            $retryRes = $doRequest($chatId, $plainCaption, false);
-            if ($retryRes->successful()) {
-                return $retryRes->json();
-            }
-
-            $retryBody = $retryRes->body();
-            $retryData = json_decode($retryBody, true);
-            if (isset($retryData['parameters']['migrate_to_chat_id'])) {
-                $chatId = $retryData['parameters']['migrate_to_chat_id'];
-                $retryRes2 = $doRequest($chatId, $plainCaption, false);
-                if ($retryRes2->successful()) {
-                    return $retryRes2->json();
-                }
-                $retryBody = $retryRes2->body();
-            }
-            Log::warning("Telegram sendMediaGroup plain retry failed: " . $retryBody);
+            Log::warning("Telegram sendMediaGroup plain retry failed: " . $second['body']);
         } else {
-            Log::warning("Telegram sendMediaGroup failed: " . $body);
+            Log::warning("Telegram sendMediaGroup failed: " . $first['body']);
         }
 
         return false;
@@ -604,85 +720,23 @@ class TelegramService
                     $mimeType = $receiptItem['mimeType'] ?? 'image/jpeg';
                     $filename = "receipt.{$ext}";
 
-                    $useHtml = (mb_strlen($text, 'UTF-8') <= 1024);
-                    $safeCaption = $useHtml
-                        ? $text
-                        : (mb_substr(strip_tags($text), 0, 1020, 'UTF-8') . '…');
-
-                    $sendSingle = function ($targetChatId, $captionText, $htmlMode) use ($token, $binaryData, $filename, $mimeType, $threadId) {
-                        $pParams = [
-                            'chat_id' => $targetChatId,
-                            'caption' => $captionText,
-                        ];
-                        if ($htmlMode) {
-                            $pParams['parse_mode'] = 'HTML';
-                        }
-                        if ($threadId) {
-                            $pParams['message_thread_id'] = $threadId;
-                        }
-                        return Http::attach('photo', $binaryData, $filename, ['Content-Type' => $mimeType])
-                            ->post("https://api.telegram.org/bot{$token}/sendPhoto", $pParams);
-                    };
-
-                    $response = $sendSingle($chatId, $safeCaption, $useHtml);
-                    if ($response->successful()) {
-                        self::recordReportTelegramUrl($report, $response->json(), $chatId, $threadId, [], $isPrimary);
+                    $photoResult = self::sendPhotoWithRetries($token, (string) $chatId, $threadId, $binaryData, $filename, $mimeType, $text);
+                    if ($photoResult['response']) {
+                        self::recordReportTelegramUrl($report, $photoResult['response'], $photoResult['chat_id'], $photoResult['thread_id'], [], $isPrimary);
                         return true;
-                    }
-
-                    $body = $response->body();
-                    $resData = json_decode($body, true);
-                    if (isset($resData['parameters']['migrate_to_chat_id'])) {
-                        $chatId = $resData['parameters']['migrate_to_chat_id'];
-                        Log::info("Telegram group upgraded to supergroup. Migrating chat ID to {$chatId}");
-                        $response = $sendSingle($chatId, $safeCaption, $useHtml);
-                        if ($response->successful()) {
-                            self::recordReportTelegramUrl($report, $response->json(), $chatId, $threadId, [], $isPrimary);
-                            return true;
-                        }
-                        $body = $response->body();
-                    }
-
-                    // Retry with plain text caption if HTML mode failed
-                    if ($useHtml) {
-                        Log::warning("Telegram sendPhoto HTML failed, retrying plain: " . $body);
-                        $plainCaption = mb_strlen(strip_tags($text), 'UTF-8') > 1024
-                            ? mb_substr(strip_tags($text), 0, 1020, 'UTF-8') . '…'
-                            : strip_tags($text);
-
-                        $retryResponse = $sendSingle($chatId, $plainCaption, false);
-                        if ($retryResponse->successful()) {
-                            self::recordReportTelegramUrl($report, $retryResponse->json(), $chatId, $threadId, [], $isPrimary);
-                            return true;
-                        }
-
-                        $retryBody = $retryResponse->body();
-                        $retryData = json_decode($retryBody, true);
-                        if (isset($retryData['parameters']['migrate_to_chat_id'])) {
-                            $chatId = $retryData['parameters']['migrate_to_chat_id'];
-                            $retryResponse2 = $sendSingle($chatId, $plainCaption, false);
-                            if ($retryResponse2->successful()) {
-                                self::recordReportTelegramUrl($report, $retryResponse2->json(), $chatId, $threadId, [], $isPrimary);
-                                return true;
-                            }
-                        }
                     }
 
                     // Fallback: send text first, then photo
                     $msgRes = self::sendMessage($chatId, $text, $threadId);
-                    self::recordReportTelegramUrl($report, $msgRes, $chatId, $threadId, [], $isPrimary);
-
-                    $fallbackParams = [
-                        'chat_id' => $chatId,
-                        'caption' => '📎 Чек/Скриншот оплаты',
-                    ];
-                    if ($threadId) {
-                        $fallbackParams['message_thread_id'] = $threadId;
+                    if ($msgRes) {
+                        self::recordReportTelegramUrl($report, $msgRes, $chatId, $threadId, [], $isPrimary);
                     }
 
-                    Http::attach('photo', $binaryData, $filename, ['Content-Type' => $mimeType])
-                        ->post("https://api.telegram.org/bot{$token}/sendPhoto", $fallbackParams);
-                    return true;
+                    $fallbackPhoto = self::sendPhotoWithRetries($token, (string) $chatId, $threadId, $binaryData, $filename, $mimeType, '📎 Чек/Скриншот оплаты');
+                    if (!$msgRes && $fallbackPhoto['response']) {
+                        self::recordReportTelegramUrl($report, $fallbackPhoto['response'], $fallbackPhoto['chat_id'], $fallbackPhoto['thread_id'], [], $isPrimary);
+                    }
+                    return (bool) ($msgRes || $fallbackPhoto['response']);
                 }
 
                 // If multiple Base64 photo receipts are provided, send as album
@@ -719,16 +773,8 @@ class TelegramService
                             $single = $chunk[0];
                             $singleExt = $single['ext'] ?? 'jpg';
                             $singleMime = $single['mimeType'] ?? 'image/jpeg';
-                            $pParams = [
-                                'chat_id' => $chatId,
-                                'caption' => $chunkCaption,
-                            ];
-                            if ($threadId) {
-                                $pParams['message_thread_id'] = $threadId;
-                            }
-                            $singleRes = Http::attach('photo', $single['binary'], "receipt_extra.{$singleExt}", ['Content-Type' => $singleMime])
-                                ->post("https://api.telegram.org/bot{$token}/sendPhoto", $pParams);
-                            $res = $singleRes->successful() ? $singleRes->json() : false;
+                            $singleRes = self::sendPhotoWithRetries($token, (string) $chatId, $threadId, $single['binary'], "receipt_extra.{$singleExt}", $singleMime, $chunkCaption ?? '');
+                            $res = $singleRes['response'];
                             if ($res && !empty($res['result']['message_id'])) {
                                 $allMessageIds[] = (int) $res['result']['message_id'];
                             }
@@ -746,23 +792,22 @@ class TelegramService
 
                     Log::warning("Telegram sendMediaGroup failed for chat {$chatId}, falling back to individual messages");
                     $msgRes = self::sendMessage($chatId, $text, $threadId);
-                    self::recordReportTelegramUrl($report, $msgRes, $chatId, $threadId, [], $isPrimary);
+                    if ($msgRes) {
+                        self::recordReportTelegramUrl($report, $msgRes, $chatId, $threadId, [], $isPrimary);
+                    }
 
+                    $anyPhotoOk = false;
                     foreach ($parsedReceipts as $idx => $item) {
                         $ext = $item['ext'] ?? 'jpg';
                         $mimeType = $item['mimeType'] ?? 'image/jpeg';
                         $filename = "receipt_" . ($idx + 1) . ".{$ext}";
-                        $params = [
-                            'chat_id' => $chatId,
-                            'caption' => '📎 Чек ' . ($idx + 1) . ' из ' . count($parsedReceipts),
-                        ];
-                        if ($threadId) {
-                            $params['message_thread_id'] = $threadId;
+                        $fallbackCap = '📎 Чек ' . ($idx + 1) . ' из ' . count($parsedReceipts);
+                        $fbRes = self::sendPhotoWithRetries($token, (string) $chatId, $threadId, $item['binary'], $filename, $mimeType, $fallbackCap);
+                        if ($fbRes['response']) {
+                            $anyPhotoOk = true;
                         }
-                        Http::attach('photo', $item['binary'], $filename, ['Content-Type' => $mimeType])
-                            ->post("https://api.telegram.org/bot{$token}/sendPhoto", $params);
                     }
-                    return true;
+                    return (bool) ($msgRes || $anyPhotoOk);
                 }
 
                 // If text only (0 receipts)
@@ -778,14 +823,17 @@ class TelegramService
             }
         };
 
-        $primarySuccess = false;
+        $anySuccess = false;
         foreach ($destinations as $dest) {
             if ($dest['is_primary']) {
-                $primarySuccess = $sendToDestination($dest);
+                if ($sendToDestination($dest)) {
+                    $anySuccess = true;
+                }
             } else {
                 try {
                     $dupSuccess = $sendToDestination($dest);
                     if ($dupSuccess) {
+                        $anySuccess = true;
                         Log::info("Sent duplicate report notification to project chat {$dest['chat_id']} for report #{$report->id}");
                     } else {
                         Log::warning("Failed to duplicate report notification to project chat {$dest['chat_id']} for report #{$report->id}. Make sure the bot is added to that group with permission to send messages.");
@@ -796,7 +844,7 @@ class TelegramService
             }
         }
 
-        return $primarySuccess;
+        return $anySuccess;
     }
 
     protected static function recordReportTelegramUrl($report, $resData, $chatId, $threadId = null, array $allMessageIds = [], bool $isPrimary = true): void
@@ -933,7 +981,7 @@ class TelegramService
             // 1. Bulk delete if multiple message IDs exist (via deleteMessages Telegram Bot API)
             if (count($messageIds) > 1) {
                 try {
-                    $bulkRes = Http::post("https://api.telegram.org/bot{$token}/deleteMessages", [
+                    $bulkRes = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/deleteMessages", [
                         'chat_id' => $chatId,
                         'message_ids' => $messageIds,
                     ]);
@@ -947,7 +995,7 @@ class TelegramService
                     $bData = json_decode($bulkBody, true);
                     if (isset($bData['parameters']['migrate_to_chat_id'])) {
                         $newChatId = $bData['parameters']['migrate_to_chat_id'];
-                        $bulkRes2 = Http::post("https://api.telegram.org/bot{$token}/deleteMessages", [
+                        $bulkRes2 = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/deleteMessages", [
                             'chat_id' => $newChatId,
                             'message_ids' => $messageIds,
                         ]);
@@ -964,7 +1012,7 @@ class TelegramService
             // 2. Individual deleteMessage fallback
             $allSuccess = true;
             foreach ($messageIds as $messageId) {
-                $response = Http::post("https://api.telegram.org/bot{$token}/deleteMessage", [
+                $response = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/deleteMessage", [
                     'chat_id' => $chatId,
                     'message_id' => $messageId,
                 ]);
@@ -978,7 +1026,7 @@ class TelegramService
                 $resData = json_decode($body, true);
                 if (isset($resData['parameters']['migrate_to_chat_id'])) {
                     $newChatId = $resData['parameters']['migrate_to_chat_id'];
-                    $response2 = Http::post("https://api.telegram.org/bot{$token}/deleteMessage", [
+                    $response2 = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/deleteMessage", [
                         'chat_id' => $newChatId,
                         'message_id' => $messageId,
                     ]);
@@ -1058,7 +1106,7 @@ class TelegramService
 
         try {
             // First attempt: editMessageCaption (for photo/document media messages)
-            $response = Http::post("https://api.telegram.org/bot{$token}/editMessageCaption", [
+            $response = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/editMessageCaption", [
                 'chat_id' => $chatId,
                 'message_id' => $messageId,
                 'caption' => $safeCaption,
@@ -1078,7 +1126,7 @@ class TelegramService
             $resData = json_decode($body, true);
             if (isset($resData['parameters']['migrate_to_chat_id'])) {
                 $chatId = $resData['parameters']['migrate_to_chat_id'];
-                $response = Http::post("https://api.telegram.org/bot{$token}/editMessageCaption", [
+                $response = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/editMessageCaption", [
                     'chat_id' => $chatId,
                     'message_id' => $messageId,
                     'caption' => $safeCaption,
@@ -1091,7 +1139,7 @@ class TelegramService
             }
 
             if (str_contains($body, 'can\'t parse entities') || str_contains($body, 'failed to find end tag')) {
-                $retryCaption = Http::post("https://api.telegram.org/bot{$token}/editMessageCaption", [
+                $retryCaption = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/editMessageCaption", [
                     'chat_id' => $chatId,
                     'message_id' => $messageId,
                     'caption' => strip_tags($safeCaption),
@@ -1102,7 +1150,7 @@ class TelegramService
             }
 
             // Second attempt: editMessageText (for plain text messages)
-            $textResponse = Http::post("https://api.telegram.org/bot{$token}/editMessageText", [
+            $textResponse = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/editMessageText", [
                 'chat_id' => $chatId,
                 'message_id' => $messageId,
                 'text' => $text,
@@ -1116,7 +1164,7 @@ class TelegramService
 
             $textBody = $textResponse->body();
             if (str_contains($textBody, 'can\'t parse entities') || str_contains($textBody, 'failed to find end tag')) {
-                $retryText = Http::post("https://api.telegram.org/bot{$token}/editMessageText", [
+                $retryText = self::httpClient(15)->post("https://api.telegram.org/bot{$token}/editMessageText", [
                     'chat_id' => $chatId,
                     'message_id' => $messageId,
                     'text' => strip_tags($text),
@@ -1180,6 +1228,11 @@ class TelegramService
             return false;
         }
 
+        if (is_array($newlyFilledKeys) && count($newlyFilledKeys) === 0) {
+            Log::info("Telegram sendSubmissionNotification: no new/updated slots to send for integration #{$integration->id}.");
+            return false;
+        }
+
         $locales = [
             'ru' => [
                 'submission_title' => '📢 <b>Выполнение работы блогером!</b>',
@@ -1212,28 +1265,32 @@ class TelegramService
 
         $blogger = $integration->blogger_name;
         $platform = $integration->platform;
-        $totalSlots = $integration->slots_count;
+        $totalSlots = max(1, (int) ($integration->slots_count ?? 1));
 
-        // Filter and compile filled slots
-        $filledSlots = collect($data)->filter(function ($val) {
-            return is_string($val) && trim($val) !== '';
+        // Filter strictly to real slot_X keys so metadata keys never inflate filled count
+        $filledSlots = collect($data)->filter(function ($val, $key) {
+            return preg_match('/^slot_\d+$/', (string) $key) && is_string($val) && trim($val) !== '';
         });
 
         $filledCount = $filledSlots->count();
         $remaining = max(0, $totalSlots - $filledCount);
+        $slotsConfigArr = is_array($integration->slots_config) ? $integration->slots_config : [];
+        $anySent = false;
 
-        // Loop over each slot and send it as a separate message
+        // Loop over each newly filled/updated slot and send it as a separate message
         foreach ($filledSlots as $key => $link) {
-            if ($newlyFilledKeys !== null && !in_array($key, $newlyFilledKeys)) {
+            if ($newlyFilledKeys !== null && !in_array($key, $newlyFilledKeys, true)) {
                 continue;
             }
-            $slotNumber = str_replace('slot_', '', $key);
+            $slotNumber = str_replace('slot_', '', (string) $key);
+            $slotNumInt = (int) $slotNumber;
 
-            // Resolve slot config for platform name
-            $slotConfig = $integration->slots_config[$slotNumber - 1] ?? null;
+            // Resolve slot config for platform name safely by explicit 'slot' key first, then index
+            $slotConfig = collect($slotsConfigArr)->firstWhere('slot', $slotNumInt)
+                ?? ($slotsConfigArr[$slotNumInt - 1] ?? null);
             $slotPlatform = $slotConfig['platform'] ?? $platform;
 
-            $isScreenshot = preg_match('/^data:(\w+\/\w+);base64,(.+)$/', $link, $matches);
+            $isScreenshot = preg_match('/^data:(\w+\/[\w.+-]+);base64,(.+)$/', $link, $matches);
 
             $projectName = $integration->project?->name;
 
@@ -1248,78 +1305,44 @@ class TelegramService
             $text .= "{$t['blogger']} {$bloggerLine}\n";
 
             if ($isScreenshot) {
-                $text .= "  • <b>{$t['slot_number']} #{$slotNumber} ({$slotPlatform}):</b> [Screenshot Proof] 🖼️\n\n";
+                $text .= "  • <b>{$t['slot_number']} #{$slotNumber} (" . self::escape($slotPlatform) . "):</b> [Screenshot Proof] 🖼️\n\n";
             } else {
-                $text .= "  • <b>{$t['slot_number']} #{$slotNumber} ({$slotPlatform}):</b> " . self::escape($link) . "\n\n";
+                $text .= "  • <b>{$t['slot_number']} #{$slotNumber} (" . self::escape($slotPlatform) . "):</b> " . self::escape($link) . "\n\n";
             }
 
             $text .= "{$t['total_purchased']} {$totalSlots}\n";
             $text .= "{$t['remaining_slots']} {$remaining}\n";
 
             foreach ($destinations as $dest) {
-                $chatId = $dest['chat_id'];
+                $chatId = (string) $dest['chat_id'];
                 $threadId = $dest['thread_id'];
                 $isPrimary = $dest['is_primary'] ?? false;
 
                 try {
                     $responseJson = null;
+                    $effectiveChatId = $chatId;
+                    $effectiveThreadId = $threadId;
 
                     if ($isScreenshot) {
-                        try {
-                            $base64Data = $matches[2];
-                            $binaryData = base64_decode($base64Data);
-                            $safeCaption = strlen($text) > 1024 ? substr(strip_tags($text), 0, 1021) . '...' : $text;
+                        $mimeType = strtolower($matches[1] ?? 'image/jpeg');
+                        $ext = str_contains($mimeType, 'png') ? 'png' : (str_contains($mimeType, 'webp') ? 'webp' : 'jpg');
+                        $binaryData = base64_decode($matches[2]);
+                        $photoResult = self::sendPhotoWithRetries(
+                            $token,
+                            $chatId,
+                            $threadId,
+                            $binaryData ?: '',
+                            "screenshot_{$slotNumber}.{$ext}",
+                            $mimeType,
+                            $text
+                        );
+                        $responseJson = $photoResult['response'];
+                        $effectiveChatId = $photoResult['chat_id'];
+                        $effectiveThreadId = $photoResult['thread_id'];
 
-                            $photoParams = [
-                                'chat_id' => $chatId,
-                                'caption' => $safeCaption,
-                                'parse_mode' => 'HTML',
-                            ];
-                            if ($threadId) {
-                                $photoParams['message_thread_id'] = $threadId;
-                            }
-
-                            $response = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
-                                ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
-
-                            if ($response->successful()) {
-                                $responseJson = $response->json();
-                            } else {
-                                $body = $response->body();
-                                $resData = json_decode($body, true);
-                                if (isset($resData['parameters']['migrate_to_chat_id'])) {
-                                    $newChatId = $resData['parameters']['migrate_to_chat_id'];
-                                    Log::info("Telegram group upgraded to supergroup. Migrating chat ID to {$newChatId}");
-                                    $photoParams['chat_id'] = $newChatId;
-                                    $response = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
-                                        ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
-                                    if ($response->successful()) {
-                                        $responseJson = $response->json();
-                                    } else {
-                                        $body = $response->body();
-                                    }
-                                }
-
-                                if (!$responseJson && $threadId && str_contains(strtolower($body), 'thread not found')) {
-                                    Log::warning("Telegram thread {$threadId} not found for submission photo in chat {$chatId}, retrying without thread ID");
-                                    unset($photoParams['message_thread_id']);
-                                    $retryPhotoResponse = Http::attach('photo', $binaryData, "screenshot_{$slotNumber}.jpg")
-                                        ->post("https://api.telegram.org/bot{$token}/sendPhoto", $photoParams);
-                                    if ($retryPhotoResponse->successful()) {
-                                        $responseJson = $retryPhotoResponse->json();
-                                    } else {
-                                        $body = $retryPhotoResponse->body();
-                                    }
-                                }
-
-                                if (!$responseJson) {
-                                    Log::error("Telegram sendPhoto failed, retrying plain text: " . $body);
-                                    $responseJson = self::sendMessage($chatId, $text, $threadId);
-                                }
-                            }
-                        } catch (\Throwable $e) {
-                            Log::error("Telegram sendPhoto exception: " . $e->getMessage());
-                            $responseJson = self::sendMessage($chatId, $text, $threadId);
+                        if (!$responseJson) {
+                            Log::error("Telegram sendPhoto failed for submission {$key}, falling back to sendMessage");
+                            $responseJson = self::sendMessage($effectiveChatId, $text, $effectiveThreadId);
                         }
                     } else {
                         $options = [];
@@ -1338,37 +1361,28 @@ class TelegramService
                         $responseJson = self::sendMessage($chatId, $text, $threadId, $options);
                     }
 
-                    if ($isPrimary && $responseJson) {
-                        $tgMessageUrl = self::buildTelegramMessageUrl($responseJson, $chatId, $threadId);
+                    if ($responseJson) {
+                        $anySent = true;
+                        $tgMessageUrl = self::buildTelegramMessageUrl($responseJson, $effectiveChatId, $effectiveThreadId);
                         if ($tgMessageUrl) {
+                            $urlField = $isPrimary ? "{$key}_tg_url" : "{$key}_duplicate_tg_url";
                             try {
                                 $sub = \App\Models\BloggerSubmission::where('integration_id', $integration->id)->first();
                                 if ($sub) {
                                     $subData = $sub->data ?? [];
-                                    $subData["{$key}_tg_url"] = $tgMessageUrl;
-                                    $sub->update(['data' => $subData]);
-                                    Log::info("Saved telegram message url for {$key}: {$tgMessageUrl}");
+                                    $subData[$urlField] = $tgMessageUrl;
+                                    $sub->updateQuietly(['data' => $subData]);
+                                    Log::info("Saved {$urlField} for {$key}: {$tgMessageUrl}");
                                 }
                             } catch (\Throwable $ex) {
-                                Log::error("Failed to save tg_url to submission: " . $ex->getMessage());
+                                Log::error("Failed to save {$urlField} to submission: " . $ex->getMessage());
                             }
                         }
-                    } elseif (!$isPrimary && $responseJson) {
-                        $tgMessageUrl = self::buildTelegramMessageUrl($responseJson, $chatId, $threadId);
-                        if ($tgMessageUrl) {
-                            try {
-                                $sub = \App\Models\BloggerSubmission::where('integration_id', $integration->id)->first();
-                                if ($sub) {
-                                    $subData = $sub->data ?? [];
-                                    $subData["{$key}_duplicate_tg_url"] = $tgMessageUrl;
-                                    $sub->update(['data' => $subData]);
-                                    Log::info("Saved duplicate telegram message url for {$key}: {$tgMessageUrl}");
-                                }
-                            } catch (\Throwable $ex) {
-                                Log::error("Failed to save duplicate tg_url to submission: " . $ex->getMessage());
-                            }
+                        if (!$isPrimary) {
+                            Log::info("Sent duplicate submission notification for {$key} to project chat {$effectiveChatId}");
                         }
-                        Log::info("Sent duplicate submission notification for {$key} to project chat {$chatId}");
+                    } else {
+                        Log::warning("Failed to deliver submission notification for {$key} to chat {$chatId}");
                     }
                 } catch (\Throwable $exDest) {
                     Log::error("Error sending submission notification for {$key} to chat {$chatId}: " . $exDest->getMessage());
@@ -1376,7 +1390,7 @@ class TelegramService
             }
         }
 
-        return true;
+        return $anySent;
     }
 
     public static function sendRequisitesNotification($integration, $requisites, $lang = 'uz')
@@ -1520,7 +1534,7 @@ class TelegramService
                         if ($threadId) {
                             $pParams['message_thread_id'] = $threadId;
                         }
-                        $res = Http::attach('photo', $s['binary'], $s['filename'], ['Content-Type' => 'image/jpeg'])
+                        $res = self::httpClient(20)->attach('photo', $s['binary'], $s['filename'], ['Content-Type' => 'image/jpeg'])
                             ->post("https://api.telegram.org/bot{$token}/sendPhoto", $pParams);
                         if ($res->successful()) {
                             return true;
@@ -1545,7 +1559,7 @@ class TelegramService
                         $fileParams['message_thread_id'] = $threadId;
                     }
 
-                    Http::attach($field, $s['binary'], $s['filename'])
+                    self::httpClient(20)->attach($field, $s['binary'], $s['filename'])
                         ->post("https://api.telegram.org/bot{$token}/{$endpoint}", $fileParams);
                 }
 

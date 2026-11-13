@@ -18,7 +18,7 @@ Route::get('/{any}', function (Request $request) {
     if ($isCabinetRoute) {
         $token = null;
         if (str_starts_with($path, 'c/')) {
-            $token = substr($path, 2);
+            $token = trim(substr($path, 2), '/');
         } elseif ($request->has('integrationId')) {
             $token = $request->query('integrationId');
         } elseif ($request->has('id')) {
@@ -26,12 +26,9 @@ Route::get('/{any}', function (Request $request) {
         }
 
         try {
-            $integration = null;
-            if ($token) {
-                $integration = \App\Models\Integration::where('blogger_cabinet_token', $token)
-                    ->orWhere('id', $token)
-                    ->first();
-            }
+            $integration = $token
+                ? \App\Models\Integration::resolveByTokenOrId($token)
+                : null;
 
             if ($integration) {
                 $intCtrl = app(\App\Http\Controllers\Api\IntegrationController::class);
@@ -87,14 +84,11 @@ Route::get('/{any}', function (Request $request) {
             \Illuminate\Support\Facades\Log::warning('Cabinet bootstrap preload in Blade failed: ' . $e->getMessage());
         }
     } elseif ($isRequisitesRoute) {
-        $token = $request->query('token') ?: (str_starts_with($path, 'requisites/') ? substr($path, 11) : null);
+        $token = $request->query('token') ?: (str_starts_with($path, 'requisites/') ? trim(substr($path, 11), '/') : null);
         try {
-            $integration = null;
-            if ($token) {
-                $integration = \App\Models\Integration::where('blogger_cabinet_token', $token)
-                    ->orWhere('id', $token)
-                    ->first();
-            }
+            $integration = $token
+                ? \App\Models\Integration::resolveByTokenOrId($token)
+                : null;
 
             if ($integration) {
                 $intCtrl = app(\App\Http\Controllers\Api\IntegrationController::class);

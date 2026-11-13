@@ -98,9 +98,10 @@ export default function BloggerCabinetView({
   // Resolve initial integration synchronously from URL parameters or first available item
   const initialMatched = React.useMemo(() => {
     if (urlParams?.integrationId) {
+      const targetId = String(urlParams.integrationId).replace(/\/+$/, '');
       const matches = integrations.filter(i =>
-        String(i.id) === String(urlParams.integrationId) ||
-        i.bloggerCabinetToken === urlParams.integrationId
+        String(i.id) === targetId ||
+        i.bloggerCabinetToken === targetId
       );
       if (matches.length > 0) {
         // Prioritize active (uncompleted) integration so new slots are immediately visible
@@ -169,7 +170,8 @@ export default function BloggerCabinetView({
   // Load state from URL parameters if present
   useEffect(() => {
     if (urlParams?.integrationId) {
-      const matches = integrations.filter(i => String(i.id) === String(urlParams.integrationId) || i.bloggerCabinetToken === urlParams.integrationId);
+      const targetId = String(urlParams.integrationId).replace(/\/+$/, '');
+      const matches = integrations.filter(i => String(i.id) === targetId || i.bloggerCabinetToken === targetId);
       if (matches.length > 0) {
         const matched = matches.find(i => i.status !== 'completed' && i.kanbanStage !== 'completed') || matches[matches.length - 1];
         if (matched) {
@@ -253,6 +255,7 @@ export default function BloggerCabinetView({
   const [draggingOverSlotKey, setDraggingOverSlotKey] = useState<string | null>(null);
   const [pasteNotification, setPasteNotification] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Auto-dismiss paste notification after 3.5 seconds
   useEffect(() => {
@@ -643,26 +646,27 @@ export default function BloggerCabinetView({
 
 
   const handleFinalSubmit = async () => {
-    const confirmText = lang === 'ru'
-      ? "Вы уверены, что хотите отправить материалы? Отправленные материалы будут заблокированы и их нельзя будет изменить!"
-      : lang === 'uz'
-        ? "Materiallarni yuborishga ishonchingiz komilmi? Yuborilgan materiallar bloklanadi va ularni o‘zgartirib bo‘lmaydi!"
-        : "Are you sure you want to submit? Submitted materials will be locked and cannot be edited!";
-
-    if (!window.confirm(confirmText)) {
-      return;
-    }
+    const existingSub = submissions.find(s => String(s.integrationId) === String(selectedIntegrationId));
+    const submittedData = existingSub?.data || {};
 
     const submittedPayload: Record<string, string> = {};
     for (let i = 1; i <= activeSlotsCount; i++) {
       const key = `slot_${i}`;
+      // Never re-send already submitted (locked) slots or old base64 screenshots
+      if (submittedData[key]) {
+        continue;
+      }
       let val = (formData[key] || '').trim();
-      if (val && !val.match(/^https?:\/\//i) && !val.startsWith('data:') && !val.startsWith('mock')) {
+      if (!val) {
+        continue;
+      }
+      if (!val.match(/^https?:\/\//i) && !val.startsWith('data:') && !val.startsWith('mock')) {
         val = `https://${val}`;
       }
       submittedPayload[key] = val;
     }
 
+    setSubmitError(null);
     setIsSubmitting(true);
     try {
       await onAddSubmission({
@@ -676,7 +680,7 @@ export default function BloggerCabinetView({
       setShowConfirm(false);
     } catch (err: any) {
       console.error('Failed to submit deliverable:', err);
-      alert(err?.message || (lang === 'ru' ? 'Ошибка при отправке материалов' : 'Xatolik yuz berdi'));
+      setSubmitError(err?.message || (lang === 'ru' ? 'Ошибка при отправке материалов' : lang === 'uz' ? 'Materiallarni yuborishda xatolik yuz berdi' : 'Error submitting deliverables'));
     } finally {
       setIsSubmitting(false);
     }
@@ -876,11 +880,21 @@ export default function BloggerCabinetView({
                     })}
                   </div>
 
+                  {submitError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                      <span>{submitError}</span>
+                    </div>
+                  )}
+
                   <div className="flex gap-3 pt-2">
                     <button
                       type="button"
                       disabled={isSubmitting}
-                      onClick={() => setShowConfirm(false)}
+                      onClick={() => {
+                        setSubmitError(null);
+                        setShowConfirm(false);
+                      }}
                       className="flex-1 py-2.5 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-800 font-bold text-xs rounded-lg transition cursor-pointer"
                     >
                       {lang === 'ru' ? 'Назад / Изменить' : lang === 'uz' ? 'Orqaga / O‘zgartirish' : 'Back / Edit'}

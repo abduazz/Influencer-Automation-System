@@ -142,6 +142,50 @@ class BloggerSubmissionControllerTest extends TestCase
         ]);
     }
 
+    public function test_submission_rejects_tezi_cabinet_link(): void
+    {
+        $payload = [
+            'integrationId' => 'test-cabinet-token',
+            'lang' => 'ru',
+            'data' => [
+                'slot_1' => 'https://tezi.uz/c/migrantlar24-csok9q?cabinet=true',
+            ],
+        ];
+
+        $response = $this->postJson('/api/blogger-submissions', $payload);
+        $response->assertStatus(422);
+        $response->assertJsonFragment([
+            'message' => "Slot #1: Kabinet havolasini yuborish taqiqlangan. Iltimos, e'lon qilingan post havolasini kiriting!",
+        ]);
+    }
+
+    public function test_submission_accepts_max_ru_post_url_with_c_path(): void
+    {
+        Http::fake([
+            'https://api.telegram.org/bot*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $this->integration->update([
+            'platform' => 'MAX',
+            'slots_config' => [
+                ['platform' => 'MAX', 'format' => 'Post'],
+            ],
+            'slots_count' => 1,
+            'paid_slots_count' => 1,
+        ]);
+
+        $payload = [
+            'integrationId' => 'test-cabinet-token',
+            'lang' => 'ru',
+            'data' => [
+                'slot_1' => 'https://max.ru/c/-70984382133678/AaHQgV08GFc',
+            ],
+        ];
+
+        $response = $this->postJson('/api/blogger-submissions', $payload);
+        $response->assertStatus(201);
+    }
+
     public function test_submission_rejects_invalid_platform_url(): void
     {
         $payload = [

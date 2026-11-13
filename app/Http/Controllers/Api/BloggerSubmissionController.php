@@ -70,6 +70,7 @@ class BloggerSubmissionController extends Controller
         // Server-side validation of slot URLs
         $submittedData = $request->input('data', []);
         $appHost = strtolower(parse_url(config('app.url', ''), PHP_URL_HOST) ?? '');
+        $requestHost = strtolower($request->getHost() ?? '');
 
         foreach ($submittedData as $key => $val) {
             if (!is_string($val) || trim($val) === '') {
@@ -127,7 +128,8 @@ class BloggerSubmissionController extends Controller
                 continue;
             }
 
-            $trimmed = trim($val);
+            $rawTrimmed = trim($val);
+            $trimmed = $rawTrimmed;
 
             // Auto-prefix protocol if missing
             if (!preg_match('~^https?://~i', $trimmed)) {
@@ -146,12 +148,7 @@ class BloggerSubmissionController extends Controller
             }
 
             // 1. Block cabinet links
-            if (
-                str_contains($trimmedLower, '/c/') ||
-                str_contains($trimmedLower, 'cabinet') ||
-                str_contains($trimmedLower, 'khalilovdev.uz') ||
-                ($appHost !== '' && str_contains($trimmedLower, $appHost))
-            ) {
+            if ($this->isCabinetUrl($rawTrimmed, $trimmed, $appHost, $requestHost)) {
                 return response()->json([
                     'message' => "Slot #{$slotNum}: Kabinet havolasini yuborish taqiqlangan. Iltimos, e'lon qilingan post havolasini kiriting!",
                     'errors' => [$key => ["Kabinet havolasini yuborish taqiqlangan."]]
@@ -335,5 +332,34 @@ class BloggerSubmissionController extends Controller
         ]);
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * Detect whether a submitted URL points to the blogger cabinet rather than an external publication.
+     */
+    private function isCabinetUrl(string $rawTrimmed, string $normalizedUrl, string $appHost, string $requestHost): bool
+    {
+        if (preg_match('~^/c(/|$)~i', $rawTrimmed)) {
+            return true;
+        }
+
+        $parsedHost = strtolower((string) (parse_url($normalizedUrl, PHP_URL_HOST) ?? ''));
+        $parsedPath = strtolower((string) (parse_url($normalizedUrl, PHP_URL_PATH) ?? ''));
+        $parsedQuery = strtolower((string) (parse_url($normalizedUrl, PHP_URL_QUERY) ?? ''));
+
+        if ($parsedHost !== '') {
+            foreach (array_filter([$appHost, $requestHost, 'tezi.uz', 'khalilovdev.uz']) as $ownHost) {
+                if ($parsedHost === $ownHost || str_ends_with($parsedHost, '.' . $ownHost)) {
+                    return true;
+                }
+            }
+        }
+
+        parse_str($parsedQuery, $queryParams);
+        if (array_key_exists('cabinet', $queryParams)) {
+            return true;
+        }
+
+        return $parsedPath === '/cabinet' || str_starts_with($parsedPath, '/cabinet/');
     }
 }

@@ -517,8 +517,9 @@ export default function BloggerCabinetView({
     }
 
     let trimmed = url.trim();
+    const isRelativeCabinetPath = /^\/c(\/|$)/i.test(trimmed);
     if (!trimmed.match(/^https?:\/\//i)) {
-      trimmed = `https://${trimmed}`;
+      trimmed = `https://${trimmed.replace(/^\/+/, '')}`;
     }
 
     const lower = trimmed.toLowerCase();
@@ -528,11 +529,31 @@ export default function BloggerCabinetView({
       return { valid: false, errorKey: 'screenshotNotAllowed' };
     }
 
-    // 1. Block cabinet links
-    const isCabinetLink = lower.includes('/c/') ||
-      lower.includes('cabinet') ||
-      (typeof window !== 'undefined' && window.location.host && lower.includes(window.location.host.toLowerCase())) ||
-      lower.includes('khalilovdev.uz');
+    // 1. Block cabinet links (own cabinet domains, relative /c/ paths, or ?cabinet=...)
+    let parsedUrl: URL | null = null;
+    try {
+      parsedUrl = new URL(trimmed);
+    } catch {
+      parsedUrl = null;
+    }
+
+    const hostname = parsedUrl?.hostname.toLowerCase() ?? '';
+    const pathname = parsedUrl?.pathname.toLowerCase() ?? '';
+    const currentHostname = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+    const ownHosts = ['tezi.uz', 'khalilovdev.uz', ...(currentHostname ? [currentHostname] : [])];
+    const isOwnDomain = hostname !== '' && ownHosts.some(
+      own => hostname === own || hostname.endsWith(`.${own}`)
+    );
+    const hasCabinetQuery = parsedUrl
+      ? Array.from(parsedUrl.searchParams.keys()).some(k => k.toLowerCase() === 'cabinet')
+      : /[?&]cabinet(?:=|&|$)/i.test(lower);
+
+    const isCabinetLink =
+      isRelativeCabinetPath ||
+      isOwnDomain ||
+      hasCabinetQuery ||
+      pathname === '/cabinet' ||
+      pathname.startsWith('/cabinet/');
     if (isCabinetLink) {
       return { valid: false, errorKey: 'cabinetUrlForbidden' };
     }

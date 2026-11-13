@@ -285,7 +285,7 @@ class ReportController extends Controller
                             ->where('platform', $report->platform)
                             ->where('id', '!=', $report->id)
                             ->get()
-                            ->contains(fn($r) => $r->channel_blogger && Integration::bloggerNamesMatch($r->channel_blogger, $cleanBloggerName));
+                            ->contains(fn ($r) => $r->channel_blogger && Integration::bloggerNamesMatch($r->channel_blogger, $cleanBloggerName));
                         $isPrePaymentStage = empty($existingIntegration->kanban_stage)
                             || in_array($existingIntegration->kanban_stage, ['wishlist', 'negotiation', 'requisites_pending', 'ready_for_payment'], true);
 
@@ -673,7 +673,7 @@ class ReportController extends Controller
                             // Fallback matching strictly by project & blogger name
                             $integration = Integration::where('project_id', $targetProject)
                                 ->get()
-                                ->first(fn($int) => Integration::bloggerNamesMatch($int->blogger_name, $targetBlogger));
+                                ->first(fn ($int) => Integration::bloggerNamesMatch($int->blogger_name, $targetBlogger));
                         }
                     }
 
@@ -778,7 +778,7 @@ class ReportController extends Controller
                 $integration = Integration::where('project_id', $projectId)
                     ->where('platform', $platform)
                     ->get()
-                    ->first(fn($int) => Integration::bloggerNamesMatch($int->blogger_name, $channelBlogger));
+                    ->first(fn ($int) => Integration::bloggerNamesMatch($int->blogger_name, $channelBlogger));
             }
 
             if ($integration) {
@@ -786,7 +786,7 @@ class ReportController extends Controller
                 $remainingReports = Report::where('project_id', $projectId)
                     ->where('platform', $platform)
                     ->get()
-                    ->filter(fn($r) => $r->channel_blogger && Integration::bloggerNamesMatch($r->channel_blogger, $channelBlogger));
+                    ->filter(fn ($r) => $r->channel_blogger && Integration::bloggerNamesMatch($r->channel_blogger, $channelBlogger));
 
                 if ($remainingReports->isEmpty()) {
                     $integration->delete();

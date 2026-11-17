@@ -63,6 +63,9 @@ echo "⚡ Optimizing application caches..."
 php artisan optimize:clear
 php artisan optimize
 
+echo "🤖 Ensuring Telegram Bot webhook..."
+php artisan telegram:setup-webhook || echo "⚠️ Telegram webhook setup skipped/failed, continuing deployment..."
+
 if command -v npm &> /dev/null || [ -x "$NPM_CMD" ]; then
     echo "📦 Installing npm dependencies & building assets..."
     $NPM_CMD install --no-audit || true

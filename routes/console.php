@@ -386,6 +386,37 @@ Artisan::command('db:backup {--telegram : Send backup to Telegram topic #597} {-
   ->dailyAt('03:00')
   ->timezone(config('app.timezone', 'Asia/Tashkent'));
 
+Artisan::command('telegram:setup-webhook {--url= : Explicit webhook URL override} {--force : Re-register even if already pointing to the same URL}', function () {
+    $token = config('services.telegram.bot_token');
+    if (empty($token)) {
+        $this->warn('TELEGRAM_BOT_TOKEN is not configured. Skipping webhook setup.');
+        return;
+    }
+
+    $targetUrl = \App\Services\TelegramService::resolveExpectedWebhookUrl($this->option('url'));
+    if (empty($targetUrl)) {
+        $this->warn('APP_URL / TELEGRAM_WEBHOOK_URL is local or unset. Skipping webhook registration (polling fallback remains active).');
+        return;
+    }
+
+    $info = \App\Services\TelegramService::getWebhookInfo();
+    $currentUrl = (string) ($info['result']['url'] ?? '');
+    $lastError = (string) ($info['result']['last_error_message'] ?? '');
+
+    if (!$this->option('force') && !empty($info['ok']) && $currentUrl === $targetUrl && $lastError === '') {
+        $this->info("Telegram webhook already active: {$targetUrl}");
+        return;
+    }
+
+    $res = \App\Services\TelegramService::setWebhook($targetUrl);
+    if (!empty($res['ok'])) {
+        $this->info("Telegram webhook set to: {$targetUrl}");
+    } else {
+        $this->error('Failed to set Telegram webhook: ' . ($res['description'] ?? 'Unknown error'));
+    }
+})->purpose('Register the Telegram Bot API webhook URL in production');
+
+
 
 
 

@@ -37,6 +37,7 @@ return [
 
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'webhook_url' => env('TELEGRAM_WEBHOOK_URL'),
         'api_id' => env('TELEGRAM_API_ID'),
         'api_hash' => env('TELEGRAM_API_HASH'),
         'gateway_port' => env('TELEGRAM_GATEWAY_PORT') == 5005 ? 5006 : env('TELEGRAM_GATEWAY_PORT', 5006),

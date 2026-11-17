@@ -17,7 +17,8 @@ class AuthController extends Controller
 {
     public function __construct(
         protected AuthService $authService
-    ) {}
+    ) {
+    }
 
     /**
      * Return current authenticated user (always 200 so unauthenticated page loads stay clean).
@@ -144,6 +145,7 @@ class AuthController extends Controller
         return response()->json([
             'challengeToken' => $challenge->token,
             'needsBotStart' => true,
+            'botUsername' => $botUsername,
             'botUrl' => "https://t.me/{$botUsername}?start=otp_{$challenge->token}",
             'expiresIn' => 300,
         ]);
@@ -162,8 +164,8 @@ class AuthController extends Controller
             return response()->json(['status' => 'expired']);
         }
 
-        if (empty($challenge->telegram_id) && app()->environment('local')) {
-            app(TelegramChatController::class)->syncLocalPrivateAuthUpdates();
+        if (empty($challenge->telegram_id)) {
+            app(TelegramChatController::class)->syncPrivateAuthUpdatesIfNoWebhook();
             $challenge->refresh();
         }
 
@@ -316,7 +318,7 @@ class AuthController extends Controller
             ->where('expires_at', '>', now())
             ->orderByDesc('last_used_at')
             ->get()
-            ->map(fn (UserSession $s) => [
+            ->map(fn(UserSession $s) => [
                 'id' => (string) $s->id,
                 'authMethod' => $s->auth_method,
                 'ipAddress' => $s->ip_address,
@@ -345,7 +347,7 @@ class AuthController extends Controller
             $currentHash = $currentToken ? hash('sha256', $currentToken) : null;
 
             UserSession::where('user_id', $user->id)
-                ->when($currentHash, fn ($q) => $q->where('token_hash', '!=', $currentHash))
+                ->when($currentHash, fn($q) => $q->where('token_hash', '!=', $currentHash))
                 ->delete();
 
             return response()->json(['success' => true]);

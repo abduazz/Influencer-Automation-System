@@ -238,8 +238,8 @@ class TelegramService
         } elseif (!empty($report?->slots_config) && is_array($report->slots_config)) {
             $projectIds = collect($report->slots_config)
                 ->pluck('projectId')
-                ->filter(fn ($id) => is_numeric($id) && (int) $id > 0)
-                ->map(fn ($id) => (int) $id)
+                ->filter(fn($id) => is_numeric($id) && (int) $id > 0)
+                ->map(fn($id) => (int) $id)
                 ->unique()
                 ->values();
             if ($projectIds->isNotEmpty()) {
@@ -1584,17 +1584,22 @@ class TelegramService
         if (!$token)
             return null;
 
-        return \Illuminate\Support\Facades\Cache::remember('telegram_bot_info', 86400, function () use ($token) {
-            try {
-                $res = Http::timeout(5)->get("https://api.telegram.org/bot{$token}/getMe");
-                if ($res->successful() && isset($res['result'])) {
-                    return $res['result'];
-                }
-            } catch (\Throwable $e) {
-                Log::warning('Telegram getMe error: ' . $e->getMessage());
+        $cached = \Illuminate\Support\Facades\Cache::get('telegram_bot_info');
+        if (is_array($cached) && !empty($cached['username'])) {
+            return $cached;
+        }
+
+        try {
+            $res = self::httpClient(6)->get("https://api.telegram.org/bot{$token}/getMe");
+            if ($res->successful() && !empty($res['result']) && is_array($res['result'])) {
+                \Illuminate\Support\Facades\Cache::put('telegram_bot_info', $res['result'], 86400);
+                return $res['result'];
             }
-            return null;
-        });
+        } catch (\Throwable $e) {
+            Log::warning('Telegram getMe error: ' . $e->getMessage());
+        }
+
+        return null;
     }
 
     public static function getBotUsername(): ?string
@@ -1610,6 +1615,59 @@ class TelegramService
         return "https://t.me/{$botUsername}" . ($payload ? "?start={$payload}" : '');
     }
 
+    /**
+     * Resolve the public HTTPS webhook URL for Telegram Bot API, returning null for local/private hosts.
+     */
+    public static function resolveExpectedWebhookUrl(?string $overrideUrl = null, ?string $requestOrigin = null): ?string
+    {
+        $candidates = $overrideUrl
+            ? [['url' => $overrideUrl, 'allowLocal' => true]]
+            : [
+                ['url' => config('services.telegram.webhook_url'), 'allowLocal' => false],
+                ['url' => config('app.url'), 'allowLocal' => false],
+                ['url' => $requestOrigin, 'allowLocal' => false],
+            ];
+
+        foreach ($candidates as $candidate) {
+            $raw = trim((string) ($candidate['url'] ?? ''));
+            if ($raw === '') {
+                continue;
+            }
+
+            if (!preg_match('#^https?://#i', $raw)) {
+                $raw = 'https://' . ltrim($raw, '/');
+            }
+
+            $parsed = parse_url($raw);
+            $host = strtolower((string) ($parsed['host'] ?? ''));
+            $isLocalOrIp = $host === ''
+                || $host === 'localhost'
+                || $host === '127.0.0.1'
+                || $host === '::1'
+                || str_ends_with($host, '.localhost')
+                || str_ends_with($host, '.local')
+                || str_ends_with($host, '.test')
+                || filter_var($host, FILTER_VALIDATE_IP) !== false;
+
+            if ($isLocalOrIp && !$candidate['allowLocal']) {
+                continue;
+            }
+
+            $webhookUrl = rtrim($raw, '/');
+            if (!str_ends_with($webhookUrl, '/api/telegram/webhook')) {
+                $webhookUrl .= '/api/telegram/webhook';
+            }
+
+            if (str_starts_with($webhookUrl, 'http://') && !app()->environment('local')) {
+                $webhookUrl = 'https://' . substr($webhookUrl, 7);
+            }
+
+            return $webhookUrl;
+        }
+
+        return null;
+    }
+
     public static function setWebhook($webhookUrl): array
     {
         $token = config('services.telegram.bot_token');
@@ -1617,11 +1675,16 @@ class TelegramService
             return ['ok' => false, 'description' => 'Bot token not set'];
         }
         try {
-            $res = Http::post("https://api.telegram.org/bot{$token}/setWebhook", [
+            $res = self::httpClient(10)->post("https://api.telegram.org/bot{$token}/setWebhook", [
                 'url' => $webhookUrl,
                 'allowed_updates' => ['message', 'edited_message', 'callback_query'],
             ]);
-            return $res->json() ?? ['ok' => false, 'description' => 'Invalid JSON'];
+            $json = $res->json() ?? ['ok' => false, 'description' => 'Invalid JSON'];
+            if (!empty($json['ok'])) {
+                \Illuminate\Support\Facades\Cache::forget('tg_webhook_url_check');
+                \Illuminate\Support\Facades\Cache::forget('tg_local_webhook_url_check');
+            }
+            return $json;
         } catch (\Throwable $e) {
             return ['ok' => false, 'description' => $e->getMessage()];
         }

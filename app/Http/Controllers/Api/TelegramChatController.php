@@ -442,52 +442,84 @@ class TelegramChatController extends Controller
     {
         $update = $request->all();
         Log::info('Telegram Webhook incoming update:', ['update_id' => $update['update_id'] ?? null]);
-        $this->processUpdate($update);
+        try {
+            $this->processUpdate($update);
+        } catch (\Throwable $e) {
+            Log::error('Telegram Webhook processing error: ' . $e->getMessage(), [
+                'update_id' => $update['update_id'] ?? null,
+                'exception' => $e,
+            ]);
+        }
         return response()->json(['ok' => true]);
     }
 
     /**
-     * In local environment (where Telegram cannot reach localhost via webhook),
-     * poll getUpdates ONLY if no remote webhook is active, and strictly process private /start otp_ updates.
+     * Fallback polling when no Telegram webhook URL is active (local dev, or prod before webhook setup):
+     * checks getWebhookInfo() and polls getUpdates ONLY when Telegram confirms webhook url is empty.
      */
-    public function syncLocalPrivateAuthUpdates(): ?string
+    public function syncPrivateAuthUpdatesIfNoWebhook(): ?string
     {
-        if (!app()->environment('local')) {
+        if (!config('services.telegram.bot_token')) {
             return null;
         }
 
-        $webhookUrl = Cache::remember('tg_local_webhook_url_check', 30, function () {
+        $cachedWebhookUrl = Cache::get('tg_webhook_url_check');
+        if ($cachedWebhookUrl === null) {
             $info = TelegramService::getWebhookInfo();
-            return (string) ($info['result']['url'] ?? '');
+            if (empty($info['ok'])) {
+                return null;
+            }
+            $cachedWebhookUrl = (string) ($info['result']['url'] ?? '');
+            Cache::put('tg_webhook_url_check', $cachedWebhookUrl, 30);
+        }
+
+        if ($cachedWebhookUrl !== '') {
+            return $cachedWebhookUrl;
+        }
+
+        Cache::lock('tg_getupdates_poll_lock', 5)->get(function () {
+            $offset = (int) Cache::get('tg_local_update_offset', 0);
+
+            for ($page = 0; $page < 5; $page++) {
+                $res = TelegramService::fetchUpdates($offset, 100);
+                if (empty($res['ok']) || empty($res['result']) || !is_array($res['result'])) {
+                    break;
+                }
+
+                $maxId = $offset - 1;
+                foreach ($res['result'] as $update) {
+                    $updateId = (int) ($update['update_id'] ?? 0);
+                    if ($updateId > $maxId) {
+                        $maxId = $updateId;
+                    }
+                    $msg = $update['message'] ?? null;
+                    $chatType = $msg['chat']['type'] ?? '';
+                    $text = trim((string) ($msg['text'] ?? ''));
+                    if ($chatType === 'private' && preg_match('/^\/start(?:@[A-Za-z0-9_]+)?\s+otp_[a-f0-9]+$/i', $text)) {
+                        $this->processUpdate($update);
+                    }
+                }
+
+                if ($maxId >= $offset) {
+                    $offset = $maxId + 1;
+                    Cache::put('tg_local_update_offset', $offset, 86400);
+                }
+
+                if (count($res['result']) < 100) {
+                    break;
+                }
+            }
         });
 
-        if ($webhookUrl !== '') {
-            return $webhookUrl;
-        }
-
-        $offset = (int) Cache::get('tg_local_update_offset', 0);
-        $res = TelegramService::fetchUpdates($offset);
-
-        if (!empty($res['ok']) && !empty($res['result']) && is_array($res['result'])) {
-            $maxId = $offset - 1;
-            foreach ($res['result'] as $update) {
-                $updateId = (int) ($update['update_id'] ?? 0);
-                if ($updateId > $maxId) {
-                    $maxId = $updateId;
-                }
-                $msg = $update['message'] ?? null;
-                $chatType = $msg['chat']['type'] ?? '';
-                $text = trim((string) ($msg['text'] ?? ''));
-                if ($chatType === 'private' && preg_match('/^\/start\s+otp_[a-f0-9]+$/i', $text)) {
-                    $this->processUpdate($update);
-                }
-            }
-            if ($maxId >= $offset) {
-                Cache::put('tg_local_update_offset', $maxId + 1, 86400);
-            }
-        }
-
         return null;
+    }
+
+    /**
+     * Backwards-compatible alias for syncPrivateAuthUpdatesIfNoWebhook().
+     */
+    public function syncLocalPrivateAuthUpdates(): ?string
+    {
+        return $this->syncPrivateAuthUpdatesIfNoWebhook();
     }
 
     /**
@@ -519,7 +551,7 @@ class TelegramChatController extends Controller
         $firstName = $from['first_name'] ?? ($username ?: 'Блогер');
 
         // Intercept staff 1-time OTP activation (/start otp_<token>) before blogger deal logic
-        if (preg_match('/^\/start\s+otp_([a-f0-9]+)$/i', $text, $otpMatch)) {
+        if (preg_match('/^\/start(?:@[A-Za-z0-9_]+)?\s+otp_([a-f0-9]+)$/i', $text, $otpMatch)) {
             $this->handleOtpStartCommand($otpMatch[1], (string) $chatId, $fromId, $username);
             return;
         }
@@ -657,8 +689,13 @@ class TelegramChatController extends Controller
      */
     public function setupWebhook(Request $request): JsonResponse
     {
-        $webhookUrl = $request->input('url') ?: (config('app.url') . '/api/telegram/webhook');
-        // Ensure https
+        $explicitUrl = $request->input('url');
+        $webhookUrl = TelegramService::resolveExpectedWebhookUrl(
+            is_string($explicitUrl) ? $explicitUrl : null,
+            $request->getSchemeAndHttpHost()
+        ) ?: (rtrim((string) config('app.url'), '/') . '/api/telegram/webhook');
+
+        // Ensure https in non-local environments
         if (str_starts_with($webhookUrl, 'http://') && !app()->environment('local')) {
             $webhookUrl = 'https://' . substr($webhookUrl, 7);
         }
@@ -693,10 +730,12 @@ class TelegramChatController extends Controller
         $actualHandle = ltrim(mb_strtolower((string) $fromUsername), '@');
 
         if ($expectedHandle === '' || $actualHandle === '' || $expectedHandle !== $actualHandle) {
+            $safeExpected = htmlspecialchars((string) $user->telegram_username, ENT_QUOTES, 'UTF-8');
+            $safeActual = $actualHandle !== '' ? '@' . htmlspecialchars($actualHandle, ENT_QUOTES, 'UTF-8') : 'не задан';
             TelegramService::sendMessage(
                 $chatId,
-                "⛔ Этот запрос на вход предназначен для сотрудника <b>{$user->telegram_username}</b>.\n"
-                . "Ваш текущий Telegram username: " . ($actualHandle !== '' ? "@{$actualHandle}" : 'не задан') . "."
+                "⛔ Этот запрос на вход предназначен для сотрудника <b>{$safeExpected}</b>.\n"
+                . "Ваш текущий Telegram username: {$safeActual}."
             );
             return;
         }
@@ -706,10 +745,31 @@ class TelegramChatController extends Controller
             ->first();
 
         if ($existingOwner) {
+            $safeOwner = htmlspecialchars((string) $existingOwner->name, ENT_QUOTES, 'UTF-8');
             TelegramService::sendMessage(
                 $chatId,
-                "⚠️ Этот Telegram аккаунт уже привязан к другому сотруднику ({$existingOwner->name}). Обратитесь к администратору."
+                "⚠️ Этот Telegram аккаунт уже привязан к другому сотруднику ({$safeOwner}). Обратитесь к администратору."
             );
+            return;
+        }
+
+        $code = Cache::pull("tg_otp_plain:{$challenge->token}");
+        if (empty($code)) {
+            $code = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+            $challenge->code_hash = hash('sha256', $code);
+        }
+
+        $sent = TelegramService::sendMessage(
+            $chatId,
+            "🔐 <b>Ваш одноразовый код для входа в Tezi.uz:</b>\n\n"
+            . "👉 <code>{$code}</code>\n\n"
+            . "Сотрудник: <b>" . htmlspecialchars($user->name, ENT_QUOTES, 'UTF-8') . "</b>\n"
+            . "Введите этот 4-значный код на сайте. Код действителен 5 минут."
+        );
+
+        if (!$sent) {
+            Cache::put("tg_otp_plain:{$challenge->token}", $code, now()->addMinutes(5));
+            Log::warning("Failed to send Telegram OTP code to chat {$chatId} for user #{$user->id}");
             return;
         }
 
@@ -718,21 +778,8 @@ class TelegramChatController extends Controller
             'telegram_username' => '@' . $actualHandle,
         ])->save();
 
-        $code = Cache::pull("tg_otp_plain:{$challenge->token}");
-        if (empty($code)) {
-            $code = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
-            $challenge->code_hash = hash('sha256', $code);
-        }
         $challenge->telegram_id = $fromId;
         $challenge->telegram_username = '@' . $actualHandle;
         $challenge->save();
-
-        TelegramService::sendMessage(
-            $chatId,
-            "🔐 <b>Ваш одноразовый код для входа в Tezi.uz:</b>\n\n"
-            . "👉 <code>{$code}</code>\n\n"
-            . "Сотрудник: <b>" . htmlspecialchars($user->name, ENT_QUOTES, 'UTF-8') . "</b>\n"
-            . "Введите этот 4-значный код на сайте. Код действителен 5 минут."
-        );
     }
 }

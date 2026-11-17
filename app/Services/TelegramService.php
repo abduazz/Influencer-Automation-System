@@ -238,8 +238,8 @@ class TelegramService
         } elseif (!empty($report?->slots_config) && is_array($report->slots_config)) {
             $projectIds = collect($report->slots_config)
                 ->pluck('projectId')
-                ->filter(fn($id) => is_numeric($id) && (int) $id > 0)
-                ->map(fn($id) => (int) $id)
+                ->filter(fn ($id) => is_numeric($id) && (int) $id > 0)
+                ->map(fn ($id) => (int) $id)
                 ->unique()
                 ->values();
             if ($projectIds->isNotEmpty()) {

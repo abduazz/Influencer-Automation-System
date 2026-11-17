@@ -6,6 +6,7 @@ use Illuminate\Support\ServiceProvider;
 
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Services\AuthService;
 use Illuminate\Support\Facades\Gate;
 use Opcodes\LogViewer\Facades\LogViewer;
 
@@ -33,21 +34,12 @@ class AppServiceProvider extends ServiceProvider
         /** @var User|null $authUser */
         $authUser = $user ?? auth()->user() ?? request()->user();
 
+        if (!$authUser instanceof User) {
+            $authUser = app(AuthService::class)->resolveUserFromRequest(request());
+        }
+
         if ($authUser instanceof User) {
             return $authUser->isSuperAdmin();
-        }
-
-        if (session('user_role') === UserRole::SuperAdmin->value) {
-            return true;
-        }
-
-        $cookieRole = request()->cookie('ff_user_role') ?? $_COOKIE['ff_user_role'] ?? request()->header('X-User-Role');
-        $cookieEmail = request()->cookie('ff_user_email') ?? $_COOKIE['ff_user_email'] ?? request()->header('X-User-Email');
-        if ($cookieRole === UserRole::SuperAdmin->value && $cookieEmail) {
-            $dbUser = User::where('email', strtolower($cookieEmail))->first();
-            if ($dbUser && $dbUser->isSuperAdmin()) {
-                return true;
-            }
         }
 
         if (app()->environment('local')) {

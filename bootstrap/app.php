@@ -14,8 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: [
-            'ff_user_role',
-            'ff_user_email',
+            'tezi_session',
         ]);
         $middleware->append(\App\Http\Middleware\LogHttpActivity::class);
         $middleware->api(append: [

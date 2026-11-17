@@ -9,6 +9,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="{{ asset('favicon-16x16.png') }}">
     <link rel="alternate icon" href="{{ asset('favicon.ico') }}">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ asset('apple-touch-icon.png') }}">
+    <script src="https://telegram.org/js/telegram-web-app.js" async></script>
     @viteReactRefresh
     @vite(['resources/css/app.css', 'resources/js/main.tsx'])
     @if(!empty($bootstrapData))

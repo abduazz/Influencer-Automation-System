@@ -27,6 +27,7 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Super Admin',
                 'email' => 'abduazizmurodqosimov@gmail.com',
+                'telegram_username' => '@abduazz_m',
                 'role' => UserRole::SuperAdmin,
                 'password' => Hash::make('password'),
             ],

@@ -240,6 +240,11 @@ export interface AllowedUser {
   name: string;
   email: string;
   role: 'super_admin' | 'pr_manager' | 'product_manager' | 'executive';
+  telegramId?: string | null;
+  telegramUsername?: string | null;
+  hasTelegramLinked?: boolean;
+  mustChangePassword?: boolean;
+  passkeysCount?: number;
   createdAt: string;
   allowedMetrics?: string[];
   allowedPages?: string[];

@@ -66,6 +66,12 @@ import {
   updateSubdomain,
   deleteSubdomain,
   moveProjectSubdomain,
+  fetchAuthMe,
+  migrateLegacySession,
+  logoutApi,
+  loginWithTelegramWebApp,
+  setStoredAuthToken,
+  setUnauthorizedHandler,
 } from './services/api';
 
 import {
@@ -79,7 +85,26 @@ import {
   INITIAL_ALLOWED_USERS
 } from './data/mockData';
 
-import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt, CheckCircle2, AlertCircle, X, ScrollText, CalendarClock } from 'lucide-react';
+import { Info, HelpCircle, RefreshCw, Layers, FolderKanban, Kanban, FilePlus, FileText, UserSquare2, Shield, Terminal, LogOut, Users, Receipt, CheckCircle2, AlertCircle, X, ScrollText, CalendarClock, Loader2 } from 'lucide-react';
+
+function extractTelegramWebAppInitData(): string | null {
+  if (typeof window === 'undefined') return null;
+  const sdkInitData = (window as any).Telegram?.WebApp?.initData;
+  if (typeof sdkInitData === 'string' && sdkInitData.trim() !== '') {
+    return sdkInitData.trim();
+  }
+  const hash = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
+  if (hash) {
+    const hashParams = new URLSearchParams(hash);
+    const data = hashParams.get('tgWebAppData');
+    if (data && data.trim() !== '') {
+      return data.trim();
+    }
+  }
+  const searchParams = new URLSearchParams(window.location.search);
+  const queryData = searchParams.get('tgWebAppData');
+  return queryData && queryData.trim() !== '' ? queryData.trim() : null;
+}
 
 export default function App() {
   // Synchronous instant bootstrap cache (HTML preload or localStorage)
@@ -98,25 +123,22 @@ export default function App() {
     localStorage.setItem('ff_lang', newLang);
   };
 
-  // Whitelisted Users & Role State (shared server-side list)
+  // Whitelisted Users & Role State (server-verified session)
   const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>(() => initialBootstrap?.users || INITIAL_ALLOWED_USERS);
   const [allowedUsersLoading, setAllowedUsersLoading] = useState(() => !initialBootstrap?.users);
   const [loading, setLoading] = useState(() => !initialBootstrap);
 
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(() => {
-    return localStorage.getItem('ff_user_email');
-  });
+  const [currentUser, setCurrentUser] = useState<AllowedUser | null>(() => initialBootstrap?.currentUser || null);
+  const [authChecked, setAuthChecked] = useState<boolean>(() => Boolean(initialBootstrap?.currentUser));
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const [currentUserRole, setCurrentUserRole] = useState<AllowedUser['role'] | null>(() => {
-    const cachedRole = localStorage.getItem('ff_user_role');
-    if (cachedRole) return cachedRole as any;
-
-    return null;
-  });
+  const currentUserEmail = currentUser?.email ?? null;
+  const currentUserRole = currentUser?.role ?? null;
 
   const activeUser = useMemo(() => {
-    return (allowedUsers || []).find(u => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase());
-  }, [allowedUsers, currentUserEmail]);
+    if (!currentUserEmail) return undefined;
+    return (allowedUsers || []).find(u => u && u.email && u.email.toLowerCase() === currentUserEmail.toLowerCase()) || currentUser || undefined;
+  }, [allowedUsers, currentUserEmail, currentUser]);
 
   const currentUserName = useMemo(() => {
     return activeUser?.name || (currentUserEmail ? (currentUserEmail.includes('@') ? currentUserEmail.split('@')[0] : currentUserEmail) : 'Super Admin');
@@ -242,9 +264,10 @@ export default function App() {
     allowedProjects?: string[],
     password?: string,
     allowedSubdomains?: string[],
-    overwrite?: boolean
+    overwrite?: boolean,
+    telegramUsername?: string
   ) => {
-    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains, overwrite);
+    const newUser = await createAllowedUser(name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains, overwrite, telegramUsername);
     setAllowedUsers((prev) => {
       const idx = prev.findIndex((u) => u.id === newUser.id || u.email.toLowerCase() === newUser.email.toLowerCase());
       if (idx >= 0) {
@@ -254,6 +277,7 @@ export default function App() {
       }
       return [...prev, newUser];
     });
+    return newUser;
   };
 
   const handleEditUser = async (
@@ -263,9 +287,10 @@ export default function App() {
     allowedMetrics?: string[],
     allowedPages?: string[],
     allowedProjects?: string[],
-    allowedSubdomains?: string[]
+    allowedSubdomains?: string[],
+    telegramUsername?: string
   ) => {
-    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics, allowedPages, allowedProjects, allowedSubdomains);
+    const updatedUser = await updateAllowedUser(id, name, role, allowedMetrics, allowedPages, allowedProjects, allowedSubdomains, telegramUsername);
     setAllowedUsers((prev) => prev.map((u) => u.id === id ? updatedUser : u));
   };
 
@@ -274,17 +299,18 @@ export default function App() {
     setAllowedUsers((prev) => prev.filter((u) => u.id !== id));
   };
 
-  const handleLoginSuccess = async (email: string, role: AllowedUser['role']) => {
-    setCurrentUserEmail(email);
-    setCurrentUserRole(role);
-    localStorage.setItem('ff_user_email', email);
-    localStorage.setItem('ff_user_role', role);
-    document.cookie = `ff_user_email=${encodeURIComponent(email)}; path=/; max-age=2592000; SameSite=Lax`;
-    document.cookie = `ff_user_role=${encodeURIComponent(role)}; path=/; max-age=2592000; SameSite=Lax`;
-    setActiveTab(isTimelineSubdomainHost() ? 'timeline' : 'projects');
+  const handleLoginSuccess = async (user: AllowedUser, token?: string) => {
+    if (token) {
+      setStoredAuthToken(token);
+    }
+    setCurrentUser(user);
+    setAuthChecked(true);
+    setAuthError(null);
+    setActiveTab(isTimelineSubdomainHost() ? 'timeline' : (isTelegramWebApp ? 'reports' : 'projects'));
 
     // Immediately fetch full dataset for the authenticated user session
     try {
+      setLoading(true);
       const data = await fetchBootstrapData();
       if (data.users) setAllowedUsers(data.users);
       if (data.projects) setProjects(data.projects);
@@ -296,31 +322,40 @@ export default function App() {
       if (data.bulkPurchases) setBulkPurchases(data.bulkPurchases);
       if (data.kanbanColumns && data.kanbanColumns.length > 0) setKanbanColumns(data.kanbanColumns);
       if (data.bloggerRequisites) setBloggerRequisitesList(data.bloggerRequisites);
+      if (data.currentUser) setCurrentUser(data.currentUser);
       saveBootstrapCache(data);
     } catch (err) {
       console.warn("Post-login data refresh failed, falling back to parallel fetch:", err);
       handleRefreshAllData();
+    } finally {
+      setAllowedUsersLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    setCurrentUserEmail(null);
-    setCurrentUserRole(null);
+  const handleLogout = async () => {
+    try {
+      await logoutApi();
+    } catch {
+      // Ignore network errors on logout; clear client state regardless
+    }
+    setStoredAuthToken(null);
+    setCurrentUser(null);
+    setAuthChecked(true);
     localStorage.removeItem('ff_user_email');
     localStorage.removeItem('ff_user_role');
-    document.cookie = 'ff_user_email=; path=/; max-age=0; SameSite=Lax';
-    document.cookie = 'ff_user_role=; path=/; max-age=0; SameSite=Lax';
     clearBootstrapCache();
   };
 
-  // Synchronize auth cookie on mount if already logged in via localStorage
+  // Register global 401 handler so expired/revoked sessions exit cleanly
   useEffect(() => {
-    const cachedEmail = localStorage.getItem('ff_user_email');
-    const cachedRole = localStorage.getItem('ff_user_role');
-    if (cachedEmail && cachedRole) {
-      document.cookie = `ff_user_email=${encodeURIComponent(cachedEmail)}; path=/; max-age=2592000; SameSite=Lax`;
-      document.cookie = `ff_user_role=${encodeURIComponent(cachedRole)}; path=/; max-age=2592000; SameSite=Lax`;
-    }
+    setUnauthorizedHandler(() => {
+      setStoredAuthToken(null);
+      setCurrentUser(null);
+      setAuthChecked(true);
+      clearBootstrapCache();
+    });
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   // Mapped URL simulated routing parameters state
@@ -437,18 +472,106 @@ export default function App() {
     }
   };
 
-  // Load all data from server
+  // Resolve server authentication on startup (invite token, Telegram Mini App initData, or /api/auth/me)
+  useEffect(() => {
+    let cancelled = false;
+
+    async function verifyAuthOnMount() {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      const isDirectCabinet = window.location.pathname.startsWith('/c/') || params.get('cabinet') === 'true';
+
+      // 1. Skip auth check for guest blogger cabinet / requisites routes
+      if (isDirectCabinet || isRequisitesRoute) {
+        if (!cancelled) setAuthChecked(true);
+        return;
+      }
+
+      // 2. If SSR already verified the session, no extra auth call needed
+      if (initialBootstrap?.currentUser) {
+        if (!cancelled) setAuthChecked(true);
+        return;
+      }
+
+      // 3. Telegram Mini App cryptographic initData authentication (silent)
+      const tgInitData = extractTelegramWebAppInitData();
+      if (tgInitData) {
+        try {
+          const res = await loginWithTelegramWebApp(tgInitData);
+          if (!cancelled) {
+            setStoredAuthToken(res.token);
+            setCurrentUser(res.user);
+          }
+        } catch {
+          // If Mini App Telegram is not registered, fall through to OTP login
+        } finally {
+          if (!cancelled) setAuthChecked(true);
+        }
+        return;
+      }
+
+      // 4. Standard session / Bearer token check (with seamless legacy session upgrade)
+      try {
+        const me = await fetchAuthMe();
+        if (!cancelled) {
+          if (me.authenticated && me.user) {
+            if (me.token) {
+              setStoredAuthToken(me.token);
+            }
+            localStorage.removeItem('ff_user_email');
+            localStorage.removeItem('ff_user_role');
+            setCurrentUser(me.user);
+            return;
+          }
+
+          // Fallback: if browser only had localStorage ff_user_email from before deploy, migrate seamlessly
+          const legacyEmail = localStorage.getItem('ff_user_email');
+          if (legacyEmail) {
+            try {
+              const migrated = await migrateLegacySession(legacyEmail);
+              if (!cancelled) {
+                setStoredAuthToken(migrated.token);
+                localStorage.removeItem('ff_user_email');
+                localStorage.removeItem('ff_user_role');
+                setCurrentUser(migrated.user);
+                return;
+              }
+            } catch {
+              localStorage.removeItem('ff_user_email');
+              localStorage.removeItem('ff_user_role');
+            }
+          }
+
+          setCurrentUser(null);
+        }
+      } catch {
+        // Keep current state if transient error
+      } finally {
+        if (!cancelled) setAuthChecked(true);
+      }
+    }
+
+    verifyAuthOnMount();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load all data from server ONLY when authenticated or on guest token routes
   useEffect(() => {
     let cancelled = false;
 
     async function loadData() {
-      // If guest/token cabinet route already has preloaded data or cabinet not found, skip downloading the whole CRM database
       const isDirectCabinetTokenRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/c/');
       if ((isBloggerCabinetRoute || isDirectCabinetTokenRoute || isRequisitesRoute) && (integrations.length > 0 || (initialBootstrap as any)?.cabinetNotFound)) {
         if (!cancelled) {
           setAllowedUsersLoading(false);
           setLoading(false);
         }
+        return;
+      }
+
+      if (!authChecked || (!currentUser && !isBloggerCabinetRoute && !isRequisitesRoute)) {
         return;
       }
 
@@ -467,6 +590,7 @@ export default function App() {
           if (data.bulkPurchases) setBulkPurchases(data.bulkPurchases);
           if (data.kanbanColumns && data.kanbanColumns.length > 0) setKanbanColumns(data.kanbanColumns);
           if (data.bloggerRequisites) setBloggerRequisitesList(data.bloggerRequisites);
+          if (data.currentUser) setCurrentUser(data.currentUser);
           saveBootstrapCache(data);
         }
       } catch (bootstrapErr) {
@@ -512,11 +636,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authChecked, currentUser?.id, isBloggerCabinetRoute, isRequisitesRoute]);
 
-  // Synchronize state mutations and real-time updates to localStorage cache
+  // Synchronize state mutations and real-time updates to localStorage cache (authenticated only)
   useEffect(() => {
-    if (projects.length > 0 || integrations.length > 0) {
+    if (currentUser && (projects.length > 0 || integrations.length > 0)) {
       saveBootstrapCache({
         users: allowedUsers,
         projects,
@@ -526,28 +650,10 @@ export default function App() {
         bulkPurchases,
         kanbanColumns,
         bloggerRequisites: bloggerRequisitesList,
+        currentUser,
       });
     }
-  }, [projects, integrations, reports, submissions, bulkPurchases, kanbanColumns, bloggerRequisitesList, allowedUsers]);
-
-  // Validate active session against the shared whitelist
-  useEffect(() => {
-    if (allowedUsersLoading || !currentUserEmail) return;
-
-    const found = (allowedUsers || []).find(
-      (u) => u && u.email && currentUserEmail && u.email.toLowerCase() === currentUserEmail.toLowerCase()
-    );
-
-    if (!found) {
-      handleLogout();
-      return;
-    }
-
-    if (found.role !== currentUserRole) {
-      setCurrentUserRole(found.role);
-      localStorage.setItem('ff_user_role', found.role);
-    }
-  }, [allowedUsers, allowedUsersLoading, currentUserEmail, currentUserRole]);
+  }, [currentUser, projects, integrations, reports, submissions, bulkPurchases, kanbanColumns, bloggerRequisitesList, allowedUsers]);
 
   // State manipulation handlers
   const handleAddProject = async (newProj: Omit<Project, 'id' | 'createdAt'>) => {
@@ -1006,19 +1112,15 @@ export default function App() {
     const isTg = searchParams.get('tgWebAppPlatform') !== null ||
       searchParams.get('tgWebAppVersion') !== null ||
       window.location.search.includes('tgWebAppPlatform') ||
-      (window as any).Telegram?.WebApp?.initData !== undefined;
+      Boolean(extractTelegramWebAppInitData());
 
     if (isTg) {
       setIsTelegramWebApp(true);
       setActiveTab('reports');
-
-      // Auto-login Telegram WebApp user if not set
-      if (!localStorage.getItem('ff_user_email')) {
-        localStorage.setItem('ff_user_email', 'telegram-manager@tezi.uz');
-        localStorage.setItem('ff_user_role', 'super_admin');
-        setCurrentUserEmail('telegram-manager@tezi.uz');
-        setCurrentUserRole('super_admin');
-      }
+      try {
+        (window as any).Telegram?.WebApp?.ready?.();
+        (window as any).Telegram?.WebApp?.expand?.();
+      } catch {}
     }
 
     const parseUrlRoute = () => {
@@ -1073,7 +1175,7 @@ export default function App() {
 
   // Update browser URL query string whenever activeTab changes
   useEffect(() => {
-    if (isBloggerCabinetRoute || isRequisitesRoute || isTimelineSubdomain) return;
+    if (!authChecked || !currentUser || isBloggerCabinetRoute || isRequisitesRoute || isTimelineSubdomain) return;
 
     // Persist active tab to localStorage for instant restoration on tab refresh
     localStorage.setItem('tezi_active_tab', activeTab);
@@ -1133,15 +1235,26 @@ export default function App() {
     }
   }, [activeTab, allowedPages, currentUserRole, isBloggerCabinetRoute, isRequisitesRoute, allowedUsersLoading]);
 
+  // Auth verification splash while resolving invite link / Telegram Mini App / session
+  if (!isBloggerCabinetRoute && !isRequisitesRoute && !authChecked) {
+    return (
+      <div className="min-h-screen w-full flex flex-col justify-center items-center bg-neutral-50 text-neutral-700 gap-3 antialiased font-sans">
+        <Loader2 className="w-7 h-7 animate-spin text-black" />
+        <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">
+          {lang === 'ru' ? 'Проверка доступа...' : lang === 'uz' ? 'Kirish tekshirilmoqda...' : 'Checking session...'}
+        </p>
+      </div>
+    );
+  }
+
   // White-list Gate (bypass if it's the guest blogger cabinet or requisites form page)
-  if (!isBloggerCabinetRoute && !isRequisitesRoute && (!currentUserEmail || !currentUserRole)) {
+  if (!isBloggerCabinetRoute && !isRequisitesRoute && (!currentUserEmail || !currentUserRole || !currentUser)) {
     return (
       <LoginView
-        allowedUsers={allowedUsers}
-        allowedUsersLoading={allowedUsersLoading}
         onLoginSuccess={handleLoginSuccess}
         lang={lang}
         setLang={handleSetLang}
+        initialError={authError}
       />
     );
   }
@@ -1161,6 +1274,7 @@ export default function App() {
           setLang={handleSetLang}
           userEmail={currentUserEmail || ''}
           userRole={currentUserRole}
+          currentUser={activeUser || currentUser}
           onLogout={handleLogout}
           allowedPages={allowedPages}
         />
@@ -1182,8 +1296,8 @@ export default function App() {
                   key={l}
                   onClick={() => handleSetLang(l)}
                   className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase transition-all duration-100 ${lang === l
-                      ? 'bg-white text-black shadow-sm'
-                      : 'text-neutral-400 hover:text-neutral-600'
+                    ? 'bg-white text-black shadow-sm'
+                    : 'text-neutral-400 hover:text-neutral-600'
                     }`}
                 >
                   {l}
@@ -1205,12 +1319,12 @@ export default function App() {
 
       {/* Main Core View Area */}
       <main className={`flex-1 ${isTimelineSubdomain
-          ? 'min-h-screen w-full p-2.5 sm:p-4 lg:px-6 lg:py-4'
-          : activeTab === 'kanban'
-            ? 'h-screen overflow-hidden flex flex-col p-2 md:p-3 pt-16 md:pt-2.5 pb-20 md:pb-2'
-            : activeTab === 'projects'
-              ? 'overflow-y-auto h-screen relative pt-16 p-3 sm:p-4 md:p-5 lg:px-6 lg:py-4 pb-28 md:pt-4'
-              : 'overflow-y-auto h-screen relative pt-16 p-4 pb-28 md:p-8 lg:p-12 md:pt-8'
+        ? 'min-h-screen w-full p-2.5 sm:p-4 lg:px-6 lg:py-4'
+        : activeTab === 'kanban'
+          ? 'h-screen overflow-hidden flex flex-col p-2 md:p-3 pt-16 md:pt-2.5 pb-20 md:pb-2'
+          : activeTab === 'projects'
+            ? 'overflow-y-auto h-screen relative pt-16 p-3 sm:p-4 md:p-5 lg:px-6 lg:py-4 pb-28 md:pt-4'
+            : 'overflow-y-auto h-screen relative pt-16 p-4 pb-28 md:p-8 lg:p-12 md:pt-8'
         }`}>
         {/* Dynamic Simulated Query Parameter Info Bar */}
         {!isTimelineSubdomain && simulatedUrlParams.platform && currentUserRole === 'super_admin' && (
@@ -1302,6 +1416,8 @@ export default function App() {
             lang={lang}
             userRole={currentUserRole}
             setLang={handleSetLang}
+            loading={loading}
+            cabinetNotFound={Boolean((initialBootstrap as any)?.cabinetNotFound)}
           />
         ) : (
           <>
@@ -1502,6 +1618,8 @@ export default function App() {
                 lang={lang}
                 userRole={currentUserRole}
                 setLang={handleSetLang}
+                loading={loading}
+                cabinetNotFound={Boolean((initialBootstrap as any)?.cabinetNotFound)}
               />
             )}
 
@@ -1514,6 +1632,12 @@ export default function App() {
                 onAddUser={handleAddUser}
                 onEditUser={handleEditUser}
                 onRemoveUser={handleRemoveUser}
+                onUserUpdated={(updatedUser) => {
+                  setAllowedUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+                  if (currentUser && currentUser.id === updatedUser.id) {
+                    setCurrentUser(updatedUser);
+                  }
+                }}
                 onAddSubdomain={handleAddSubdomain}
                 onUpdateSubdomain={handleUpdateSubdomain}
                 onDeleteSubdomain={handleDeleteSubdomain}
@@ -1690,10 +1814,10 @@ export default function App() {
       {toastNotification && (
         <div className="fixed bottom-6 right-6 z-50 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-200">
           <div className={`flex items-start gap-3 p-3.5 rounded-2xl shadow-xl border backdrop-blur-md ${toastNotification.type === 'error'
-              ? 'bg-rose-900/95 text-white border-rose-700 shadow-rose-900/20'
-              : toastNotification.type === 'info'
-                ? 'bg-slate-900/95 text-white border-slate-700 shadow-slate-900/20'
-                : 'bg-emerald-950/95 text-white border-emerald-700 shadow-emerald-900/20'
+            ? 'bg-rose-900/95 text-white border-rose-700 shadow-rose-900/20'
+            : toastNotification.type === 'info'
+              ? 'bg-slate-900/95 text-white border-slate-700 shadow-slate-900/20'
+              : 'bg-emerald-950/95 text-white border-emerald-700 shadow-emerald-900/20'
             }`}>
             {toastNotification.type === 'error' ? (
               <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />

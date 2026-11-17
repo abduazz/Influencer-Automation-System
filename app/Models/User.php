@@ -9,10 +9,11 @@ use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password', 'role', 'allowed_metrics', 'allowed_pages', 'allowed_projects', 'allowed_subdomains'])]
+#[Fillable(['name', 'email', 'telegram_id', 'telegram_username', 'password', 'must_change_password', 'role', 'allowed_metrics', 'allowed_pages', 'allowed_projects', 'allowed_subdomains', 'last_login_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
@@ -23,6 +24,8 @@ class User extends Authenticatable implements FilamentUser
     {
         return [
             'email_verified_at' => 'datetime',
+            'last_login_at' => 'datetime',
+            'must_change_password' => 'boolean',
             'password' => 'hashed',
             'role' => UserRole::class,
             'allowed_metrics' => 'array',
@@ -30,6 +33,80 @@ class User extends Authenticatable implements FilamentUser
             'allowed_projects' => 'array',
             'allowed_subdomains' => 'array',
         ];
+    }
+
+    public function sessions(): HasMany
+    {
+        return $this->hasMany(UserSession::class);
+    }
+
+    public function passkeys(): HasMany
+    {
+        return $this->hasMany(UserPasskey::class);
+    }
+
+    public function authChallenges(): HasMany
+    {
+        return $this->hasMany(AuthChallenge::class);
+    }
+
+    /**
+     * Find a user by Telegram @username (primary), email, or handle prefix.
+     */
+    public static function findByTelegramUsername(string $username): ?self
+    {
+        $normalized = ltrim(mb_strtolower(trim($username)), '@');
+        if ($normalized === '') {
+            return null;
+        }
+
+        return self::query()
+            ->whereNotNull('telegram_username')
+            ->whereRaw("LOWER(REPLACE(telegram_username, '@', '')) = ?", [$normalized])
+            ->first();
+    }
+
+    /**
+     * Find a user by email, handle prefix, @telegram_username, or exact name.
+     */
+    public static function findByLoginIdentifier(string $identifier): ?self
+    {
+        $clean = mb_strtolower(trim($identifier));
+        if ($clean === '') {
+            return null;
+        }
+
+        $normalized = ltrim($clean, '@');
+        $resolvedEmail = str_contains($normalized, '@')
+            ? $normalized
+            : $normalized . '@tezi.uz';
+
+        $user = self::query()
+            ->whereRaw('LOWER(email) = ?', [$normalized])
+            ->orWhereRaw('LOWER(email) = ?', [$clean])
+            ->orWhereRaw('LOWER(email) = ?', [$resolvedEmail])
+            ->first();
+
+        if ($user) {
+            return $user;
+        }
+
+        // Match by stored telegram_username (with or without leading @)
+        $user = self::query()
+            ->whereNotNull('telegram_username')
+            ->whereRaw("LOWER(REPLACE(telegram_username, '@', '')) = ?", [$normalized])
+            ->first();
+
+        if ($user) {
+            return $user;
+        }
+
+        // Fallback match by email local-part or trimmed display name
+        return self::query()
+            ->whereRaw('LOWER(name) = ?', [$clean])
+            ->orWhereRaw('LOWER(name) = ?', [$normalized])
+            ->orWhereRaw("LOWER(email) LIKE ?", [$normalized . '@%'])
+            ->first();
     }
 
     public function canAccessPanel(Panel $panel): bool

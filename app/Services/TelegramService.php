@@ -384,6 +384,11 @@ class TelegramService
             if (!empty($options['link_preview_options'])) {
                 $params['link_preview_options'] = $options['link_preview_options'];
             }
+            if (!empty($options['reply_markup'])) {
+                $params['reply_markup'] = is_string($options['reply_markup'])
+                    ? $options['reply_markup']
+                    : json_encode($options['reply_markup'], JSON_UNESCAPED_UNICODE);
+            }
 
             // First attempt: HTML parse mode
             $first = $attemptPost($params);
@@ -1630,6 +1635,62 @@ class TelegramService
         }
         try {
             $res = Http::get("https://api.telegram.org/bot{$token}/getWebhookInfo");
+            return $res->json() ?? ['ok' => false, 'description' => 'Invalid JSON'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'description' => $e->getMessage()];
+        }
+    }
+
+    public static function answerCallbackQuery(string $callbackQueryId, string $text = '', bool $showAlert = false): bool
+    {
+        $token = config('services.telegram.bot_token');
+        if (!$token || $callbackQueryId === '') {
+            return false;
+        }
+        try {
+            $res = self::httpClient(8)->post("https://api.telegram.org/bot{$token}/answerCallbackQuery", [
+                'callback_query_id' => $callbackQueryId,
+                'text' => $text,
+                'show_alert' => $showAlert,
+            ]);
+            return $res->successful();
+        } catch (\Throwable $e) {
+            Log::warning('Telegram answerCallbackQuery error: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    public static function clearMessageInlineKeyboard($chatId, $messageId): bool
+    {
+        $token = config('services.telegram.bot_token');
+        if (!$token || !$chatId || !$messageId) {
+            return false;
+        }
+        try {
+            $res = self::httpClient(8)->post("https://api.telegram.org/bot{$token}/editMessageReplyMarkup", [
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+                'reply_markup' => json_encode(['inline_keyboard' => []]),
+            ]);
+            return $res->successful();
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    public static function fetchUpdates(int $offset = 0, int $limit = 20): array
+    {
+        $token = config('services.telegram.bot_token');
+        if (!$token) {
+            return ['ok' => false, 'description' => 'Bot token not set'];
+        }
+        try {
+            $res = self::httpClient(6)->get("https://api.telegram.org/bot{$token}/getUpdates", [
+                'offset' => $offset,
+                'limit' => $limit,
+                'timeout' => 0,
+                'allowed_updates' => json_encode(['message', 'callback_query']),
+            ]);
             return $res->json() ?? ['ok' => false, 'description' => 'Invalid JSON'];
         } catch (\Throwable $e) {
             return ['ok' => false, 'description' => $e->getMessage()];

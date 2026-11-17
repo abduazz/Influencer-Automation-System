@@ -58,7 +58,7 @@
     "isDynamicEntry": true
   },
   "resources/css/app.css": {
-    "file": "assets/app-CfcK1pyh.css",
+    "file": "assets/app-D3Rc7Ij6.css",
     "name": "app",
     "names": [
       "app.css"
@@ -79,7 +79,7 @@
     "src": "resources/images/id_card_sample_full.png"
   },
   "resources/js/main.tsx": {
-    "file": "assets/main-pmOwYzfK.js",
+    "file": "assets/main-BmHxfmyX.js",
     "name": "main",
     "src": "resources/js/main.tsx",
     "isEntry": true,

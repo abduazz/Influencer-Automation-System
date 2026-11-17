@@ -126,25 +126,34 @@ Route::get('/{any}', function (Request $request) {
         }
     } else {
         try {
-            $rawCookie = $request->cookie('ff_user_email') ?? ($_COOKIE['ff_user_email'] ?? null);
-            $cookieEmail = !empty($rawCookie) ? strtolower(trim(urldecode($rawCookie))) : null;
-            $sessionEmail = $request->hasSession() ? strtolower(trim((string)$request->session()->get('user_email'))) : null;
+            $authService = app(\App\Services\AuthService::class);
+            $authUser = $authService->resolveUserFromRequest($request);
+
+            $devMasterKey = env('DEVELOPER_MASTER_KEY');
             $hasDevKey = ($request->header('X-Secret-Key') && $request->header('X-Secret-Key') === config('app.key'))
                 || ($request->query('key') && $request->query('key') === config('app.key'))
                 || ($request->query('secret_key') && $request->query('secret_key') === config('app.key'))
-                || ($request->query('developer_key') && $request->query('developer_key') === env('DEVELOPER_MASTER_KEY', 'tezi_master_sec_2026_abduazz'));
+                || (!empty($devMasterKey) && $request->query('developer_key') && hash_equals((string) $devMasterKey, (string) $request->query('developer_key')));
 
-            $isAuth = false;
-            if ($hasDevKey || auth()->check()) {
-                $isAuth = true;
-            } elseif (!empty($sessionEmail) && \App\Models\User::where('email', $sessionEmail)->exists()) {
-                $isAuth = true;
-            } elseif (!empty($cookieEmail) && \App\Models\User::where('email', $cookieEmail)->exists()) {
-                $isAuth = true;
+            if (!$authUser && $hasDevKey) {
+                $authUser = \App\Models\User::where('role', 'super_admin')->first() ?: \App\Models\User::first();
+                if ($authUser) {
+                    \Illuminate\Support\Facades\Auth::setUser($authUser);
+                }
             }
 
-            if ($isAuth) {
+            if ($authUser) {
+                if ($request->attributes->get('tezi_needs_legacy_upgrade')) {
+                    $sessionData = $authService->createSession($authUser, $request, 'legacy_migrated');
+                    \Illuminate\Support\Facades\Cookie::queue($sessionData['cookie']);
+                    foreach ($authService->makeClearCookies($request) as $clearCookie) {
+                        if ($clearCookie->getName() !== \App\Services\AuthService::SESSION_COOKIE_NAME) {
+                            \Illuminate\Support\Facades\Cookie::queue($clearCookie);
+                        }
+                    }
+                }
                 $bootstrapData = app(BootstrapController::class)->getBootstrapData($request);
+                $bootstrapData['currentUser'] = $authService->formatUserPayload($authUser);
             } else {
                 $bootstrapData = null;
             }

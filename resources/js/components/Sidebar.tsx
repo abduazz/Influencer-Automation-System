@@ -23,9 +23,11 @@ import {
   Receipt,
   ScrollText,
   ExternalLink,
-  CalendarClock
+  CalendarClock,
+  ShieldCheck
 } from 'lucide-react';
 import { Language, translations } from '../translations';
+import SecuritySettingsModal from './SecuritySettingsModal';
 
 import { AllowedUser } from '../data/mockData';
 
@@ -38,6 +40,7 @@ interface SidebarProps {
   setLang: (lang: Language) => void;
   userEmail: string;
   userRole: AllowedUser['role'] | null;
+  currentUser?: AllowedUser | null;
   onLogout: () => void;
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
@@ -53,12 +56,14 @@ export default function Sidebar({
   setLang,
   userEmail,
   userRole,
+  currentUser,
   onLogout,
   isCollapsed,
   setIsCollapsed,
   allowedPages
 }: SidebarProps) {
   const t = translations[lang];
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
 
   const hasAccess = (pageKey: string) => {
     if (userRole === 'super_admin') return true;
@@ -450,27 +455,48 @@ export default function Sidebar({
               </button>
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-2 bg-white border border-neutral-200/60 p-3 rounded-xl shadow-2xs">
-              <div className="flex items-center gap-2.5 overflow-hidden">
-                <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold shrink-0">
-                  <User className="w-4 h-4" />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 bg-white border border-neutral-200/60 p-3 rounded-xl shadow-2xs">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold shrink-0">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <h4 className="text-[11px] font-black text-neutral-900 truncate leading-tight" title={currentUser?.telegramUsername || userEmail}>
+                      {currentUser?.telegramUsername || userEmail}
+                    </h4>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider leading-none">
+                        {userRole === 'super_admin' ? t.roleSuperAdmin : userRole === 'pr_manager' ? 'PR Manager' : userRole === 'executive' ? (lang === 'ru' ? 'Руководство' : lang === 'uz' ? 'Rahbariyat' : 'Executive') : 'Product'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="overflow-hidden">
-                  <h4 className="text-[11px] font-black text-neutral-900 truncate leading-tight" title={userEmail}>
-                    {userEmail}
-                  </h4>
-                  <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider leading-none mt-1">
-                    {userRole === 'super_admin' ? t.roleSuperAdmin : userRole === 'pr_manager' ? 'PR Manager' : userRole === 'executive' ? (lang === 'ru' ? 'Руководство' : lang === 'uz' ? 'Rahbariyat' : 'Executive') : 'Product'}
-                  </p>
-                </div>
+                <button
+                  onClick={onLogout}
+                  className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition duration-150 shrink-0 cursor-pointer"
+                  title={t.logoutBtn}
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                onClick={onLogout}
-                className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition duration-150 shrink-0 cursor-pointer"
-                title={t.logoutBtn}
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+
+              {currentUser && (
+                <button
+                  type="button"
+                  onClick={() => setSecurityModalOpen(true)}
+                  className="w-full py-2 px-3 rounded-xl bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-700 font-extrabold text-[10px] flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-black" />
+                  <span>
+                    {lang === 'ru'
+                      ? 'Активные устройства'
+                      : lang === 'uz'
+                        ? 'Faol qurilmalar'
+                        : 'Active sessions'}
+                  </span>
+                </button>
+              )}
             </div>
           )}
           
@@ -482,6 +508,15 @@ export default function Sidebar({
           )}
         </div>
       </div>
+
+      {currentUser && (
+        <SecuritySettingsModal
+          isOpen={securityModalOpen}
+          onClose={() => setSecurityModalOpen(false)}
+          user={currentUser}
+          lang={lang}
+        />
+      )}
     </aside>
   );
 }

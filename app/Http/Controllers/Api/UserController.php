@@ -5,150 +5,44 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\ActivityLogger;
+use App\Services\AuthService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
+    public function __construct(
+        protected AuthService $authService
+    ) {}
+
     public function login(Request $request)
     {
-        $request->validate([
-            'login' => 'required|string',
-            'password' => 'required|string',
-        ]);
-
-        $rawLogin = trim($request->login);
-        $cleanLogin = strtolower($rawLogin);
-        $normalizedLogin = ltrim($cleanLogin, '@'); // Handle @username or clean login
-
-        $resolvedEmail = str_contains($normalizedLogin, '@') 
-            ? $normalizedLogin 
-            : $normalizedLogin . '@tezi.uz';
-
-        // 1. Search for user by exact or normalized email, or matching handle / prefix
-        $user = User::whereRaw('LOWER(email) = ?', [$normalizedLogin])
-            ->orWhereRaw('LOWER(email) = ?', [$cleanLogin])
-            ->orWhereRaw('LOWER(email) = ?', [$resolvedEmail])
-            ->first();
-
-        if (!$user) {
-            // 2. Fallback match by email prefix or name (e.g. chief1)
-            $user = User::all()->first(function ($u) use ($normalizedLogin, $cleanLogin) {
-                $userEmail = strtolower($u->email);
-                $emailPrefix = explode('@', $userEmail)[0];
-                $userName = strtolower(trim($u->name));
-                return $userEmail === $normalizedLogin 
-                    || $userEmail === $cleanLogin 
-                    || $emailPrefix === $normalizedLogin
-                    || $userName === $normalizedLogin 
-                    || $userName === $cleanLogin;
-            });
-        }
-
-        $inputPassword = (string) $request->password;
-        // Strip Unicode whitespace (including non-breaking spaces \u00A0 from mobile/Telegram copy-paste)
-        $cleanPassword = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', $inputPassword));
-        $lowerPassword = mb_strtolower($cleanPassword);
-
-        // 1. Direct password checks (exact, trimmed, and lower-case for mobile auto-capitalize tolerance)
-        $passwordMatches = $user && (
-            Hash::check($inputPassword, $user->password) ||
-            Hash::check($cleanPassword, $user->password) ||
-            Hash::check($lowerPassword, $user->password)
-        );
-
-        // 2. Default password resilience:
-        // If the account's password in DB is still the default ('password'),
-        // allow common variants users enter when told "дефолтный пароль":
-        // e.g. 'password', 'Password', 'PASSWORD', '123456', 'default', 'дефолт', 'пароль', 'зфыыцщкв', 'tezi', 'tezi123',
-        // or their username / login handle / email prefix!
-        if ($user && !$passwordMatches && Hash::check('password', $user->password)) {
-            $emailPrefix = explode('@', strtolower($user->email))[0];
-            $userHandle = ltrim($emailPrefix, '@');
-            $userNameLower = mb_strtolower(trim($user->name));
-
-            $defaultAliases = [
-                'password',
-                'default',
-                '123456',
-                'дефолт',
-                'пароль',
-                'зфыыцщкв',
-                'tezi',
-                'tezi123',
-            ];
-
-            if (
-                in_array($lowerPassword, $defaultAliases, true) ||
-                $lowerPassword === $emailPrefix ||
-                $lowerPassword === $userHandle ||
-                $lowerPassword === $userNameLower
-            ) {
-                $passwordMatches = true;
-            }
-        }
-
-        if (!$user || !$passwordMatches) {
-            ActivityLogger::auth('LOGIN_FAILED', "Неудачная попытка входа с логином '{$request->login}'", [
-                'login' => $request->login,
-            ], 'warning');
-
-            return response()->json([
-                'message' => 'Неверный логин/email или пароль.',
-            ], 401);
-        }
-
-        Auth::login($user, true);
-        if ($request->hasSession()) {
-            $request->session()->put('user_id', $user->id);
-            $request->session()->put('user_role', $user->role->value);
-            $request->session()->put('user_email', $user->email);
-            $request->session()->regenerate();
-        }
-
-        ActivityLogger::auth('LOGIN_SUCCESS', "Успешный вход пользователя: {$user->email} ({$user->name}, роль: {$user->role->value})", [
-            'user_id' => $user->id,
-            'email' => $user->email,
-            'role' => $user->role->value,
-        ]);
-
-        return response()->json([
-            'id' => (string) $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'role' => $user->role->value,
-            'allowedMetrics' => $user->allowed_metrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-            'allowedPages' => $user->allowed_pages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
-            'allowedProjects' => $user->allowed_projects ?? [],
-            'allowedSubdomains' => $user->allowed_subdomains ?? [],
-            'createdAt' => $user->created_at->format('Y-m-d'),
-        ])->withCookie(cookie('ff_user_role', $user->role->value, 43200, '/', null, false, false))
-          ->withCookie(cookie('ff_user_email', $user->email, 43200, '/', null, false, false));
+        return app(AuthController::class)->login($request);
     }
 
     public function index()
     {
-        return response()->json(User::all()->map(function ($user) {
-            return [
-                'id' => (string) $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role->value,
-                'allowedMetrics' => $user->allowed_metrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
-                'allowedPages' => $user->allowed_pages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
-                'allowedProjects' => $user->allowed_projects ?? [],
-                'allowedSubdomains' => $user->allowed_subdomains ?? [],
-                'createdAt' => $user->created_at->format('Y-m-d'),
-            ];
-        }));
+        return response()->json(
+            User::all()->map(fn (User $user) => $this->authService->formatUserPayload($user))
+        );
+    }
+
+    protected function requireSuperAdmin(Request $request): void
+    {
+        $actor = $this->authService->resolveUserFromRequest($request);
+        if (!$actor || !$actor->isSuperAdmin()) {
+            abort(403, 'Только Супер-администратор может управлять сотрудниками.');
+        }
     }
 
     public function store(Request $request)
     {
+        $this->requireSuperAdmin($request);
+
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|max:255',
+            'email' => 'nullable|string|max:255',
+            'telegramUsername' => 'required|string|max:100',
             'role' => 'required|in:super_admin,pr_manager,product_manager,executive',
             'password' => 'nullable|string|min:4',
             'allowedMetrics' => 'nullable|array',
@@ -158,20 +52,39 @@ class UserController extends Controller
             'overwrite' => 'nullable|boolean',
         ]);
 
-        $rawEmail = strtolower(trim($request->email));
+        $cleanTgHandle = ltrim(strtolower(trim((string) $request->input('telegramUsername'))), '@');
+        if ($cleanTgHandle === '') {
+            return response()->json([
+                'message' => 'Укажите Telegram @username сотрудника.',
+                'errors' => ['telegramUsername' => ['Укажите Telegram @username сотрудника.']],
+            ], 422);
+        }
+        $formattedTgUsername = '@' . $cleanTgHandle;
+
+        $rawEmail = strtolower(trim((string) ($request->input('email') ?: $cleanTgHandle)));
         $normalizedEmail = ltrim($rawEmail, '@');
         $resolvedEmail = str_contains($normalizedEmail, '@') ? $normalizedEmail : $normalizedEmail . '@tezi.uz';
 
-        // Check if user already exists
-        $existingUser = User::where('email', $resolvedEmail)->first();
+        $existingByTg = User::findByTelegramUsername($cleanTgHandle);
+        if ($existingByTg && $existingByTg->email !== $resolvedEmail && !$request->boolean('overwrite')) {
+            return response()->json([
+                'message' => "Сотрудник с Telegram {$formattedTgUsername} уже существует ({$existingByTg->name}).",
+                'errors' => ['telegramUsername' => ["Telegram {$formattedTgUsername} уже занят."]],
+            ], 422);
+        }
 
-        // If user already exists and overwrite is allowed
+        $existingUser = User::where('email', $resolvedEmail)->first() ?: $existingByTg;
+
+        $rawPass = (string) $request->input('password');
+        $cleanPass = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', $rawPass));
+        $plainPassword = $cleanPass !== '' ? $cleanPass : bin2hex(random_bytes(8));
+
         if ($existingUser) {
             if (!$request->boolean('overwrite')) {
                 return response()->json([
-                    'message' => 'Сотрудник с таким email уже существует в системе.',
+                    'message' => 'Сотрудник с таким email или Telegram уже существует в системе.',
                     'errors' => [
-                        'email' => ['Сотрудник с таким email уже существует в системе.'],
+                        'email' => ['Сотрудник уже существует в системе.'],
                     ],
                     'user_exists' => true,
                     'existing_user' => [
@@ -182,83 +95,69 @@ class UserController extends Controller
                 ], 422);
             }
 
-            // Overwrite existing user with new details & password!
-            $rawPass = (string) $request->input('password');
-            $cleanPass = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', $rawPass));
-            $plainPassword = $cleanPass !== '' ? $cleanPass : 'password';
+            $tgChanged = ltrim(strtolower((string) $existingUser->telegram_username), '@') !== $cleanTgHandle;
 
             $existingUser->update([
                 'name' => $request->name,
+                'email' => $resolvedEmail,
+                'telegram_username' => $formattedTgUsername,
+                'telegram_id' => $tgChanged ? null : $existingUser->telegram_id,
                 'role' => $request->role,
                 'password' => Hash::make($plainPassword),
+                'must_change_password' => false,
                 'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
                 'allowed_pages' => $request->allowedPages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
                 'allowed_projects' => $request->allowedProjects ?? [],
                 'allowed_subdomains' => $request->allowedSubdomains ?? [],
             ]);
 
-            ActivityLogger::user('RECREATED', "Пересоздан аккаунт сотрудника: {$existingUser->name} ({$existingUser->email}, роль: {$existingUser->role->value})", [
+            $existingUser->sessions()->delete();
+
+            ActivityLogger::user('RECREATED', "Пересоздан аккаунт сотрудника: {$existingUser->name} ({$formattedTgUsername}, роль: {$existingUser->role->value})", [
                 'user_id' => $existingUser->id,
                 'email' => $existingUser->email,
+                'telegram_username' => $formattedTgUsername,
                 'role' => $existingUser->role->value,
             ]);
 
-            return response()->json([
-                'id' => (string) $existingUser->id,
-                'name' => $existingUser->name,
-                'email' => $existingUser->email,
-                'role' => $existingUser->role->value,
-                'allowedMetrics' => $existingUser->allowed_metrics,
-                'allowedPages' => $existingUser->allowed_pages,
-                'allowedProjects' => $existingUser->allowed_projects,
-                'allowedSubdomains' => $existingUser->allowed_subdomains,
-                'createdAt' => $existingUser->created_at->format('Y-m-d'),
-                'recreated' => true,
-                'assignedPassword' => $plainPassword,
-            ], 200);
+            return response()->json(array_merge(
+                $this->authService->formatUserPayload($existingUser),
+                ['recreated' => true]
+            ), 200);
         }
-
-        $rawPass = (string) $request->input('password');
-        $cleanPass = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', $rawPass));
-        $plainPassword = $cleanPass !== '' ? $cleanPass : 'password';
 
         $user = User::create([
             'name' => $request->name,
             'email' => $resolvedEmail,
+            'telegram_username' => $formattedTgUsername,
             'role' => $request->role,
             'password' => Hash::make($plainPassword),
+            'must_change_password' => false,
             'allowed_metrics' => $request->allowedMetrics ?? ['deals', 'spend', 'total_slots', 'slots_published', 'slots_remaining', 'financial_metrics'],
             'allowed_pages' => $request->allowedPages ?? ['projects', 'kanban', 'requisites_directory', 'bloggers', 'reports', 'bulk_purchases', 'reports_feed', 'other_expenses'],
             'allowed_projects' => $request->allowedProjects ?? [],
             'allowed_subdomains' => $request->allowedSubdomains ?? [],
         ]);
 
-        ActivityLogger::user('CREATED', "Создан новый сотрудник: {$user->name} ({$user->email}, роль: {$user->role->value})", [
+        ActivityLogger::user('CREATED', "Создан новый сотрудник: {$user->name} ({$formattedTgUsername}, роль: {$user->role->value})", [
             'user_id' => $user->id,
             'email' => $user->email,
+            'telegram_username' => $formattedTgUsername,
             'role' => $user->role->value,
             'allowedPages' => $user->allowed_pages,
             'allowedSubdomains' => $user->allowed_subdomains,
         ]);
 
-        return response()->json([
-            'id' => (string) $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'role' => $user->role->value,
-            'allowedMetrics' => $user->allowed_metrics,
-            'allowedPages' => $user->allowed_pages,
-            'allowedProjects' => $user->allowed_projects,
-            'allowedSubdomains' => $user->allowed_subdomains,
-            'createdAt' => $user->created_at->format('Y-m-d'),
-            'assignedPassword' => $plainPassword,
-        ], 201);
+        return response()->json($this->authService->formatUserPayload($user), 201);
     }
 
     public function update(Request $request, User $user)
     {
+        $this->requireSuperAdmin($request);
+
         $request->validate([
             'name' => 'required|string|max:255',
+            'telegramUsername' => 'nullable|string|max:100',
             'role' => 'sometimes|required|in:super_admin,pr_manager,product_manager,executive',
             'allowedMetrics' => 'nullable|array',
             'allowedPages' => 'nullable|array',
@@ -266,47 +165,70 @@ class UserController extends Controller
             'allowedSubdomains' => 'nullable|array',
         ]);
 
-        $user->update([
+        $updates = [
             'name' => $request->name,
             'role' => $request->input('role', $user->role),
             'allowed_metrics' => $request->has('allowedMetrics') ? $request->allowedMetrics : $user->allowed_metrics,
             'allowed_pages' => $request->has('allowedPages') ? $request->allowedPages : $user->allowed_pages,
             'allowed_projects' => $request->has('allowedProjects') ? $request->allowedProjects : $user->allowed_projects,
-            'allowedSubdomains' => $request->has('allowedSubdomains') ? $request->allowedSubdomains : $user->allowed_subdomains,
-        ]);
+            'allowed_subdomains' => $request->has('allowedSubdomains') ? $request->allowedSubdomains : $user->allowed_subdomains,
+        ];
 
-        ActivityLogger::user('UPDATED', "Обновлены права сотрудника: {$user->name} ({$user->email}, роль: {$user->role->value})", [
+        if ($request->has('telegramUsername')) {
+            $cleanTgHandle = ltrim(strtolower(trim((string) $request->input('telegramUsername'))), '@');
+            if ($cleanTgHandle !== '') {
+                $formattedTg = '@' . $cleanTgHandle;
+                $duplicate = User::where('id', '!=', $user->id)
+                    ->whereNotNull('telegram_username')
+                    ->whereRaw("LOWER(REPLACE(telegram_username, '@', '')) = ?", [$cleanTgHandle])
+                    ->first();
+                if ($duplicate) {
+                    return response()->json([
+                        'message' => "Telegram {$formattedTg} уже назначен другому сотруднику ({$duplicate->name}).",
+                    ], 422);
+                }
+
+                $oldHandle = ltrim(strtolower((string) $user->telegram_username), '@');
+                $updates['telegram_username'] = $formattedTg;
+                if ($oldHandle !== $cleanTgHandle) {
+                    $updates['telegram_id'] = null;
+                    $user->sessions()->delete();
+                }
+            }
+        }
+
+        $user->update($updates);
+
+        ActivityLogger::user('UPDATED', "Обновлены права сотрудника: {$user->name} ({$user->telegram_username}, роль: {$user->role->value})", [
             'user_id' => $user->id,
             'email' => $user->email,
+            'telegram_username' => $user->telegram_username,
             'role' => $user->role->value,
             'allowedPages' => $user->allowed_pages,
             'allowedSubdomains' => $user->allowed_subdomains,
         ]);
 
-        return response()->json([
-            'id' => (string) $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'role' => $user->role->value,
-            'allowedMetrics' => $user->allowed_metrics,
-            'allowedPages' => $user->allowed_pages,
-            'allowedProjects' => $user->allowed_projects,
-            'allowedSubdomains' => $user->allowed_subdomains,
-            'createdAt' => $user->created_at->format('Y-m-d'),
-        ]);
+        return response()->json($this->authService->formatUserPayload($user));
     }
 
     public function updatePassword(Request $request, User $user)
     {
+        $this->requireSuperAdmin($request);
+
         $request->validate([
             'password' => 'required|string|min:4',
         ]);
 
         $cleanPass = trim(preg_replace('/^\p{Z}+|\p{Z}+$/u', '', (string) $request->password));
+        $mustChange = strlen($cleanPass) < 8 || strtolower($cleanPass) === 'password';
 
         $user->update([
             'password' => Hash::make($cleanPass),
+            'must_change_password' => $mustChange,
         ]);
+
+        // Revoke all active sessions when admin resets user's password
+        $user->sessions()->delete();
 
         ActivityLogger::user('PASSWORD_CHANGED', "Изменен пароль сотрудника {$user->name} ({$user->email})", [
             'user_id' => $user->id,
@@ -315,14 +237,48 @@ class UserController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Пароль успешно обновлен!',
+            'message' => 'Пароль успешно обновлен! Активные сессии сотрудника завершены.',
             'assignedPassword' => $cleanPass,
         ]);
     }
 
-    public function destroy(User $user)
+    public function resetTelegram(Request $request, User $user)
     {
+        $this->requireSuperAdmin($request);
+
+        $user->forceFill(['telegram_id' => null])->save();
+
+        \App\Models\AuthChallenge::where('user_id', $user->id)
+            ->where('type', 'telegram_otp')
+            ->where('status', 'pending')
+            ->update(['status' => 'expired']);
+
+        // Keep current admin's own active session if resetting self, otherwise revoke user's sessions
+        $currentToken = $this->authService->extractTokenFromRequest($request);
+        $currentHash = $currentToken ? hash('sha256', $currentToken) : null;
+        $user->sessions()
+            ->when($currentHash, fn ($q) => $q->where('token_hash', '!=', $currentHash))
+            ->delete();
+
+        ActivityLogger::user('TELEGRAM_UNLINKED', "Сброшена привязка Telegram ID для сотрудника {$user->name} ({$user->telegram_username})", [
+            'user_id' => $user->id,
+            'telegram_username' => $user->telegram_username,
+        ]);
+
+        return response()->json($this->authService->formatUserPayload($user));
+    }
+
+    public function destroy(Request $request, User $user)
+    {
+        $this->requireSuperAdmin($request);
+
+        $actor = $this->authService->resolveUserFromRequest($request);
+        if ($actor && $actor->id === $user->id) {
+            return response()->json(['message' => 'Нельзя удалить собственный аккаунт.'], 422);
+        }
+
         $userInfo = "{$user->name} ({$user->email}, ID: {$user->id})";
+        $user->sessions()->delete();
         $user->delete();
 
         ActivityLogger::user('DELETED', "Удален сотрудник {$userInfo}", [

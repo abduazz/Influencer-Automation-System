@@ -1,9 +1,35 @@
 import { Project, Integration, Report, BloggerSubmission, AllowedUser, BulkPurchase, KanbanColumn, BloggerRequisites, ChatMessage, ChatResponse, SubdomainItem } from '../data/mockData';
 
+const AUTH_TOKEN_KEY = 'tezi_auth_token';
+
+export function getStoredAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredAuthToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+  } catch {}
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
 // Fetch helper that handles errors
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('ff_user_role') : null;
-  const cachedEmail = typeof window !== 'undefined' ? localStorage.getItem('ff_user_email') : null;
+  const authToken = getStoredAuthToken();
   let activeSubdomainHeader: string | null = null;
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
@@ -15,8 +41,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
   const headers: Record<string, string> = {
     'Accept': 'application/json',
-    ...(cachedRole ? { 'X-User-Role': cachedRole } : {}),
-    ...(cachedEmail ? { 'X-User-Email': cachedEmail } : {}),
+    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
     ...(activeSubdomainHeader ? { 'X-Subdomain': activeSubdomainHeader } : {}),
     ...(options?.headers as Record<string, string> || {}),
   };
@@ -25,24 +50,33 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   const res = await fetch(url, {
+    credentials: 'same-origin',
     ...options,
     headers,
   });
 
   if (!res.ok) {
+    if (res.status === 401 && !url.startsWith('/api/auth/') && !url.startsWith('/api/login')) {
+      unauthorizedHandler?.();
+    }
+
     let errMsg = '';
+    let errData: any = null;
     try {
-      const data = await res.json();
-      if (data.errors && typeof data.errors === 'object') {
-        const errorList = Object.values(data.errors).flat().join(' ');
-        errMsg = errorList || data.message || data.error || res.statusText || 'Validation Failed';
+      errData = await res.json();
+      if (errData.errors && typeof errData.errors === 'object') {
+        const errorList = Object.values(errData.errors).flat().join(' ');
+        errMsg = errorList || errData.message || errData.error || res.statusText || 'Validation Failed';
       } else {
-        errMsg = data.message || data.error || res.statusText || 'Unknown Server Error';
+        errMsg = errData.message || errData.error || res.statusText || 'Unknown Server Error';
       }
     } catch {
       errMsg = res.statusText || `Server Error (Status ${res.status})`;
     }
-    throw new Error(errMsg);
+    const err = new Error(errMsg) as Error & { status?: number; data?: any };
+    err.status = res.status;
+    err.data = errData;
+    throw err;
   }
 
   if (res.status === 204) {
@@ -65,6 +99,7 @@ export interface BootstrapData {
   bulkPurchases: BulkPurchase[];
   kanbanColumns: KanbanColumn[];
   bloggerRequisites: BloggerRequisites[];
+  currentUser?: AllowedUser | null;
 }
 
 const BOOTSTRAP_CACHE_KEY = 'tezi_bootstrap_cache_v1';
@@ -344,12 +379,90 @@ export function createSubmission(integrationId: string, data: Record<string, str
 }
 
 // Whitelisted Users & Auth API
-export function loginApi(login: string, password: string): Promise<AllowedUser> {
-  return request<AllowedUser>('/api/login', {
+export interface AuthSessionResponse {
+  user: AllowedUser;
+  token: string;
+}
+
+export interface AuthMeResponse {
+  authenticated: boolean;
+  user: AllowedUser | null;
+  token?: string;
+}
+
+export interface UserSessionItem {
+  id: string;
+  authMethod: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  isCurrent: boolean;
+  lastUsedAt: string | null;
+  createdAt: string | null;
+  expiresAt: string | null;
+}
+
+export function fetchAuthMe(): Promise<AuthMeResponse> {
+  return request<AuthMeResponse>('/api/auth/me');
+}
+
+export function migrateLegacySession(email: string): Promise<AuthSessionResponse> {
+  return request<AuthSessionResponse>('/api/auth/migrate-legacy', {
     method: 'POST',
-    body: JSON.stringify({ login, password }),
+    body: JSON.stringify({ email }),
   });
 }
+
+export function requestTelegramCode(username: string): Promise<{
+  challengeToken: string;
+  needsBotStart: boolean;
+  botUsername: string;
+  botUrl?: string;
+  expiresIn: number;
+}> {
+  return request('/api/auth/telegram/request-code', {
+    method: 'POST',
+    body: JSON.stringify({ username }),
+  });
+}
+
+export function pollTelegramOtpStatus(token: string): Promise<{
+  status: 'waiting_start' | 'code_sent' | 'expired';
+  remoteWebhookUrl?: string | null;
+}> {
+  return request(`/api/auth/telegram/otp-status/${encodeURIComponent(token)}`);
+}
+
+export function verifyTelegramCode(challengeToken: string, code: string): Promise<AuthSessionResponse> {
+  return request<AuthSessionResponse>('/api/auth/telegram/verify-code', {
+    method: 'POST',
+    body: JSON.stringify({ challengeToken, code }),
+  });
+}
+
+export function logoutApi(allDevices = false): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>('/api/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ allDevices }),
+  });
+}
+
+export function fetchUserSessions(): Promise<UserSessionItem[]> {
+  return request<UserSessionItem[]>('/api/auth/sessions');
+}
+
+export function revokeUserSession(sessionId: string): Promise<{ success: boolean }> {
+  return request(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function loginWithTelegramWebApp(initData: string): Promise<AuthSessionResponse> {
+  return request<AuthSessionResponse>('/api/auth/telegram/webapp', {
+    method: 'POST',
+    body: JSON.stringify({ initData }),
+  });
+}
+
 export function fetchAllowedUsers(): Promise<AllowedUser[]> {
   return request<AllowedUser[]>('/api/allowed-users');
 }
@@ -362,15 +475,32 @@ export function createAllowedUser(
   allowedProjects?: string[],
   password?: string,
   allowedSubdomains?: string[],
-  overwrite?: boolean
+  overwrite?: boolean,
+  telegramUsername?: string
 ): Promise<AllowedUser> {
   return request<AllowedUser>('/api/allowed-users', {
     method: 'POST',
-    body: JSON.stringify({ name, email, role, allowedMetrics, allowedPages, allowedProjects, password, allowedSubdomains, overwrite }),
+    body: JSON.stringify({
+      name,
+      email,
+      role,
+      allowedMetrics,
+      allowedPages,
+      allowedProjects,
+      password,
+      allowedSubdomains,
+      overwrite,
+      telegramUsername,
+    }),
   });
 }
 export function deleteAllowedUser(id: string): Promise<void> {
   return request<void>(`/api/allowed-users/${id}`, { method: 'DELETE' });
+}
+export function resetUserTelegramBinding(id: string): Promise<AllowedUser> {
+  return request<AllowedUser>(`/api/allowed-users/${id}/reset-telegram`, {
+    method: 'POST',
+  });
 }
 export function updateAllowedUser(
   id: string,
@@ -379,11 +509,20 @@ export function updateAllowedUser(
   allowedMetrics?: string[],
   allowedPages?: string[],
   allowedProjects?: string[],
-  allowedSubdomains?: string[]
+  allowedSubdomains?: string[],
+  telegramUsername?: string
 ): Promise<AllowedUser> {
   return request<AllowedUser>(`/api/allowed-users/${id}`, {
     method: 'PUT',
-    body: JSON.stringify({ name, role, allowedMetrics, allowedPages, allowedProjects, allowedSubdomains }),
+    body: JSON.stringify({
+      name,
+      role,
+      allowedMetrics,
+      allowedPages,
+      allowedProjects,
+      allowedSubdomains,
+      telegramUsername,
+    }),
   });
 }
 export function updateUserPassword(id: string, password: string): Promise<{ success: boolean; message: string }> {

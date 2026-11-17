@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\AuthService;
 use App\Services\SubdomainService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,6 +13,8 @@ class BootstrapController extends Controller
     public function getBootstrapData(?Request $request = null): array
     {
         $request = $request ?? request();
+        $authService = app(AuthService::class);
+        $authUser = $authService->resolveUserFromRequest($request);
         $userCtrl = app(UserController::class);
         $projCtrl = app(ProjectController::class);
         $intCtrl = app(IntegrationController::class);
@@ -47,6 +50,7 @@ class BootstrapController extends Controller
             'kanbanColumns' => $kanbanCtrl->index()->getData(true),
             'bloggerRequisites' => $intCtrl->getRequisites()->getData(true),
             'activeSubdomain' => SubdomainService::resolve($request),
+            'currentUser' => $authUser ? $authService->formatUserPayload($authUser) : null,
         ];
     }
 

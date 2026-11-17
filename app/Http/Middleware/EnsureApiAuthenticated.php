@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Services\AuthService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -10,34 +11,33 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnsureApiAuthenticated
 {
+    public function __construct(
+        protected AuthService $authService
+    ) {}
+
     /**
      * Handle an incoming request.
      * Restricts API access to authenticated users, with a secure bypass for developers.
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // 0. Pass through preflight OPTIONS requests immediately
         if ($request->isMethod('OPTIONS')) {
             return $next($request);
         }
 
-        // 1. Whitelisted public endpoints that guest bloggers or external webhooks must access
         if ($this->isPublicEndpoint($request)) {
             return $next($request);
         }
 
-        // 2. Developer / Master Key Bypass ("Путь для разработчика")
         if ($this->isAuthorizedDeveloper($request)) {
             $this->ensureSuperAdminActor();
             return $next($request);
         }
 
-        // 3. Authenticated Web / API User
         if ($this->isAuthenticatedUser($request)) {
             return $next($request);
         }
 
-        // 4. Unauthorized rejection
         return response()->json([
             'message' => 'Unauthenticated. Access denied.',
             'status' => 401,
@@ -52,8 +52,18 @@ class EnsureApiAuthenticated
         $path = trim($request->path(), '/');
         $method = strtoupper($request->method());
 
-        // Login route
-        if ($method === 'POST' && $path === 'api/login') {
+        // Auth endpoints
+        if ($method === 'POST' && in_array($path, [
+            'api/auth/logout',
+            'api/auth/migrate-legacy',
+            'api/auth/telegram/request-code',
+            'api/auth/telegram/verify-code',
+            'api/auth/telegram/webapp',
+        ], true)) {
+            return true;
+        }
+
+        if ($method === 'GET' && ($path === 'api/auth/me' || str_starts_with($path, 'api/auth/telegram/otp-status/'))) {
             return true;
         }
 
@@ -103,13 +113,13 @@ class EnsureApiAuthenticated
         }
 
         $appKey = config('app.key');
-        $devKey = env('DEVELOPER_MASTER_KEY', 'tezi_master_sec_2026_abduazz');
+        $devKey = env('DEVELOPER_MASTER_KEY');
 
         if (!empty($appKey) && hash_equals($appKey, $providedKey)) {
             return true;
         }
 
-        if (!empty($devKey) && hash_equals($devKey, $providedKey)) {
+        if (!empty($devKey) && hash_equals((string) $devKey, $providedKey)) {
             return true;
         }
 
@@ -117,61 +127,13 @@ class EnsureApiAuthenticated
     }
 
     /**
-     * Check if user is authenticated via Laravel Auth, session, or verified cookie.
+     * Verify user via server-backed session token (Bearer or HttpOnly cookie) or active web guard.
      */
     protected function isAuthenticatedUser(Request $request): bool
     {
-        // Active Laravel auth
-        if (Auth::check() || $request->user()) {
-            return true;
-        }
-
-        // Active session
-        if ($request->hasSession() && $request->session()->has('user_email')) {
-            $email = strtolower(trim((string)$request->session()->get('user_email')));
-            $user = User::where('email', $email)->first();
-            if ($user) {
-                Auth::setUser($user);
-                return true;
-            }
-        }
-
-        // Verified auth cookie set upon login (handling urlencoded '@' e.g. %40)
-        $rawCookie = $request->cookie('ff_user_email') ?? ($_COOKIE['ff_user_email'] ?? null);
-        if (!empty($rawCookie)) {
-            $cookieEmail = strtolower(trim(urldecode($rawCookie)));
-            $user = User::where('email', $cookieEmail)->first();
-            if ($user) {
-                Auth::setUser($user);
-                return true;
-            }
-        }
-
-        // Check X-User-Email header
-        $headerEmail = $request->header('X-User-Email');
-        if (!empty($headerEmail)) {
-            $email = strtolower(trim(urldecode($headerEmail)));
-            $user = User::where('email', $email)->first();
-            if ($user) {
-                $rawCookie = $_COOKIE['ff_user_email'] ?? $request->cookie('ff_user_email');
-                $decodedCookie = !empty($rawCookie) ? strtolower(trim(urldecode($rawCookie))) : null;
-                if (
-                    app()->environment('local') ||
-                    (!empty($decodedCookie) && $decodedCookie === $email) ||
-                    ($request->hasSession() && strtolower(trim((string)$request->session()->get('user_email', ''))) === $email)
-                ) {
-                    Auth::setUser($user);
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return $this->authService->resolveUserFromRequest($request) !== null;
     }
 
-    /**
-     * Ensure a super admin user is attached to request when accessed via master key.
-     */
     protected function ensureSuperAdminActor(): void
     {
         if (!Auth::check()) {

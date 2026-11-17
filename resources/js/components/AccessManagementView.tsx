@@ -39,8 +39,10 @@ import {
   Briefcase,
   X,
   ScrollText,
+  AtSign,
+  Unlink,
 } from 'lucide-react';
-import { updateUserPassword, downloadDatabaseBackupUrl, sendDatabaseBackupToTelegram } from '../services/api';
+import { downloadDatabaseBackupUrl, sendDatabaseBackupToTelegram, resetUserTelegramBinding } from '../services/api';
 
 interface AccessManagementViewProps {
   allowedUsers: AllowedUser[];
@@ -56,8 +58,9 @@ interface AccessManagementViewProps {
     allowedProjects?: string[],
     password?: string,
     allowedSubdomains?: string[],
-    overwrite?: boolean
-  ) => Promise<void>;
+    overwrite?: boolean,
+    telegramUsername?: string
+  ) => Promise<AllowedUser | void>;
   onEditUser: (
     id: string,
     name: string,
@@ -65,9 +68,11 @@ interface AccessManagementViewProps {
     allowedMetrics?: string[],
     allowedPages?: string[],
     allowedProjects?: string[],
-    allowedSubdomains?: string[]
+    allowedSubdomains?: string[],
+    telegramUsername?: string
   ) => Promise<void>;
   onRemoveUser: (id: string) => Promise<void>;
+  onUserUpdated?: (user: AllowedUser) => void;
   onAddSubdomain?: (data: { slug: string; name: string; description?: string; projectIds?: (number | string)[] }) => Promise<void>;
   onUpdateSubdomain?: (id: string, data: { slug?: string; name: string; description?: string; projectIds?: (number | string)[] }) => Promise<void>;
   onDeleteSubdomain?: (id: string) => Promise<void>;
@@ -85,6 +90,7 @@ export default function AccessManagementView({
   onAddUser,
   onEditUser,
   onRemoveUser,
+  onUserUpdated,
   onAddSubdomain,
   onUpdateSubdomain,
   onDeleteSubdomain,
@@ -104,8 +110,8 @@ export default function AccessManagementView({
   // Form states for Users
   const [editingUser, setEditingUser] = useState<AllowedUser | null>(null);
   const [name, setName] = useState('');
+  const [telegramUsername, setTelegramUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [accessLevel, setAccessLevel] = useState<'tier1' | 'tier2'>('tier2');
   const [selectedRole, setSelectedRole] = useState<AllowedUser['role']>('pr_manager');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -160,21 +166,6 @@ export default function AccessManagementView({
   // Search & Role filter for active users list
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<string>('all');
-
-  // Change Password Modal state
-  const [passwordModalUser, setPasswordModalUser] = useState<AllowedUser | null>(null);
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [passwordSaving, setPasswordSaving] = useState(false);
-
-  // Credentials modal for newly created/recreated user
-  const [createdCredentialsModal, setCreatedCredentialsModal] = useState<{
-    name: string;
-    email: string;
-    password: string;
-    role: string;
-    isRecreated?: boolean;
-  } | null>(null);
-  const [copiedCredentials, setCopiedCredentials] = useState(false);
 
   // Backup states
   const [backupLoading, setBackupLoading] = useState(false);
@@ -239,37 +230,39 @@ export default function AccessManagementView({
       return;
     }
 
+    const cleanTg = telegramUsername.trim().toLowerCase().replace(/^@+/, '');
+    if (!cleanTg) {
+      setErrorMsg(
+        lang === 'ru'
+          ? 'Укажите Telegram @username сотрудника!'
+          : lang === 'uz'
+            ? 'Xodimning Telegram @username ini kiriting!'
+            : 'Please enter the Telegram @username!'
+      );
+      return;
+    }
+    const formattedTg = `@${cleanTg}`;
+
     const cleanEmail = email.trim().toLowerCase().replace(/^@+/, '');
-    if (!cleanEmail) return;
+    const resolvedEmail = cleanEmail
+      ? (cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@tezi.uz`)
+      : `${cleanTg}@tezi.uz`;
 
     let shouldOverwrite = false;
 
     if (!editingUser) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const isValidEmail = emailRegex.test(cleanEmail) || !cleanEmail.includes('@');
-      if (!isValidEmail) {
-        setErrorMsg(
-          lang === 'ru'
-            ? 'Некорректный формат email или логина!'
-            : lang === 'uz'
-              ? 'Email yoki login formati noto‘g‘ri!'
-              : 'Invalid email or handle format!'
-        );
-        return;
-      }
-
-      const existingUserMatch = allowedUsers.find((u) =>
-        u.email.toLowerCase() === cleanEmail ||
-        u.email.toLowerCase() === `${cleanEmail}@tezi.uz`
-      );
+      const existingUserMatch = allowedUsers.find((u) => {
+        const uTg = (u.telegramUsername || '').toLowerCase().replace(/^@+/, '');
+        return uTg === cleanTg || u.email.toLowerCase() === resolvedEmail;
+      });
 
       if (existingUserMatch) {
         const confirmRecreate = confirm(
           lang === 'ru'
-            ? `Сотрудник ${existingUserMatch.email} уже существует. Хотите перезаписать его профиль и установить новый пароль?`
+            ? `Сотрудник ${existingUserMatch.telegramUsername || existingUserMatch.email} уже существует. Перезаписать его профиль и права?`
             : lang === 'uz'
-              ? `Foydalanuvchi ${existingUserMatch.email} tizimda mavjud. Uning profilini qayta yaratib, yangi parol o‘rnatmoqchimisiz?`
-              : `User ${existingUserMatch.email} already exists. Do you want to overwrite their profile and set a new password?`
+              ? `Foydalanuvchi ${existingUserMatch.telegramUsername || existingUserMatch.email} tizimda mavjud. Profilni yangilamoqchimisiz?`
+              : `User ${existingUserMatch.telegramUsername || existingUserMatch.email} already exists. Overwrite?`
         );
 
         if (confirmRecreate) {
@@ -280,8 +273,6 @@ export default function AccessManagementView({
         }
       }
     }
-
-    const resolvedEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@tezi.uz`;
 
     const allowedMetrics = Object.entries(metricsPermissions)
       .filter(([_, allowed]) => allowed)
@@ -310,19 +301,15 @@ export default function AccessManagementView({
           allowedMetrics,
           allowedPages,
           allowedProjects,
-          allowedSubdomains
+          allowedSubdomains,
+          formattedTg
         );
-
-        // If admin typed a new password during edit, update password immediately
-        if (password.trim()) {
-          await updateUserPassword(editingUser.id, password.trim());
-        }
 
         setSuccessMsg(
           lang === 'ru'
-            ? 'Доступ пользователя успешно обновлен!'
+            ? 'Профиль и права сотрудника обновлены!'
             : lang === 'uz'
-              ? 'Foydalanuvchi huquqlari muvaffaqiyatli yangilandi!'
+              ? 'Xodim huquqlari muvaffaqiyatli yangilandi!'
               : 'User permissions updated successfully!'
         );
         setEditingUser(null);
@@ -334,55 +321,39 @@ export default function AccessManagementView({
           allowedMetrics,
           allowedPages,
           allowedProjects,
-          password.trim() || undefined,
+          undefined,
           allowedSubdomains,
-          shouldOverwrite
+          shouldOverwrite,
+          formattedTg
         );
 
-        const assignedPassword = password.trim() || 'password';
-        setCreatedCredentialsModal({
-          name: cleanName,
-          email: resolvedEmail,
-          password: assignedPassword,
-          role: determinedRole,
-          isRecreated: shouldOverwrite,
-        });
-
         setSuccessMsg(
-          shouldOverwrite
-            ? (lang === 'ru'
-              ? `Аккаунт ${resolvedEmail} успешно перезаписан с новым паролем!`
-              : `User ${resolvedEmail} recreated successfully with new password!`)
-            : t.addSuccessToast.replace('{email}', resolvedEmail)
+          lang === 'ru'
+            ? `Сотрудник ${cleanName} (${formattedTg}) добавлен! Теперь он может войти по своему @username через @AI_Buxgalter_private_bot.`
+            : lang === 'uz'
+              ? `${cleanName} (${formattedTg}) qo‘shildi! Endi u @AI_Buxgalter_private_bot orqali kirishi mumkin.`
+              : `Added ${cleanName} (${formattedTg})! They can now sign in via @AI_Buxgalter_private_bot.`
         );
       }
 
       setEmail('');
+      setTelegramUsername('');
       setName('');
-      setPassword('');
       setSelectedRole('pr_manager');
       setAccessLevel('tier2');
 
       setTimeout(() => {
         setSuccessMsg(null);
-      }, 4000);
+      }, 5000);
     } catch (err: any) {
       const message = err instanceof Error ? err.message : '';
-      if (message.toLowerCase().includes('already exists') || message.toLowerCase().includes('taken')) {
-        setErrorMsg(
-          lang === 'ru'
-            ? 'Сотрудник с таким email уже существует в системе. Нажмите на иконку ключа или редактирования в таблице, чтобы обновить его пароль.'
-            : t.emailAlreadyExists
-        );
-      } else {
-        setErrorMsg(
-          lang === 'ru'
-            ? `Не удалось сохранить доступ: ${message || 'Проверьте подключение к серверу.'}`
-            : lang === 'uz'
-              ? `Ruxsatni saqlab bo‘lmadi: ${message || 'Server bilan ulanishni tekshiring.'}`
-              : `Failed to save access: ${message || 'Please check server connection.'}`
-        );
-      }
+      setErrorMsg(
+        lang === 'ru'
+          ? `Не удалось сохранить доступ: ${message || 'Проверьте подключение к серверу.'}`
+          : lang === 'uz'
+            ? `Ruxsatni saqlab bo‘lmadi: ${message || 'Server bilan ulanishni tekshiring.'}`
+            : `Failed to save access: ${message || 'Please check server connection.'}`
+      );
     }
   };
 
@@ -413,24 +384,29 @@ export default function AccessManagementView({
     }
   };
 
-  const handlePasswordUpdateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!passwordModalUser || !newPasswordInput.trim()) return;
+  const handleResetTelegram = async (user: AllowedUser) => {
+    const label = user.telegramUsername || user.email;
+    const msg =
+      lang === 'ru'
+        ? `Сбросить привязку Telegram для ${user.name} (${label})?\nПри следующем входе нужно будет заново подтвердить бота с нужного аккаунта Telegram.`
+        : lang === 'uz'
+          ? `${user.name} (${label}) uchun Telegram ulanishini bekor qilasizmi?`
+          : `Reset Telegram binding for ${user.name} (${label})?`;
 
-    setPasswordSaving(true);
+    if (!confirm(msg)) return;
     setErrorMsg(null);
     setSuccessMsg(null);
-
     try {
-      await updateUserPassword(passwordModalUser.id, newPasswordInput.trim());
-      setSuccessMsg(t.passwordChangedSuccess || 'Пароль успешно изменен!');
-      setPasswordModalUser(null);
-      setNewPasswordInput('');
-      setTimeout(() => setSuccessMsg(null), 4000);
+      const updated = await resetUserTelegramBinding(user.id);
+      onUserUpdated?.(updated);
+      setSuccessMsg(
+        lang === 'ru'
+          ? `Привязка Telegram для ${user.name} сброшена. Теперь можно войти с нужного аккаунта Telegram.`
+          : 'Telegram binding reset successfully.'
+      );
+      setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to change password');
-    } finally {
-      setPasswordSaving(false);
+      setErrorMsg(err?.message || 'Failed to reset Telegram binding');
     }
   };
 
@@ -729,8 +705,8 @@ export default function AccessManagementView({
                   onClick={() => {
                     setEditingUser(null);
                     setName('');
+                    setTelegramUsername('');
                     setEmail('');
-                    setPassword('');
                   }}
                   className="text-[10px] font-bold text-neutral-400 hover:text-black"
                 >
@@ -758,68 +734,50 @@ export default function AccessManagementView({
                 </div>
               </div>
 
-              {/* Email / Handle Field */}
+              {/* Telegram @username Field (Primary Auth Identifier) */}
               <div className="space-y-1.5">
                 <label className="block text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">
-                  {t.userEmailLabel}
+                  Telegram @username (для входа)
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
+                  <AtSign className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
                   <input
                     type="text"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder={lang === 'ru' ? 'Email или логин (например chief1)...' : 'Email yoki login...'}
-                    className={`w-full border focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold focus:outline-hidden transition ${editingUser
-                        ? 'bg-neutral-100 border-neutral-200 text-neutral-500 cursor-not-allowed'
-                        : 'bg-neutral-50 border-neutral-200 text-black'
-                      }`}
-                    required
-                    disabled={!!editingUser}
-                  />
-                </div>
-              </div>
-
-              {/* Password Field */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">
-                    {editingUser
-                      ? (lang === 'ru' ? 'Новый пароль (оставьте пустым, чтобы не менять)' : lang === 'uz' ? 'Yangi parol (o‘zgartirmaslik uchun bo‘sh qoldiring)' : 'New password (leave blank to keep)')
-                      : (t.userPasswordLabel || 'Пароль')}
-                  </label>
-                  {!editingUser && (
-                    <button
-                      type="button"
-                      onClick={() => setPassword('password')}
-                      className="text-[10px] font-bold text-neutral-500 hover:text-black underline cursor-pointer"
-                    >
-                      {t.usePasswordQuickBtn || 'Вставить: password'}
-                    </button>
-                  )}
-                </div>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
-                  <input
-                    type="text"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={editingUser
-                      ? (lang === 'ru' ? 'Оставьте пустым, если не меняется' : 'Bo‘sh qoldiring')
-                      : (t.defaultPasswordHint || 'По умолчанию: password')}
+                    value={telegramUsername}
+                    onChange={(e) => setTelegramUsername(e.target.value)}
+                    placeholder="@username (например @abduaziz)"
                     className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-black focus:outline-hidden transition"
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
+                    required
                   />
                 </div>
-                {!editingUser && (
-                  <div className="flex items-center justify-between text-[10px] text-neutral-400 font-medium">
-                    <span>{lang === 'ru' ? '💡 Если оставить пустым, пароль: password' : lang === 'uz' ? '💡 Bo‘sh qoldirilsa, parol: password' : '💡 If empty, password: password'}</span>
-                    <span className="font-mono bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded text-[9px] font-bold">default: password</span>
-                  </div>
-                )}
+                <p className="text-[10px] text-neutral-400 font-medium">
+                  {lang === 'ru'
+                    ? 'Бот @AI_Buxgalter_private_bot будет отправлять 4-значный код этому пользователю.'
+                    : 'Kod @AI_Buxgalter_private_bot orqali ushbu @username ga yuboriladi.'}
+                </p>
               </div>
+
+              {/* Optional Email Field */}
+              {!editingUser && (
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">
+                    Email ({lang === 'ru' ? 'необязательно' : 'ixtiyoriy'})
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-2.5 w-4 h-4 text-neutral-400" />
+                    <input
+                      type="text"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder={lang === 'ru' ? 'Автоматически из @username...' : 'Avtomatik...'}
+                      className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-black focus:outline-hidden transition"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* TWO-TIER ACCESS SELECTOR */}
               <div className="space-y-2 pt-1 border-t border-neutral-100">
@@ -1327,6 +1285,7 @@ export default function AccessManagementView({
                       const matchesSearch =
                         !userSearchQuery ||
                         (user.name && user.name.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+                        (user.telegramUsername && user.telegramUsername.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
                         user.email.toLowerCase().includes(userSearchQuery.toLowerCase());
                       const matchesRole = userRoleFilter === 'all' || user.role === userRoleFilter;
                       return matchesSearch && matchesRole;
@@ -1361,7 +1320,27 @@ export default function AccessManagementView({
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-neutral-400 font-semibold mt-0.5">{user.email}</span>
+                              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                                {user.telegramUsername ? (
+                                  <span className="text-[10px] font-extrabold text-sky-700">
+                                    {user.telegramUsername}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-red-500">
+                                    @username не указан
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-neutral-400 font-medium">({user.email})</span>
+                                {user.hasTelegramLinked ? (
+                                  <span className="text-[8px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5 py-0.2">
+                                    {lang === 'ru' ? 'Бот подключён' : 'Bot ulangan'}
+                                  </span>
+                                ) : (
+                                  <span className="text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded px-1.5 py-0.2">
+                                    {lang === 'ru' ? 'Ждёт 1-й вход' : '1-kirish kutilmoqda'}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
 
@@ -1394,23 +1373,22 @@ export default function AccessManagementView({
                           {/* Actions */}
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPasswordModalUser(user);
-                                  setNewPasswordInput('');
-                                }}
-                                className="p-1.5 rounded-lg text-neutral-400 hover:text-black hover:bg-neutral-100 transition cursor-pointer"
-                                title={t.changePasswordBtn || 'Сменить пароль'}
-                              >
-                                <Key className="w-4 h-4" />
-                              </button>
-
+                              {user.hasTelegramLinked && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleResetTelegram(user)}
+                                  className="p-1.5 rounded-lg text-amber-600 hover:text-amber-800 hover:bg-amber-50 transition cursor-pointer"
+                                  title={lang === 'ru' ? 'Сбросить привязку Telegram ID (перепривязать к другому аккаунту)' : 'Reset Telegram binding'}
+                                >
+                                  <Unlink className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => {
                                   setEditingUser(user);
                                   setName(user.name || '');
+                                  setTelegramUsername(user.telegramUsername || '');
                                   setEmail(user.email);
                                   setSelectedRole(user.role);
                                   setAccessLevel(user.role === 'super_admin' || user.role === 'executive' ? 'tier1' : 'tier2');
@@ -1964,178 +1942,6 @@ export default function AccessManagementView({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL: CHANGE PASSWORD */}
-      {/* ========================================================================= */}
-      {passwordModalUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-left shadow-2xl border border-neutral-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-black" />
-                <h3 className="font-black text-xs uppercase tracking-wider text-black">
-                  {t.changePasswordBtn || 'Сменить пароль'}
-                </h3>
-              </div>
-              <button
-                onClick={() => setPasswordModalUser(null)}
-                className="text-neutral-400 hover:text-black cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-neutral-500 font-medium">
-              {lang === 'ru'
-                ? `Новый пароль для пользователя ${passwordModalUser.email}:`
-                : `Foydalanuvchi ${passwordModalUser.email} uchun yangi parol:`}
-            </p>
-
-            <form onSubmit={handlePasswordUpdateSubmit} className="space-y-4">
-              <input
-                type="text"
-                value={newPasswordInput}
-                onChange={(e) => setNewPasswordInput(e.target.value)}
-                placeholder={lang === 'ru' ? 'Введите новый пароль...' : 'Yangi parolni kiriting...'}
-                className="w-full bg-neutral-50 border border-neutral-200 focus:border-black focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-hidden"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                required
-                autoFocus
-              />
-
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-neutral-400 font-bold uppercase">{lang === 'ru' ? 'Пресеты:' : 'Presetlar:'}</span>
-                {(['password', '123456', 'tezi2026'] as const).map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setNewPasswordInput(preset)}
-                    className="px-2 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-mono font-bold rounded-lg transition cursor-pointer"
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={passwordSaving}
-                  className="w-1/2 bg-black hover:bg-neutral-800 text-white font-black text-xs py-2 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {passwordSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{t.saveChangesBtn}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPasswordModalUser(null)}
-                  className="w-1/2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2 rounded-xl transition cursor-pointer"
-                >
-                  {t.cancelBtn}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {/* ========================================================================= */}
-      {/* MODAL: CREATED USER CREDENTIALS */}
-      {/* ========================================================================= */}
-      {createdCredentialsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 text-left shadow-2xl border border-neutral-200 space-y-5">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-                  <Sparkles className="w-4.5 h-4.5" />
-                </div>
-                <div>
-                  <h3 className="font-black text-sm tracking-tight text-black">
-                    {createdCredentialsModal.isRecreated
-                      ? (t.recreatedCredentialsTitle || 'Аккаунт сотрудника обновлен!')
-                      : (t.createdCredentialsTitle || 'Сотрудник успешно добавлен!')}
-                  </h3>
-                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-                    {t.createdCredentialsSub || 'Данные для входа в систему'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setCreatedCredentialsModal(null)}
-                className="text-neutral-400 hover:text-black cursor-pointer p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="bg-neutral-50 border border-neutral-200/80 rounded-2xl p-4 space-y-3">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
-                  {lang === 'ru' ? 'Имя' : 'Ism'}:
-                </span>
-                <span className="font-extrabold text-black">{createdCredentialsModal.name}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs border-t border-neutral-200/60 pt-2.5">
-                <span className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
-                  {lang === 'ru' ? 'Логин / Email' : 'Login / Email'}:
-                </span>
-                <span className="font-mono font-black text-black select-all bg-white px-2.5 py-1 rounded-lg border border-neutral-200 shadow-2xs">
-                  {createdCredentialsModal.email}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-xs border-t border-neutral-200/60 pt-2.5">
-                <span className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
-                  {lang === 'ru' ? 'Пароль' : 'Parol'}:
-                </span>
-                <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 select-all shadow-2xs">
-                  {createdCredentialsModal.password}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-xs border-t border-neutral-200/60 pt-2.5">
-                <span className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
-                  {lang === 'ru' ? 'Адрес системы' : 'Tizim manzili'}:
-                </span>
-                <span className="font-mono text-neutral-600 font-semibold">https://tezi.uz</span>
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  const text = `Вход в Tezi.uz:\nЛогин: ${createdCredentialsModal.email}\nПароль: ${createdCredentialsModal.password}\nСсылка: https://tezi.uz`;
-                  navigator.clipboard.writeText(text);
-                  setCopiedCredentials(true);
-                  setTimeout(() => setCopiedCredentials(false), 3000);
-                }}
-                className="w-full bg-black hover:bg-neutral-800 text-white font-extrabold text-xs py-3 rounded-2xl transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-              >
-                {copiedCredentials ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    <span>{t.copiedToClipboard || 'Скопировано в буфер!'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    <span>{t.copyCredentialsBtn || 'Скопировать данные для сотрудника'}</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCreatedCredentialsModal(null)}
-                className="w-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-extrabold text-xs py-2.5 rounded-2xl transition cursor-pointer"
-              >
-                {t.closeBtn || 'Закрыть'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

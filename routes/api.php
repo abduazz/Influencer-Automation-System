@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BloggerSubmissionController;
 use App\Http\Controllers\Api\BootstrapController;
 use App\Http\Controllers\Api\IntegrationController;
@@ -13,12 +14,21 @@ use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
 
+Route::get('/auth/me', [AuthController::class, 'me']);
+Route::post('/auth/migrate-legacy', [AuthController::class, 'migrateLegacy']);
+Route::post('/auth/logout', [AuthController::class, 'logout']);
+Route::get('/auth/sessions', [AuthController::class, 'listSessions']);
+Route::delete('/auth/sessions/{sessionId}', [AuthController::class, 'revokeSessionById']);
+Route::post('/auth/telegram/request-code', [AuthController::class, 'telegramRequestCode']);
+Route::get('/auth/telegram/otp-status/{token}', [AuthController::class, 'telegramOtpStatus']);
+Route::post('/auth/telegram/verify-code', [AuthController::class, 'telegramVerifyCode']);
+Route::post('/auth/telegram/webapp', [AuthController::class, 'telegramWebApp']);
+
 Route::get('/bootstrap', [BootstrapController::class, 'index']);
-Route::post('/login', [UserController::class, 'login']);
 Route::get('/allowed-users', [UserController::class, 'index']);
 Route::post('/allowed-users', [UserController::class, 'store']);
 Route::put('/allowed-users/{user}', [UserController::class, 'update']);
-Route::put('/allowed-users/{user}/password', [UserController::class, 'updatePassword']);
+Route::post('/allowed-users/{user}/reset-telegram', [UserController::class, 'resetTelegram']);
 Route::delete('/allowed-users/{user}', [UserController::class, 'destroy']);
 
 Route::get('/subdomains', [SubdomainController::class, 'index']);
